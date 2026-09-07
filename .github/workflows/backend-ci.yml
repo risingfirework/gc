@@ -1,0 +1,51 @@
+name: Backend CI
+
+on:
+  push:
+    paths: ["apps/backend/**", ".github/workflows/backend-ci.yml"]
+  pull_request:
+    paths: ["apps/backend/**", ".github/workflows/backend-ci.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: apps/backend/go.mod
+          cache-dependency-path: apps/backend/go.sum
+      - name: Verify formatting
+        shell: bash
+        run: test -z "$(gofmt -l .)"
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+          working-directory: apps/backend
+      - name: Unit tests
+        run: go test -race -shuffle=on -coverprofile=coverage.out ./...
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Build production image
+        uses: docker/build-push-action@v7
+        with:
+          context: apps/backend
+          push: false
+          tags: tka/backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

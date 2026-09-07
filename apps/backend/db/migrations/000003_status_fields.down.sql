@@ -1,0 +1,7 @@
+BEGIN;
+
+ALTER TABLE packages DROP COLUMN status;
+ALTER TABLE exams DROP COLUMN status;
+ALTER TABLE questions DROP COLUMN status;
+
+COMMIT;

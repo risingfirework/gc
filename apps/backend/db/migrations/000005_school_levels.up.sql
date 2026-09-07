@@ -1,0 +1,10 @@
+BEGIN;
+
+CREATE TABLE jenjang (
+  id SERIAL PRIMARY KEY,
+  nama TEXT NOT NULL UNIQUE
+);
+
+INSERT INTO jenjang (nama) VALUES ('SD'), ('SMP'), ('SMA');
+
+COMMIT;

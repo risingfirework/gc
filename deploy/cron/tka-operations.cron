@@ -1,0 +1,7 @@
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=ops@example.com
+
+# UTC: backup 02:15, cleanup 03:45. Scripts use flock/limits to avoid overlap and spikes.
+15 2 * * * root OPS_ENV_FILE=/etc/tka/ops.env /opt/tka/scripts/backup-db.sh >>/var/log/tka/backup.log 2>&1
+45 3 * * * root OPS_ENV_FILE=/etc/tka/ops.env /opt/tka/scripts/maintenance.sh >>/var/log/tka/maintenance.log 2>&1

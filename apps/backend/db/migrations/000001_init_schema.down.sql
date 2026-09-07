@@ -1,0 +1,13 @@
+BEGIN;
+
+DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS user_answers;
+DROP TABLE IF EXISTS user_exams;
+DROP TABLE IF EXISTS questions;
+DROP TABLE IF EXISTS exams;
+DROP TABLE IF EXISTS user_packages;
+DROP TABLE IF EXISTS packages;
+DROP TABLE IF EXISTS users;
+DROP FUNCTION IF EXISTS set_updated_at();
+
+COMMIT;

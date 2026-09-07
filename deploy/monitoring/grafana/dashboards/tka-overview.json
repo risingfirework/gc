@@ -1,0 +1,53 @@
+{
+  "annotations": { "list": [] },
+  "editable": false,
+  "panels": [
+    {
+      "type": "stat", "title": "API Request Rate", "id": 1,
+      "gridPos": { "h": 8, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "sum(rate(tka_http_requests_total{route=~\"/api/.*\"}[5m]))", "legendFormat": "req/s" }]
+    },
+    {
+      "type": "stat", "title": "API 5xx Rate", "id": 2,
+      "gridPos": { "h": 8, "w": 6, "x": 6, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.01 }] } } },
+      "targets": [{ "expr": "sum(rate(tka_http_requests_total{route=~\"/api/.*\",status=~\"5..\"}[5m])) / clamp_min(sum(rate(tka_http_requests_total{route=~\"/api/.*\"}[5m])), 0.001)", "legendFormat": "5xx" }]
+    },
+    {
+      "type": "stat", "title": "API p95 Latency", "id": 3,
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 0 },
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le) (rate(tka_http_request_duration_seconds_bucket{route=~\"/api/.*\"}[5m])))", "legendFormat": "p95" }]
+    },
+    {
+      "type": "stat", "title": "API In-flight", "id": 4,
+      "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "expr": "sum(tka_http_in_flight_requests)", "legendFormat": "requests" }]
+    },
+    {
+      "type": "timeseries", "title": "Go API CPU & RAM", "id": 5,
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        { "expr": "rate(process_cpu_seconds_total{job=\"tka-api\"}[5m])", "legendFormat": "CPU {{instance}}" },
+        { "expr": "process_resident_memory_bytes{job=\"tka-api\"}", "legendFormat": "RAM {{instance}}" }
+      ]
+    },
+    {
+      "type": "timeseries", "title": "Redis CPU & Memory", "id": 6,
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        { "expr": "100 * (rate(redis_cpu_sys_seconds_total[5m]) + rate(redis_cpu_user_seconds_total[5m]))", "legendFormat": "CPU {{instance}}" },
+        { "expr": "100 * redis_memory_used_bytes / clamp_min(redis_memory_max_bytes, 1)", "legendFormat": "Memory {{instance}}" }
+      ]
+    }
+  ],
+  "refresh": "15s",
+  "schemaVersion": 41,
+  "tags": ["tka", "production"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "TKA Production Overview",
+  "uid": "tka-production-overview",
+  "version": 1
+}

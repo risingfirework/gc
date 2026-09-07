@@ -1,0 +1,121 @@
+name: tka-production
+
+x-logging: &ops-logging
+  driver: local
+  options: { max-size: "20m", max-file: "5" }
+
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+    networks: [data]
+    depends_on: [alertmanager, node-exporter, cadvisor, redis-exporter]
+    security_opt: ["no-new-privileges:true"]
+    logging: *ops-logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.32.1
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./deploy/monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    secrets: [slack_webhook_url, telegram_bot_token, telegram_chat_id]
+    ports: ["127.0.0.1:9093:9093"]
+    networks: [data]
+    security_opt: ["no-new-privileges:true"]
+    logging: *ops-logging
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    secrets: [grafana_admin_password]
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["127.0.0.1:3001:3000"]
+    networks: [data]
+    depends_on: [prometheus]
+    security_opt: ["no-new-privileges:true"]
+    logging: *ops-logging
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.86.0
+    restart: unless-stopped
+    command:
+      - --redis.addr=redis://redis-node-1:6379
+      - --redis.password-file=/run/secrets/redis_exporter_passwords
+      - --is-cluster
+      - --cluster-discover-hostnames
+      - --append-instance-role-label
+      - --include-system-metrics
+    secrets: [redis_exporter_passwords]
+    networks: [data]
+    security_opt: ["no-new-privileges:true"]
+    logging: *ops-logging
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    restart: unless-stopped
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+      - /var/lib/node_exporter/textfile_collector:/textfile:ro
+    networks: [data]
+    security_opt: ["no-new-privileges:true"]
+    logging: *ops-logging
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+    restart: unless-stopped
+    privileged: true
+    devices: [/dev/kmsg]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    networks: [data]
+    logging: *ops-logging
+
+secrets:
+  grafana_admin_password:
+    file: "${GRAFANA_ADMIN_PASSWORD_FILE:-./secrets/grafana_admin_password.txt}"
+  slack_webhook_url:
+    file: "${SLACK_WEBHOOK_URL_FILE:-./secrets/slack_webhook_url.txt}"
+  telegram_bot_token:
+    file: "${TELEGRAM_BOT_TOKEN_FILE:-./secrets/telegram_bot_token.txt}"
+  telegram_chat_id:
+    file: "${TELEGRAM_CHAT_ID_FILE:-./secrets/telegram_chat_id.txt}"
+  redis_exporter_passwords:
+    file: "${REDIS_EXPORTER_PASSWORDS_FILE:-./secrets/redis_exporter_passwords.json}"
+
+networks:
+  data:
+    internal: true
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  grafana_data:

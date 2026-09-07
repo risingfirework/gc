@@ -1,0 +1,8 @@
+.git
+.gocache
+bin
+coverage.out
+db
+*.md
+.env*
+Dockerfile

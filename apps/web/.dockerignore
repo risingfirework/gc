@@ -1,0 +1,9 @@
+.git
+.next
+node_modules
+out
+coverage
+*.log
+*.tsbuildinfo
+.env*
+Dockerfile

@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tka}
+      POSTGRES_USER: ${POSTGRES_USER:-tka}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tka_local_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tka}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    image: migrate/migrate:v4.18.3
+    command:
+      - -path=/migrations
+      - -database
+      - postgres://${POSTGRES_USER:-tka}:${POSTGRES_PASSWORD:-tka_local_password}@postgres:5432/${POSTGRES_DB:-tka}?sslmode=disable
+      - up
+    volumes:
+      - ./apps/backend/db/migrations:/migrations:ro
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  seed:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-tka_local_password}
+    command:
+      - psql
+      - -v
+      - ON_ERROR_STOP=1
+      - -h
+      - postgres
+      - -U
+      - ${POSTGRES_USER:-tka}
+      - -d
+      - ${POSTGRES_DB:-tka}
+      - -f
+      - /seeds/001_development.sql
+    volumes:
+      - ./apps/backend/db/seeds:/seeds:ro
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    restart: "no"
+
+  backend:
+    build: ./apps/backend
+    environment:
+      APP_PORT: 8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-tka}:${POSTGRES_PASSWORD:-tka_local_password}@postgres:5432/${POSTGRES_DB:-tka}?sslmode=disable
+      REDIS_ADDR: redis:6379
+      JWT_SECRET: ${JWT_SECRET:-development-only-secret-change-me-now}
+      JWT_ISSUER: ${JWT_ISSUER:-tka-api}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      ALLOWED_ORIGIN: http://localhost:3000
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-development-payment-secret-change-now}
+      PAYMENT_CHECKOUT_URL: ${PAYMENT_CHECKOUT_URL:-https://payment-gateway.example/checkout}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
+      APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    expose: ["8080"]
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "/tka-api", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: /api/v1
+        NEXT_PUBLIC_DEMO_EXAM_ID: ${NEXT_PUBLIC_DEMO_EXAM_ID:-30000000-0000-0000-0000-000000000001}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        API_PROXY_TARGET: http://backend:8080
+    ports: ["0.0.0.0:3000:3000"]
+    depends_on:
+      backend: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

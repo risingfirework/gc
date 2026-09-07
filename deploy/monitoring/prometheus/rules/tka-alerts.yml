@@ -1,0 +1,77 @@
+groups:
+  - name: tka-api-slo
+    rules:
+      - alert: TKAAPIHighErrorRate
+        expr: |
+          (
+            sum(rate(tka_http_requests_total{route=~"/api/.*",status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(tka_http_requests_total{route=~"/api/.*"}[5m])), 0.001)
+          ) > 0.01
+          and sum(rate(tka_http_requests_total{route=~"/api/.*"}[5m])) > 0.1
+        for: 5m
+        labels: { severity: critical, component: api }
+        annotations:
+          summary: "TKA API error rate di atas 1%"
+          description: "Rasio HTTP 5xx selama 5 menit telah melewati 1%."
+          runbook_url: "https://internal.example/runbooks/tka#api-error-rate"
+
+      - alert: TKAAPIHighP95Latency
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(tka_http_request_duration_seconds_bucket{route=~"/api/.*"}[5m]))
+          ) > 0.15
+        for: 10m
+        labels: { severity: warning, component: api }
+        annotations:
+          summary: "TKA API p95 di atas 150 ms"
+          description: "Latency p95 melewati target selama 10 menit."
+
+      - alert: TKAAPIDown
+        expr: up{job="tka-api"} == 0
+        for: 1m
+        labels: { severity: critical, component: api }
+        annotations:
+          summary: "Instance TKA API tidak dapat di-scrape"
+          description: "Prometheus gagal menjangkau {{ $labels.instance }}."
+
+  - name: tka-redis
+    rules:
+      - alert: TKARedisCPUHigh
+        expr: |
+          100 * (
+            rate(redis_cpu_sys_seconds_total[5m])
+            + rate(redis_cpu_user_seconds_total[5m])
+          ) > 80
+        for: 5m
+        labels: { severity: critical, component: redis }
+        annotations:
+          summary: "Redis CPU di atas 80%"
+          description: "Redis {{ $labels.instance }} memakai lebih dari 80% satu core selama 5 menit."
+          runbook_url: "https://internal.example/runbooks/tka#redis-cpu"
+
+      - alert: TKARedisMemoryHigh
+        expr: redis_memory_used_bytes / clamp_min(redis_memory_max_bytes, 1) > 0.85
+        for: 10m
+        labels: { severity: warning, component: redis }
+        annotations:
+          summary: "Redis memory di atas 85%"
+          description: "Redis {{ $labels.instance }} mendekati maxmemory."
+
+      - alert: TKARedisExporterDown
+        expr: up{job="redis-exporter"} == 0
+        for: 2m
+        labels: { severity: critical, component: redis }
+        annotations:
+          summary: "Redis exporter tidak tersedia"
+          description: "Prometheus gagal mengambil metrik Redis Cluster."
+
+  - name: tka-backup
+    rules:
+      - alert: TKADatabaseBackupStale
+        expr: absent(tka_database_backup_last_success_timestamp_seconds) or (time() - tka_database_backup_last_success_timestamp_seconds > 93600)
+        for: 15m
+        labels: { severity: critical, component: database }
+        annotations:
+          summary: "Backup PostgreSQL lebih lama dari 26 jam"
+          description: "Backup harian belum berhasil dalam jendela yang ditentukan."

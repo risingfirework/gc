@@ -1,0 +1,35 @@
+.env
+.env.local
+.env.production
+secrets/*.txt
+secrets/*.pem
+secrets/*.key
+!secrets/README.md
+deploy/nginx/runtime/*.previous
+deploy/nginx/runtime/*.tmp.*
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Go
+apps/backend/bin/
+apps/backend/coverage.out
+.gocache/
+.tmp-go-cache/
+.cache/
+
+# Next.js
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
+*.tsbuildinfo
+
+# Flutter / Android
+apps/mobile/.dart_tool/
+apps/mobile/build/
+apps/mobile/.flutter-plugins*
+apps/mobile/android/.gradle/
+apps/mobile/android/local.properties
+# Local development toolchains
+.tools/
