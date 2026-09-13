@@ -1,0 +1,13 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  settings:
+    staticcheck:
+      # QF1001 (suggest De Morgan's law) sifatnya kosmetik dan sering
+      # menyarankan bentuk yang justru lebih sulit dibaca; nonaktifkan.
+      checks:
+        - all
+        - -QF1001

@@ -1,0 +1,1 @@
+ALTER TABLE packages ADD COLUMN cbt_token VARCHAR(16);

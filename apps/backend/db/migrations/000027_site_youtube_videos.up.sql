@@ -1,0 +1,2 @@
+ALTER TABLE site_settings ADD COLUMN youtube_videos JSONB NOT NULL DEFAULT '[]'::jsonb;
+UPDATE site_settings SET youtube_videos = jsonb_build_array(jsonb_build_object('id','video-1','title','Video promosi','url',youtube_video_url)) WHERE singleton=TRUE AND youtube_video_url <> '';

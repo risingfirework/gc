@@ -21,15 +21,32 @@ func (s *ExamService) GetResult(ctx context.Context, userID, userExamID string) 
 	return s.analytics.GetExamResult(ctx, userID, userExamID)
 }
 
-func (s *ExamService) GetGlobalRanking(ctx context.Context, currentUserID, level string) ([]domain.GlobalRankingEntry, error) {
+func (s *ExamService) GetGlobalRanking(ctx context.Context, currentUserID, level, mode string, page, perPage int) (domain.Page[domain.GlobalRankingEntry], error) {
 	if !validUUID(currentUserID) {
-		return nil, domain.ErrInvalidInput
+		return domain.Page[domain.GlobalRankingEntry]{}, domain.ErrInvalidInput
 	}
 	level = strings.TrimSpace(level)
 	if level != "" && !validJenjang(level) {
-		return nil, domain.ErrInvalidInput
+		return domain.Page[domain.GlobalRankingEntry]{}, domain.ErrInvalidInput
 	}
-	return s.analytics.ListGlobalRanking(ctx, currentUserID, level, 100)
+	mode = strings.TrimSpace(mode)
+	if mode != "" && mode != "activity" {
+		mode = ""
+	}
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 {
+		perPage = 50
+	}
+	if perPage > 200 {
+		perPage = 200
+	}
+	entries, total, err := s.analytics.ListGlobalRanking(ctx, currentUserID, level, mode, perPage, (page-1)*perPage)
+	if err != nil {
+		return domain.Page[domain.GlobalRankingEntry]{}, err
+	}
+	return domain.NewPage(entries, page, perPage, total), nil
 }
 
 // CalculateExamScore supports deterministic weighted scoring and a bounded 2PL IRT estimate.

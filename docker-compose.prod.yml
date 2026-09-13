@@ -125,7 +125,15 @@ services:
       SENTRY_DSN_FILE: /run/secrets/sentry_dsn
       SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.05}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
-    secrets: [database_url, redis_password, jwt_secret, payment_webhook_secret, sentry_dsn]
+      PUBLIC_WEB_URL: https://${APP_DOMAIN:?set APP_DOMAIN in .env.production}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-720h}
+      TRUST_PROXY: ${TRUST_PROXY:-true}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+      SMTP_FROM: ${SMTP_FROM:-}
+    secrets: [database_url, redis_password, jwt_secret, payment_webhook_secret, sentry_dsn, smtp_password]
     expose: ["8080"]
     networks: [edge, data]
     depends_on:
@@ -206,6 +214,8 @@ secrets:
     file: "${PAYMENT_WEBHOOK_SECRET_FILE:-./secrets/payment_webhook_secret.txt}"
   sentry_dsn:
     file: "${SENTRY_DSN_FILE:-./secrets/sentry_dsn.txt}"
+  smtp_password:
+    file: "${SMTP_PASSWORD_FILE:-./secrets/smtp_password.txt}"
 
 networks:
   edge:

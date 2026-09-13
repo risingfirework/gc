@@ -36,6 +36,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, domain.ErrInvalidInput):
 			writeError(w, http.StatusUnprocessableEntity, err.Error())
+		case errors.Is(err, domain.ErrInvalidReferralCode):
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
 		case errors.Is(err, domain.ErrEmailAlreadyExists):
 			writeError(w, http.StatusConflict, "email already registered")
 		default:
@@ -61,6 +63,25 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.logger.ErrorContext(r.Context(), "login user", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	var input domain.RefreshRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	response, err := h.auth.Refresh(r.Context(), input.RefreshToken)
+	if err != nil {
+		if errors.Is(err, domain.ErrSessionInvalid) {
+			writeError(w, http.StatusUnauthorized, "Sesi berakhir. Silakan masuk kembali.")
+			return
+		}
+		h.logger.ErrorContext(r.Context(), "refresh session", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
@@ -132,6 +153,108 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
+	var input domain.Verify2FARequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	response, err := h.auth.Verify2FA(r.Context(), input.MFAToken, input.Code)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrSessionInvalid):
+			writeError(w, http.StatusUnauthorized, "Sesi dua langkah sudah kedaluwarsa. Silakan masuk kembali.")
+		case errors.Is(err, domain.Err2FANotEnabled):
+			writeError(w, http.StatusConflict, domain.Err2FANotEnabled.Error())
+		case errors.Is(err, domain.ErrInvalid2FACode):
+			writeError(w, http.StatusUnprocessableEntity, domain.ErrInvalid2FACode.Error())
+		default:
+			h.logger.ErrorContext(r.Context(), "verify 2fa", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *AuthHandler) TwoFactorSetup(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	response, err := h.auth.Setup2FA(r.Context(), claims)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.Err2FAUnsupportedRole):
+			writeError(w, http.StatusForbidden, domain.Err2FAUnsupportedRole.Error())
+		default:
+			h.logger.ErrorContext(r.Context(), "setup 2fa", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *AuthHandler) TwoFactorEnable(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	var input domain.TwoFactorCodeRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	if err := h.auth.Enable2FA(r.Context(), claims, input.Code); err != nil {
+		switch {
+		case errors.Is(err, domain.Err2FAUnsupportedRole):
+			writeError(w, http.StatusForbidden, domain.Err2FAUnsupportedRole.Error())
+		case errors.Is(err, domain.Err2FAAlreadyEnabled):
+			writeError(w, http.StatusConflict, domain.Err2FAAlreadyEnabled.Error())
+		case errors.Is(err, domain.Err2FANotEnabled):
+			writeError(w, http.StatusUnprocessableEntity, "Lakukan pemindaian QR terlebih dahulu.")
+		case errors.Is(err, domain.ErrInvalid2FACode):
+			writeError(w, http.StatusUnprocessableEntity, domain.ErrInvalid2FACode.Error())
+		default:
+			h.logger.ErrorContext(r.Context(), "enable 2fa", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"totp_enabled": true})
+}
+
+func (h *AuthHandler) TwoFactorDisable(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	var input domain.TwoFactorCodeRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	if err := h.auth.Disable2FA(r.Context(), claims, input.Code); err != nil {
+		switch {
+		case errors.Is(err, domain.Err2FAUnsupportedRole):
+			writeError(w, http.StatusForbidden, domain.Err2FAUnsupportedRole.Error())
+		case errors.Is(err, domain.Err2FANotEnabled):
+			writeError(w, http.StatusConflict, domain.Err2FANotEnabled.Error())
+		case errors.Is(err, domain.ErrInvalid2FACode):
+			writeError(w, http.StatusUnprocessableEntity, domain.ErrInvalid2FACode.Error())
+		default:
+			h.logger.ErrorContext(r.Context(), "disable 2fa", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"totp_enabled": false})
+}
+
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {
@@ -193,7 +316,7 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 	limit := int64(maxRequestBody)
-	if strings.Contains(r.URL.Path, "/questions") || strings.HasSuffix(r.URL.Path, "/packages/bundle") {
+	if strings.Contains(r.URL.Path, "/questions") || strings.HasSuffix(r.URL.Path, "/packages/bundle") || strings.HasSuffix(r.URL.Path, "/appeal") {
 		limit = maxQuestionRequestBody
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit)

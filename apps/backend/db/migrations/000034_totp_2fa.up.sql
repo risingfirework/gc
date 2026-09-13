@@ -1,0 +1,7 @@
+BEGIN;
+
+ALTER TABLE users
+    ADD COLUMN totp_secret_base32 TEXT,
+    ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+COMMIT;

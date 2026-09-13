@@ -24,6 +24,10 @@ func (s *TeacherService) CreatePackage(ctx context.Context, publisherID string, 
 	input.Description = strings.TrimSpace(input.Description)
 	input.Kode = strings.ToUpper(strings.TrimSpace(input.Kode))
 	input.Status = domain.StatusInactive
+	applyPackagePolicies(&input)
+	if input.ExamType == "cbt" {
+		input.Status = domain.StatusActive
+	}
 	if validateAdminPackage(input) != nil {
 		return nil, domain.ErrInvalidInput
 	}
@@ -33,8 +37,24 @@ func (s *TeacherService) UpdatePackage(ctx context.Context, publisherID, id stri
 	input.Title = strings.TrimSpace(input.Title)
 	input.Description = strings.TrimSpace(input.Description)
 	input.Kode = strings.ToUpper(strings.TrimSpace(input.Kode))
+	input.ExamType = strings.ToLower(strings.TrimSpace(input.ExamType))
+	if !validUUID(id) {
+		return nil, domain.ErrInvalidInput
+	}
+	if input.ExamType == "cbt" && input.StartDate == "" && input.EndDate == "" {
+		existing, err := s.repository.GetPackage(ctx, publisherID, id)
+		if err != nil {
+			return nil, err
+		}
+		input.StartDate = strings.TrimSpace(existing.StartDate)
+		input.EndDate = strings.TrimSpace(existing.EndDate)
+	}
 	input.Status = domain.StatusInactive
-	if !validUUID(id) || validateAdminPackage(input) != nil {
+	applyPackagePolicies(&input)
+	if input.ExamType == "cbt" {
+		input.Status = domain.StatusActive
+	}
+	if validateAdminPackage(input) != nil {
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repository.UpdatePackage(ctx, publisherID, id, input)
@@ -44,6 +64,10 @@ func (s *TeacherService) CreatePackageBundle(ctx context.Context, publisherID st
 	input.Package.Description = strings.TrimSpace(input.Package.Description)
 	input.Package.Kode = strings.ToUpper(strings.TrimSpace(input.Package.Kode))
 	input.Package.Status = domain.StatusInactive
+	applyPackagePolicies(&input.Package)
+	if input.Package.ExamType == "cbt" {
+		input.Package.Status = domain.StatusActive
+	}
 	if input.Exam != nil {
 		input.Exam.Title = strings.TrimSpace(input.Exam.Title)
 		input.Exam.Status = normalizeAdminStatus(input.Exam.Status)
@@ -85,6 +109,24 @@ func (s *TeacherService) DeleteExam(ctx context.Context, publisherID, id string)
 	}
 	return s.repository.DeleteExam(ctx, publisherID, id)
 }
+func (s *TeacherService) ListCBTPublishSettings(ctx context.Context, publisherID string) ([]domain.CBTPublishSetting, error) {
+	if !validUUID(publisherID) {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repository.ListCBTPublishSettings(ctx, publisherID)
+}
+func (s *TeacherService) SetExamPublishPembahasan(ctx context.Context, publisherID, examID string, publish bool) (*domain.CBTPublishSetting, error) {
+	if !validUUID(publisherID) || !validUUID(examID) {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repository.SetExamPublishPembahasan(ctx, publisherID, examID, publish)
+}
+func (s *TeacherService) ListCBTParticipants(ctx context.Context, publisherID, examID string) ([]domain.CBTParticipant, error) {
+	if !validUUID(publisherID) || !validUUID(examID) {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repository.ListCBTParticipants(ctx, publisherID, examID)
+}
 func (s *TeacherService) CreateQuestion(ctx context.Context, publisherID string, input domain.AdminQuestionRequest) (*domain.AdminQuestion, error) {
 	input = normalizeQuestion(input)
 	input.Status = normalizeAdminStatus(input.Status)
@@ -107,6 +149,17 @@ func (s *TeacherService) DeleteQuestion(ctx context.Context, publisherID, id str
 	}
 	return s.repository.DeleteQuestion(ctx, publisherID, id)
 }
+func (s *TeacherService) BulkDeleteQuestions(ctx context.Context, publisherID string, ids []string, packageID string) (int, error) {
+	for _, id := range ids {
+		if !validUUID(id) {
+			return 0, domain.ErrInvalidInput
+		}
+	}
+	if len(ids) == 0 && (!validUUID(packageID) || packageID == "") {
+		return 0, domain.ErrInvalidInput
+	}
+	return s.repository.BulkDeleteQuestions(ctx, publisherID, ids, packageID)
+}
 
 func (s *TeacherService) UpdatePayoutAccount(ctx context.Context, publisherID string, input domain.TeacherPayoutAccount) (*domain.TeacherPayoutAccount, error) {
 	input.Method = strings.ToLower(strings.TrimSpace(input.Method))
@@ -120,11 +173,11 @@ func (s *TeacherService) UpdatePayoutAccount(ctx context.Context, publisherID st
 	return s.repository.UpdatePayoutAccount(ctx, publisherID, input)
 }
 
-func (s *TeacherService) CreatePayoutRequest(ctx context.Context, publisherID string) (*domain.TeacherWithdrawalRequest, error) {
-	if !validUUID(publisherID) {
+func (s *TeacherService) CreatePayoutRequest(ctx context.Context, publisherID string, amount float64) (*domain.TeacherWithdrawalRequest, error) {
+	if !validUUID(publisherID) || amount <= 0 {
 		return nil, domain.ErrInvalidInput
 	}
-	return s.repository.CreatePayoutRequest(ctx, publisherID)
+	return s.repository.CreatePayoutRequest(ctx, publisherID, amount)
 }
 
 func (s *TeacherService) CancelPayoutRequest(ctx context.Context, publisherID, requestID string) (*domain.TeacherWithdrawalRequest, error) {
@@ -132,6 +185,16 @@ func (s *TeacherService) CancelPayoutRequest(ctx context.Context, publisherID, r
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repository.CancelPayoutRequest(ctx, publisherID, requestID)
+}
+
+// Appeal memvalidasi bukti sanggah (data-URI gambar) lalu mengeksekusinya.
+// Hanya guru dengan status rejected yang bisa mengajukan sanggah.
+func (s *TeacherService) Appeal(ctx context.Context, userID string, input domain.TeacherAppealRequest) error {
+	image := strings.TrimSpace(input.AppealImageDataURL)
+	if !strings.HasPrefix(image, "data:image/") || len(image) > 6<<20 {
+		return domain.ErrInvalidInput
+	}
+	return s.repository.Appeal(ctx, userID, image)
 }
 
 var _ domain.TeacherService = (*TeacherService)(nil)

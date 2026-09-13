@@ -1,0 +1,1 @@
+ALTER TABLE site_settings DROP COLUMN youtube_video_url;

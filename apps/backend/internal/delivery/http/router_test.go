@@ -24,11 +24,14 @@ type authStub struct {
 }
 
 type cbtStub struct {
-	start func(context.Context, string, string) (*domain.ExamStartResponse, error)
+	start func(context.Context, string, string, string) (*domain.ExamStartResponse, error)
 }
 
-func (s cbtStub) StartExam(ctx context.Context, userID, examID string) (*domain.ExamStartResponse, error) {
-	return s.start(ctx, userID, examID)
+func (s cbtStub) LookupCBT(context.Context, string, string) ([]domain.CBTLookupPackage, error) {
+	return nil, nil
+}
+func (s cbtStub) StartExam(ctx context.Context, userID, examID, token string) (*domain.ExamStartResponse, error) {
+	return s.start(ctx, userID, examID, token)
 }
 func (s cbtStub) ListPackageExams(context.Context, string, string) ([]domain.ExamSummary, error) {
 	return nil, nil
@@ -79,6 +82,21 @@ func (s authStub) ResetPassword(ctx context.Context, input domain.ResetPasswordR
 		return nil
 	}
 	return s.reset(ctx, input)
+}
+func (s authStub) Verify2FA(context.Context, string, string) (*domain.LoginResponse, error) {
+	return nil, domain.ErrInvalid2FACode
+}
+func (s authStub) Setup2FA(context.Context, domain.AuthClaims) (*domain.TwoFactorSetupResponse, error) {
+	return nil, domain.Err2FAUnsupportedRole
+}
+func (s authStub) Enable2FA(context.Context, domain.AuthClaims, string) error {
+	return domain.Err2FAUnsupportedRole
+}
+func (s authStub) Disable2FA(context.Context, domain.AuthClaims, string) error {
+	return domain.Err2FAUnsupportedRole
+}
+func (s authStub) Refresh(context.Context, string) (*domain.LoginResponse, error) {
+	return nil, domain.ErrSessionInvalid
 }
 
 func TestAuthRoutes(t *testing.T) {
@@ -154,7 +172,7 @@ func TestCBTRouteRequiresJWTAndPassesAuthenticatedUser(t *testing.T) {
 			return &domain.AuthClaims{UserID: userID, JTI: "jti"}, nil
 		},
 	}
-	cbt := cbtStub{start: func(_ context.Context, gotUserID, gotExamID string) (*domain.ExamStartResponse, error) {
+	cbt := cbtStub{start: func(_ context.Context, gotUserID, gotExamID, gotToken string) (*domain.ExamStartResponse, error) {
 		if gotUserID != userID || gotExamID != examID {
 			t.Fatalf("user=%s exam=%s", gotUserID, gotExamID)
 		}

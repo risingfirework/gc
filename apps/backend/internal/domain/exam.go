@@ -11,6 +11,8 @@ type Exam struct {
 	PassingScore    float64
 	ScoringMethod   string
 	CreatedAt       time.Time
+	PackageExamType string
+	PackageCBTToken string
 }
 
 type QuestionOption struct {
@@ -23,6 +25,7 @@ const (
 	QuestionTypeSingleChoice   = "single_choice"
 	QuestionTypeMultipleChoice = "multiple_choice"
 	QuestionTypeCategory       = "category"
+	QuestionTypeEssay          = "essay"
 	PresentationTypeSingle     = "single"
 	PresentationTypeGroup      = "group"
 )

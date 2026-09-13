@@ -3,32 +3,45 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { APIError, api, GlobalRanking, OwnedPackage, Package, PackageExam, SiteSettings, tokenStore, User, UserPricingPolicy } from "@/services/api";
+import { APIError, api, CBTLookupPackage, GlobalRanking, MyTransaction, OwnedPackage, Package, PackageExam, PendingTransaction, SiteSettings, tokenStore, User, UserPricingPolicy } from "@/services/api";
 import AdminDashboard from "@/components/AdminDashboard";
 import TeacherDashboard from "@/components/TeacherDashboard";
+import AffiliateDashboard from "@/components/AffiliateDashboard";
 import ProfileEditor from "@/components/ProfileEditor";
 import StudentMenu from "@/components/StudentMenu";
+import NotificationBell from "@/components/NotificationBell";
 import TestimonialSlider from "@/components/TestimonialSlider";
 import HeroSlider from "@/components/HeroSlider";
 import CatalogStats from "@/components/CatalogStats";
 import BrandLogo from "@/components/BrandLogo";
+import { VideoSection } from "@/components/YouTubeEmbed";
 
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
-type DashboardView = "belajar" | "katalog" | "ranking" | "profil";
+type DashboardView = "belajar" | "katalog" | "ranking" | "video" | "profil" | "cbt";
 type RankingLevel = NonNullable<User["school_level"]>;
 function parseDashboardView(value: string | null): DashboardView | undefined {
-  return value === "belajar" || value === "katalog" || value === "ranking" || value === "profil" ? value : undefined;
+  return value === "belajar" || value === "katalog" || value === "ranking" || value === "video" || value === "profil" || value === "cbt" ? value : undefined;
 }
 function priceAfterDiscount(price: number, discountPercent: number) {
   return Math.round(price * (100 - discountPercent)) / 100;
 }
 function PackageGrid({ items, ownedItems, onBuy, policy }: { items: Package[]; ownedItems: OwnedPackage[]; onBuy: (item: Package) => void; policy?: UserPricingPolicy }) {
   const ownedPackageIDs = new Set(ownedItems.map((item) => item.id));
-  return <div className="grid">{items.map((item) => {
+  return <div className="admin-package-grid student-catalog-grid">{items.map((item) => {
     const isOwned = ownedPackageIDs.has(item.id);
     const hasDiscount = item.price > 0 && (policy?.discount_percent ?? 0) > 0;
     const finalPrice = priceAfterDiscount(item.price, policy?.discount_percent ?? 0);
-    return <article className={`card package-card ${isOwned ? "catalog-owned" : ""}`} key={item.id}><span className="discount">{isOwned ? "SUDAH DIMILIKI" : item.price === 0 ? "GRATIS" : hasDiscount ? `DISKON ${policy?.discount_percent}%` : `AKTIF ${item.validity_days} HARI`}</span><h3>{item.title}</h3><p>{item.description}</p><CatalogStats sales={item.sales_count} views={item.view_count}/><div className={`price ${hasDiscount ? "price-discounted" : ""}`}>{hasDiscount && <small>{rupiah.format(item.price)}</small>}{item.price === 0 ? "Gratis" : rupiah.format(finalPrice)}</div><button className="button full" disabled={isOwned || policy?.account_active === false} onClick={() => onBuy(item)}>{isOwned ? "Paket sudah dimiliki" : item.price === 0 ? "Ambil Gratis" : policy?.account_active === false ? "Pembelian ditahan" : "Beli paket"}</button></article>;
+    return <article className={`card admin-package-card ${isOwned ? "catalog-owned" : ""}`} key={item.id}>
+      <div className="admin-package-card-top"><span className="discount">{isOwned ? "SUDAH DIMILIKI" : item.price === 0 ? "GRATIS" : hasDiscount ? `DISKON ${policy?.discount_percent}%` : `AKTIF ${item.validity_days} HARI`}</span><span className="package-code">{item.kode}</span></div>
+      <span className="package-jenjang">{item.jenjang}</span>
+      <h3>{item.title}</h3>
+      <p>{item.description}</p>
+      <strong>{item.price === 0 ? "Gratis" : rupiah.format(finalPrice)}</strong>
+      <small>{item.exam_count} ujian · {item.question_count} soal</small>
+      {item.publisher_email && <small className="package-publisher">Pembuat: {item.publisher_email}</small>}
+      <CatalogStats sales={item.sales_count} views={item.view_count}/>
+      <button className="button full" disabled={isOwned || policy?.account_active === false} onClick={() => onBuy(item)}>{isOwned ? "Paket sudah dimiliki" : item.price === 0 ? "Ambil Gratis" : policy?.account_active === false ? "Pembelian ditahan" : "Beli paket"}</button>
+    </article>;
   })}</div>;
 }
 function OwnedPackageGrid({ items, examsByPackage, onStart, onViewResult }: { items: OwnedPackage[]; examsByPackage: Record<string, PackageExam[] | undefined>; onStart: (examID: string) => void; onViewResult: (attemptID: string) => void }) {
@@ -51,6 +64,29 @@ function formatDuration(seconds: number) {
   const ss = String(s).padStart(2, "0");
   return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
 }
+function CBTLookupPanel({ token, onToken, onLookup }: { token: string; onToken: (value: string) => void; onLookup: () => void }) {
+  return <div className="card cbt-lookup-card">
+    <p className="eyebrow">Token ujian CBT</p>
+    <h3>Mulai ujian dengan token</h3>
+    <p className="muted">Masukkan token yang diberikan oleh pembuat paket untuk menemukan ujian milikmu.</p>
+    <div className="cbt-token-row">
+      <input type="text" value={token} onChange={(event) => onToken(event.target.value.toUpperCase())} placeholder="Contoh: 9K4PT2" maxLength={20} autoComplete="off"/>
+      <button className="button" onClick={onLookup}>Cari ujian</button>
+    </div>
+  </div>;
+}
+function CBTResultPanel({ packages, onSelect, onReview }: { packages: CBTLookupPackage[]; onSelect: (examID: string) => void; onReview: (attemptID: string) => void }) {
+  if (packages.length === 0) return <div className="card message-box"><p className="empty-state">Tidak ada paket ujian aktif yang cocok dengan token tersebut.</p></div>;
+  return <div className="package-exams">{packages.map((item) => <article className="card package-card owned cbt-result-card" key={item.id}>
+    <span className="discount">PAKET CBT</span><h3>{item.title}</h3><p>{item.kode} · {item.jenjang}{item.price === 0 ? " · Gratis" : ""}</p>
+    {item.exams.length === 0
+      ? <p className="empty-state">Belum ada ujian aktif di paket ini.</p>
+      : <div className="package-exams">{item.exams.map((exam) => <div className="exam-row" key={exam.exam_id}><div className="exam-info"><strong>{exam.title}</strong><span>{exam.total_questions} soal · {exam.duration_minutes} menit · Syarat lulus {exam.passing_score.toFixed(0)}</span></div>{exam.submitted ? exam.publish_pembahasan
+        ? (exam.user_exam_id ? <button className="button secondary" onClick={() => onReview(exam.user_exam_id!)}>Lihat analitik</button> : <span className="exam-score">Sudah dikerjakan</span>)
+        : <span className="exam-score">Sudah dikerjakan</span>
+        : <button className="button" onClick={() => onSelect(exam.exam_id)}>Mulai ujian</button>}</div>)}</div>}
+  </article>)}</div>;
+}
 
 export default function Dashboard() {
   return <Suspense fallback={<main><div className="container"><div className="exam-loader"/><p>Memuat panel siswa...</p></div></main>}><DashboardContent/></Suspense>;
@@ -66,13 +102,20 @@ function DashboardContent() {
   const [examsByPackage, setExamsByPackage] = useState<Record<string, PackageExam[] | undefined>>({});
   const [ranking, setRanking] = useState<GlobalRanking[]>([]);
   const [rankingLevel, setRankingLevel] = useState<RankingLevel>("SD");
+  const [rankingMode, setRankingMode] = useState<"score" | "activity">("score");
+  const [myTransactions, setMyTransactions] = useState<MyTransaction[]>([]);
+  const [pendingPayments, setPendingPayments] = useState<PendingTransaction[]>([]);
   const [selected, setSelected] = useState<Package>();
   const [pricingPolicy, setPricingPolicy] = useState<UserPricingPolicy>();
   const [method, setMethod] = useState<"qris" | "virtual_account" | "e_wallet">("qris");
+  const [referralCode, setReferralCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState("");
   const [siteSettings,setSiteSettings]=useState<SiteSettings>();
+  const [cbtToken, setCbtToken] = useState("");
+  const [cbtResults, setCbtResults] = useState<CBTLookupPackage[] | null>(null);
+  const [cbtSearching, setCbtSearching] = useState(false);
   const catalogPackages = user ? packages.filter((item) => item.jenjang === user.school_level) : [];
 
   useEffect(() => {
@@ -101,13 +144,35 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!tokenStore.hasToken()) return;
-    api.globalRanking(rankingLevel).then(setRanking).catch((reason) => setError(reason instanceof Error ? reason.message : "Ranking gagal dimuat."));
-  }, [router, rankingLevel]);
+    api.globalRanking(rankingLevel, 1, 50, rankingMode === "activity" ? "activity" : undefined).then((result) => setRanking(result.items)).catch((reason) => setError(reason instanceof Error ? reason.message : "Ranking gagal dimuat."));
+  }, [router, rankingLevel, rankingMode]);
+
+  useEffect(() => {
+    if (!tokenStore.hasToken()) return;
+    api.myTransactions().then(setMyTransactions).catch(() => undefined);
+    api.pendingTransactions().then(setPendingPayments).catch(() => undefined);
+  }, [router]);
 
   async function logout() {
     if (loggingOut) return;
     setLoggingOut(true);
     try { await api.logout(); } finally { router.replace("/"); }
+  }
+
+  async function downloadInvoice(transactionID: string) {
+    try {
+      const blob = await api.downloadInvoice(transactionID);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "invoice.pdf";
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (reason) {
+      setError(reason instanceof APIError ? reason.message : "Invoice gagal diunduh.");
+    }
   }
 
   async function checkout() {
@@ -116,19 +181,32 @@ function DashboardContent() {
     setError("");
     const paymentWindow = window.open("about:blank", "tka-payment", "popup,width=520,height=760");
     try {
-      const response = await api.checkout(selected.id, method, `${crypto.randomUUID()}-${selected.id}`);
+      const response = await api.checkout(selected.id, method, `${crypto.randomUUID()}-${selected.id}`, referralCode.trim() || undefined);
       if (paymentWindow) paymentWindow.location.replace(response.payment_url);
       else window.location.assign(response.payment_url);
       setSelected(undefined);
+      api.pendingTransactions().then(setPendingPayments).catch(() => undefined);
     } catch (reason) {
       paymentWindow?.close();
       setError(reason instanceof APIError ? reason.message : "Checkout gagal dibuat.");
     } finally { setLoading(false); }
   }
 
+  function resumePayment(item: PendingTransaction) {
+    const paymentWindow = window.open(item.payment_url, "tka-payment", "popup,width=520,height=760");
+    if (!paymentWindow) window.location.assign(item.payment_url);
+  }
+
   function openPackage(item:Package) {
     setSelected(item);
+    setReferralCode("");
     void api.trackPackageView(item.id).then((viewCount)=>setPackages((current)=>current.map((pkg)=>pkg.id===item.id?{...pkg,view_count:viewCount}:pkg))).catch(()=>undefined);
+  }
+
+  function lookupCBT() {
+    if (cbtToken.trim().length < 4 || cbtSearching) return;
+    setCbtSearching(true);
+    api.cbtLookup(cbtToken.trim()).then((results) => { setCbtResults(results); setError(""); }).catch((reason) => setError(reason instanceof Error ? reason.message : "Pencarian token gagal.")).finally(() => setCbtSearching(false));
   }
 
   async function claimFree() {
@@ -144,17 +222,20 @@ function DashboardContent() {
     } finally { setLoading(false); }
   }
 
-  if (user?.role === "admin") {
+  if (user?.role === "admin" || user?.role === "owner" || user?.role === "finance") {
     return <AdminDashboard user={user} onLogout={() => void logout()} loggingOut={loggingOut} onUserUpdate={setUser}/>;
   }
   if (user?.role === "teacher") {
     return <TeacherDashboard user={user} onLogout={() => void logout()} loggingOut={loggingOut} onUserUpdate={setUser}/>;
   }
+  if (user?.role === "affiliate") {
+    return <AffiliateDashboard user={user} onLogout={() => void logout()} loggingOut={loggingOut} onUserUpdate={setUser}/>;
+  }
 
   return <main><div className="container">
     <nav className="dashboard-nav">
-      <Link className="brand" href="/dashboard"><BrandLogo logoDataURL={siteSettings?.logo_data_url}/>{siteSettings?.platform_name??"TKA Juara"}</Link>
-      <StudentMenu active={activeView} loggingOut={loggingOut} onLogout={() => void logout()} />
+      <Link className="brand" href="/dashboard"><BrandLogo logoDataURL={siteSettings?.logo_data_url}/>{siteSettings?.platform_name??""}</Link>
+      <span className="nav-actions"><NotificationBell/><StudentMenu active={activeView} loggingOut={loggingOut} onLogout={() => void logout()} /></span>
     </nav>
 
     <section className="dashboard">
@@ -165,6 +246,16 @@ function DashboardContent() {
         <section className="dashboard-section panel-view">
           <div className="section-heading"><div><p className="eyebrow">Belajar saya</p><h2>Paket belajar aktif</h2></div></div>
           {myPackages.length === 0 ? <div className="card empty-state">Kamu belum memiliki paket belajar. Jelajahi katalog untuk mulai berlatih.</div> : <OwnedPackageGrid items={myPackages} examsByPackage={examsByPackage} onStart={(examID) => router.push(`/cbt/${examID}`)} onViewResult={(attemptID) => router.push(`/dashboard/results/${attemptID}`)} />}
+        </section>
+        <VideoSection videos={siteSettings?.youtube_videos ?? []} eyebrow="Video" title={siteSettings?.platform_name?`Tonton panduan belajar ${siteSettings.platform_name}`:"Tonton panduan belajar"} lead="Pelajari alur tryout, analisis nilai, dan tips biar makin siap."/>
+        <section className="dashboard-section panel-view">
+          <div className="section-heading"><div><p className="eyebrow">Pembelian</p><h2>Riwayat transaksi</h2></div></div>
+          {myTransactions.length === 0 && pendingPayments.length === 0
+            ? <div className="card empty-state">Belum ada pembelian. Unduh invoice tersedia di sini setelah pembayaran berhasil.</div>
+            : <div className="card transactions-table-card"><div className="transactions-table-wrap"><table className="transactions-table"><thead><tr><th>Invoice</th><th>Paket</th><th>Tanggal</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>
+              {pendingPayments.map((item) => <tr key={item.id}><td><strong>{item.invoice_number}</strong></td><td>{item.package_title}</td><td>{item.expires_at ? `Sampai ${new Date(item.expires_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : "Menunggu"}</td><td>{rupiah.format(item.amount)}</td><td><span className="status-pill pending">Menunggu pembayaran</span></td><td><button type="button" className="button small-btn" onClick={() => resumePayment(item)}>Lanjutkan bayar</button></td></tr>)}
+              {myTransactions.map((item) => <tr key={item.id}><td><strong>{item.invoice_number}</strong></td><td>{item.package_title}</td><td>{new Date(item.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td><td>{rupiah.format(item.amount)}</td><td><span className={`status-pill ${item.status}`}>{item.status === "paid" ? "Lunas" : "Direfund"}</span></td><td><button type="button" className="button secondary small-btn" onClick={() => void downloadInvoice(item.id)}>Unduh invoice</button></td></tr>)}
+            </tbody></table></div></div>}
         </section>
       </>}
 
@@ -179,16 +270,34 @@ function DashboardContent() {
       </section>}
 
       {activeView === "ranking" && <section className="dashboard-section panel-view">
-        <div className="section-heading"><div><p className="eyebrow">Ranking global</p><h2>Nilai terbaik jenjang {rankingLevel}</h2></div><span className="muted">Maksimal 100 siswa</span></div>
-        <div className="content-subtabs">{(["SD", "SMP", "SMA"] as const).map((tab) => <button key={tab} className={rankingLevel === tab ? "active" : ""} onClick={() => setRankingLevel(tab)}>{tab}</button>)}</div>
+        <div className="section-heading"><div><p className="eyebrow">Ranking global</p><h2>Peringkat persentil jenjang {rankingLevel}</h2></div><span className="muted">Maksimal 100 siswa</span></div>
+        <div className="content-subtabs" style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontWeight:700,color:"#3d4257"}}>Jenjang</span>
+          {(["SD", "SMP", "SMA"] as const).map((tab) => <button key={tab} className={rankingLevel === tab ? "active" : ""} onClick={() => setRankingLevel(tab)}>{tab}</button>)}
+          <span style={{width:1,height:20,background:"#dfe2eb",margin:"0 4px"}}/>
+          <span style={{fontWeight:700,color:"#3d4257"}}>Urutkan</span>
+          <button className={rankingMode === "score" ? "active" : ""} onClick={() => setRankingMode("score")}>Persentil</button>
+          <button className={rankingMode === "activity" ? "active" : ""} onClick={() => setRankingMode("activity")}>Aktivitas</button>
+        </div>
         <div className="card ranking-card">
-          {ranking.length === 0 ? <p className="empty-state">Belum ada hasil ujian yang dapat diperingkat.</p> : <div className="ranking-table-wrap"><table className="ranking-table"><thead><tr><th>Peringkat</th><th>Nama pengguna</th><th>Jenjang</th><th>Nilai</th><th>Waktu</th><th>Tanggal</th></tr></thead><tbody>{ranking.map((entry) => <tr key={`${entry.rank}-${entry.display_name}`} className={entry.is_current_user ? "current-user" : ""}><td><span className={`rank-badge rank-${entry.rank}`}>{entry.rank}</span></td><td>{entry.display_name}{entry.is_current_user && <small> Anda</small>}</td><td>{entry.school_level}</td><td><strong>{entry.score.toFixed(2)}</strong></td><td>{formatDuration(entry.duration_seconds)}</td><td>{new Date(entry.finished_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td></tr>)}</tbody></table></div>}
+          {ranking.length === 0 ? <p className="empty-state">Belum ada hasil ujian yang dapat diperingkat.</p> : <div className="ranking-table-wrap"><table className="ranking-table"><thead><tr><th>Peringkat</th><th>Nama pengguna</th><th>Jenjang</th><th>Ujian Selesai</th><th>Persentil</th><th>Terbaik</th><th>Waktu</th><th>Tanggal</th></tr></thead><tbody>{ranking.map((entry) => <tr key={`${entry.rank}-${entry.display_name}`} className={entry.is_current_user ? "current-user" : ""}><td><span className={`rank-badge rank-${entry.rank}`}>{entry.rank}</span></td><td>{entry.display_name}{entry.is_current_user && <small> Anda</small>}</td><td>{entry.school_level}</td><td><strong>{entry.exams_done}</strong></td><td><strong>{entry.score.toFixed(1)}%</strong></td><td>{entry.best_percentile.toFixed(1)}%</td><td>{formatDuration(entry.duration_seconds)}</td><td>{new Date(entry.finished_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td></tr>)}</tbody></table></div>}
         </div>
       </section>}
+
+      {activeView === "video" && ((siteSettings?.youtube_videos ?? []).length === 0
+          ? <section className="dashboard-section panel-view"><div className="section-heading"><div><p className="eyebrow">Video</p><h2>Video panduan & promosi</h2></div></div><div className="card empty-state">Belum ada video yang dipublikasikan oleh pengelola.</div></section>
+          : <section className="dashboard-section panel-view"><VideoSection videos={siteSettings?.youtube_videos ?? []} eyebrow="Video" title="Video panduan & promosi" lead="Pelajari alur tryout, analisis nilai, dan tips biar makin siap."/></section>)}
 
       {activeView === "profil" && <section className="dashboard-section panel-view">
         <div className="section-heading"><div><p className="eyebrow">Profil</p><h2>Informasi akun</h2></div></div>
         {user && <ProfileEditor user={user} onUpdated={setUser} />}
+      </section>}
+
+      {activeView === "cbt" && <section className="dashboard-section panel-view">
+        <div className="section-heading"><div><p className="eyebrow">Ujian CBT</p><h2>Masukkan token ujian</h2></div></div>
+        <CBTLookupPanel token={cbtToken} onToken={setCbtToken} onLookup={lookupCBT}/>
+        {cbtSearching && <div className="card empty-state">Mencari ujian...</div>}
+        {cbtResults !== null && <CBTResultPanel packages={cbtResults} onSelect={(examID) => router.push(`/cbt/${examID}?token=${cbtToken.trim()}`)} onReview={(attemptID) => router.push(`/dashboard/results/${attemptID}`)}/>}
       </section>}
 
       <TestimonialSlider/>
@@ -202,6 +311,8 @@ function DashboardContent() {
       : <div className="modal-backdrop" role="presentation" onMouseDown={() => !loading && setSelected(undefined)}><section className="card checkout-modal" role="dialog" aria-modal="true" aria-labelledby="checkout-title" onMouseDown={(event) => event.stopPropagation()}>
         <button className="modal-close" aria-label="Tutup" onClick={() => setSelected(undefined)}>x</button><p className="eyebrow">Checkout aman</p><h2 id="checkout-title">{selected.title}</h2><div className="checkout-total"><span>Total pembayaran{(pricingPolicy?.discount_percent ?? 0) > 0 && <small>Diskon akun {pricingPolicy?.discount_percent}%</small>}</span><strong>{rupiah.format(priceAfterDiscount(selected.price, pricingPolicy?.discount_percent ?? 0))}</strong></div>
         <label htmlFor="payment-method">Metode pembayaran</label><select id="payment-method" value={method} onChange={(event) => setMethod(event.target.value as typeof method)}><option value="qris">QRIS</option><option value="virtual_account">Virtual Account</option><option value="e_wallet">E-Wallet</option></select>
+        <label htmlFor="referral-code">Kode referral <small>(opsional)</small></label><input id="referral-code" type="text" value={referralCode} onChange={(event) => setReferralCode(event.target.value.toUpperCase())} maxLength={20} placeholder="Contoh: MITRA-XXXX" autoComplete="off"/>
+        <p className="muted">Punya kode rujukan dari teman? Masukkan di sini agar temanmu mendapat komisi.</p>
         <p className="muted">Jendela pembayaran akan dibuka setelah invoice dibuat.</p><button className="button full" disabled={loading} onClick={() => void checkout()}>{loading ? "Membuat invoice..." : "Lanjut ke pembayaran"}</button>
       </section></div>)}
   </div></main>;

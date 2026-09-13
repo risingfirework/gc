@@ -41,7 +41,7 @@ class _TkaAppState extends ConsumerState<TkaApp> {
   @override
   Widget build(BuildContext context) => MaterialApp(
         navigatorKey: navigatorKey,
-        title: 'TKA Juara',
+        title: 'Tryout TKA',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3157D5)),

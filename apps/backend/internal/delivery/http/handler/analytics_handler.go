@@ -34,6 +34,8 @@ func (h *AnalyticsHandler) Result(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, err.Error())
 		case errors.Is(err, domain.ErrExamStillRunning):
 			writeError(w, http.StatusConflict, err.Error())
+		case errors.Is(err, domain.ErrPembahasanNotPublished):
+			writeError(w, http.StatusForbidden, err.Error())
 		default:
 			h.logger.ErrorContext(r.Context(), "get exam result", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal server error")
@@ -49,7 +51,11 @@ func (h *AnalyticsHandler) GlobalRanking(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusUnauthorized, "session invalid")
 		return
 	}
-	entries, err := h.service.GetGlobalRanking(r.Context(), claims.UserID, strings.TrimSpace(r.URL.Query().Get("jenjang")))
+	query := r.URL.Query()
+	page := parsePositiveInt(query.Get("page"), 1)
+	perPage := parsePositiveInt(query.Get("per_page"), 50)
+	mode := strings.TrimSpace(query.Get("mode"))
+	entries, err := h.service.GetGlobalRanking(r.Context(), claims.UserID, strings.TrimSpace(query.Get("jenjang")), mode, page, perPage)
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrInvalidInput):
@@ -60,5 +66,5 @@ func (h *AnalyticsHandler) GlobalRanking(w http.ResponseWriter, r *http.Request)
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"data": entries})
+	writeJSON(w, http.StatusOK, map[string]any{"items": entries.Items, "page": entries.Page, "count": entries.Count, "total": entries.Total})
 }

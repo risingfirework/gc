@@ -57,17 +57,19 @@ type GlobalRankingEntry struct {
 	DisplayName     string    `json:"display_name"`
 	SchoolLevel     string    `json:"school_level"`
 	Score           float64   `json:"score"`
+	BestPercentile  float64   `json:"best_percentile"`
 	DurationSeconds int64     `json:"duration_seconds"`
 	FinishedAt      time.Time `json:"finished_at"`
 	IsCurrentUser   bool      `json:"is_current_user"`
+	ExamsDone       int64     `json:"exams_done"`
 }
 
 type AnalyticsRepository interface {
 	GetExamResult(ctx context.Context, userID, userExamID string) (*ExamResultResponse, error)
-	ListGlobalRanking(ctx context.Context, currentUserID, level string, limit int) ([]GlobalRankingEntry, error)
+	ListGlobalRanking(ctx context.Context, currentUserID, level, mode string, limit, offset int) ([]GlobalRankingEntry, int, error)
 }
 
 type ExamAnalyticsService interface {
 	GetResult(ctx context.Context, userID, userExamID string) (*ExamResultResponse, error)
-	GetGlobalRanking(ctx context.Context, currentUserID, level string) ([]GlobalRankingEntry, error)
+	GetGlobalRanking(ctx context.Context, currentUserID, level, mode string, page, perPage int) (Page[GlobalRankingEntry], error)
 }

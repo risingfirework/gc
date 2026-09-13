@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -21,6 +22,9 @@ import (
 )
 
 const webhookTolerance = 5 * time.Minute
+
+// transactionExpiryWindow adalah jendela waktu invoice pending boleh dibayar.
+const transactionExpiryWindow = 30 * time.Minute
 
 type HMACPaymentGateway struct {
 	secret      []byte
@@ -104,6 +108,32 @@ func (s *PaymentService) TrackPackageView(ctx context.Context, packageID, visito
 	return s.repository.TrackPackageView(ctx, packageID, visitorKey)
 }
 
+func (s *PaymentService) ListMyTransactions(ctx context.Context, userID string) ([]domain.AdminTransaction, error) {
+	return s.repository.ListMyTransactions(ctx, userID)
+}
+
+func (s *PaymentService) ListPendingTransactions(ctx context.Context, userID string) ([]domain.PendingTransaction, error) {
+	if !validUUID(userID) {
+		return nil, domain.ErrInvalidPayment
+	}
+	return s.repository.ListPendingTransactions(ctx, userID)
+}
+
+func (s *PaymentService) ExpirePendingTransactions(ctx context.Context) (int64, error) {
+	return s.repository.ExpirePendingTransactions(ctx, s.now().UTC())
+}
+
+func (s *PaymentService) GenerateInvoicePDF(ctx context.Context, transactionID, requesterID string, isAdmin bool) ([]byte, string, error) {
+	if !validUUID(transactionID) {
+		return nil, "", domain.ErrTransactionNotFound
+	}
+	invoice, err := s.repository.GetInvoice(ctx, transactionID, requesterID, isAdmin)
+	if err != nil {
+		return nil, "", err
+	}
+	return RenderInvoicePDF(*invoice), invoice.InvoiceNumber, nil
+}
+
 func (s *PaymentService) ListMyPackages(ctx context.Context, userID string) ([]domain.OwnedPackage, error) {
 	if !validUUID(userID) {
 		return nil, domain.ErrInvalidPayment
@@ -143,8 +173,12 @@ func (s *PaymentService) ClaimFreePackage(ctx context.Context, userID, packageID
 	if item.Price != 0 {
 		return nil, domain.ErrNotFreePackage
 	}
-	if err := s.ensurePackageNotOwned(ctx, userID, packageID); err != nil {
+	everOwned, err := s.repository.HasEverOwnedPackage(ctx, userID, packageID)
+	if err != nil {
 		return nil, err
+	}
+	if everOwned {
+		return nil, domain.ErrPackageAlreadyOwned
 	}
 	return s.repository.ClaimFreePackage(ctx, userID, packageID)
 }
@@ -162,8 +196,23 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, idempotencyKey st
 	if item.Status != domain.StatusActive {
 		return nil, domain.ErrPackageNotFound
 	}
+	if item.Price == 0 {
+		return nil, domain.ErrNotFreePackage
+	}
 	if err := s.ensurePackageNotOwned(ctx, userID, input.PackageID); err != nil {
 		return nil, err
+	}
+	if err := s.ensureNoPendingCheckout(ctx, userID, input.PackageID, idempotencyKey); err != nil {
+		return nil, err
+	}
+	// Validasi kode rujukan sebelum invoice dibuat, namun catat atribusinya
+	// hanya setelah transaksi benar-benar tersimpan.
+	var affiliateID string
+	if code := strings.TrimSpace(input.ReferralCode); code != "" {
+		affiliateID, err = s.validateCheckoutReferral(ctx, userID, code)
+		if err != nil {
+			return nil, err
+		}
 	}
 	discountPercent, accountActive, err := s.repository.GetUserFinancePolicy(ctx, userID)
 	if err != nil {
@@ -174,7 +223,7 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, idempotencyKey st
 	}
 	discountedAmount := math.Round(item.Price*(100-discountPercent)) / 100
 	now := s.now().UTC()
-	expiresAt := now.Add(30 * time.Minute)
+	expiresAt := now.Add(transactionExpiryWindow)
 	method := input.PaymentMethod
 	transaction := domain.Transaction{
 		ID: uuid.NewString(), UserID: userID, PackageID: item.ID,
@@ -196,6 +245,11 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, idempotencyKey st
 	if created.PackageID != input.PackageID || created.PaymentMethod == nil || *created.PaymentMethod != input.PaymentMethod {
 		return nil, domain.ErrInvalidPayment
 	}
+	if affiliateID != "" {
+		if err := s.repository.InsertReferral(ctx, affiliateID, userID); err != nil {
+			return nil, fmt.Errorf("insert checkout referral: %w", err)
+		}
+	}
 	return &domain.CheckoutResponse{Transaction: *created, PaymentURL: *created.PaymentURL, ExpiresAt: *created.ExpiresAt}, nil
 }
 
@@ -210,6 +264,34 @@ func (s *PaymentService) ensurePackageNotOwned(ctx context.Context, userID, pack
 		}
 	}
 	return nil
+}
+
+// ensureNoPendingCheckout mencegah pembuatan invoice ganda untuk paket yang
+// sama selama masih ada invoice pending yang belum kedaluwarsa.
+func (s *PaymentService) ensureNoPendingCheckout(ctx context.Context, userID, packageID, idempotencyKey string) error {
+	exists, err := s.repository.HasPendingCheckout(ctx, userID, packageID, idempotencyKey)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return domain.ErrPendingPaymentExists
+	}
+	return nil
+}
+
+// validateCheckoutReferral memvalidasi kode rujukan tanpa mencatat atribusi.
+func (s *PaymentService) validateCheckoutReferral(ctx context.Context, userID, code string) (string, error) {
+	affiliateID, err := s.repository.FindReferralAffiliate(ctx, code)
+	if err != nil {
+		if errors.Is(err, domain.ErrReferralNotFound) {
+			return "", domain.ErrInvalidReferralCode
+		}
+		return "", fmt.Errorf("find referral affiliate: %w", err)
+	}
+	if affiliateID == userID {
+		return "", domain.ErrInvalidReferralCode
+	}
+	return affiliateID, nil
 }
 
 func (s *PaymentService) HandleWebhook(ctx context.Context, rawBody []byte, timestamp, signature string) (bool, error) {

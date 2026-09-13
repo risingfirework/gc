@@ -18,8 +18,6 @@ func NewTestimonialRepository(db *pgxpool.Pool) *TestimonialRepository {
 	return &TestimonialRepository{db: db}
 }
 
-const testimonialColumns = `id, user_id, COALESCE(email,''), COALESCE(name,''), quote, status, created_at, updated_at`
-
 func (r *TestimonialRepository) Create(ctx context.Context, userID, quote string) (*domain.Testimonial, error) {
 	var t domain.Testimonial
 	err := r.db.QueryRow(ctx, `

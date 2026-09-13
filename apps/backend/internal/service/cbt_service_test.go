@@ -34,6 +34,9 @@ func (f *fakeExamRepository) GetExamWithQuestions(context.Context, string) (*dom
 	exam := f.exam
 	return &exam, f.questions, nil
 }
+func (f *fakeExamRepository) LookupCBTByToken(context.Context, string, string) ([]domain.CBTLookupPackage, error) {
+	return nil, nil
+}
 func (f *fakeExamRepository) ListExamsByPackage(context.Context, string, string) ([]domain.ExamSummary, error) {
 	return nil, nil
 }
@@ -127,7 +130,7 @@ func newCBTFixture() (*CBTService, *fakeExamRepository, *fakeCBTRepository) {
 
 func TestStartExamDoesNotExposeCorrectAnswers(t *testing.T) {
 	service, _, cache := newCBTFixture()
-	response, err := service.StartExam(context.Background(), testUserID, testExamID)
+	response, err := service.StartExam(context.Background(), testUserID, testExamID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,5 +190,27 @@ func TestSubmitDoesNotCommitWhenRedisIsUnavailable(t *testing.T) {
 	}
 	if exams.attempt.Status == "submitted" {
 		t.Fatal("exam must not be submitted with potentially missing answers")
+	}
+}
+
+func TestSubmitStoresEssayAsUngraded(t *testing.T) {
+	service, exams, cache := newCBTFixture()
+	exams.questions = []domain.Question{
+		{ID: testQuestionOne, ExamID: testExamID, QuestionType: domain.QuestionTypeEssay, CorrectAnswer: "Referensi jawaban", ScoreWeight: 1},
+	}
+	cache.answers[testQuestionOne] = "  Jawaban siswa  "
+	response, err := service.SubmitExam(context.Background(), testUserID, testAttemptID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exams.submitted) != 1 {
+		t.Fatalf("essay answer was not persisted, submitted=%d", len(exams.submitted))
+	}
+	answer := exams.submitted[0]
+	if answer.SelectedOption != "Jawaban siswa" || answer.IsCorrect {
+		t.Fatalf("essay must be stored trimmed and ungraded, got %+v", answer)
+	}
+	if response.TotalScore != 0 {
+		t.Fatalf("essay must not count in auto score, got %v", response.TotalScore)
 	}
 }

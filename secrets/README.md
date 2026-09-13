@@ -8,6 +8,7 @@ Create the following UTF-8 files locally. They are ignored by Git:
 - `jwt_secret.txt`: at least 32 random characters.
 - `payment_webhook_secret.txt`: the real payment-provider webhook secret.
 - `sentry_dsn.txt`: Sentry project DSN for the Go API (an empty file disables Sentry).
+- `smtp_password.txt`: SMTP password for the `SMTP_USERNAME` account (leave empty when SMTP is disabled).
 - `grafana_admin_password.txt`: strong Grafana administrator password.
 - `slack_webhook_url.txt`: Slack Incoming Webhook URL used by Alertmanager.
 - `telegram_bot_token.txt`: Telegram Bot API token used by Alertmanager.

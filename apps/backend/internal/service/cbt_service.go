@@ -15,6 +15,7 @@ import (
 )
 
 const autoSubmitBatchSize = 500
+const maxAnswerLength = 10000
 
 type CBTService struct {
 	exams  domain.ExamRepository
@@ -32,7 +33,15 @@ func NewCBTService(exams domain.ExamRepository, cache domain.CBTRepository, logg
 	return service
 }
 
-func (s *CBTService) StartExam(ctx context.Context, userID, examID string) (*domain.ExamStartResponse, error) {
+func (s *CBTService) LookupCBT(ctx context.Context, userID, token string) ([]domain.CBTLookupPackage, error) {
+	provided := strings.ToUpper(strings.TrimSpace(token))
+	if provided == "" {
+		return nil, domain.ErrCBTTokenRequired
+	}
+	return s.exams.LookupCBTByToken(ctx, provided, userID)
+}
+
+func (s *CBTService) StartExam(ctx context.Context, userID, examID, token string) (*domain.ExamStartResponse, error) {
 	if !validUUID(userID) || !validUUID(examID) {
 		return nil, domain.ErrExamNotFound
 	}
@@ -48,6 +57,15 @@ func (s *CBTService) StartExam(ctx context.Context, userID, examID string) (*dom
 		}
 		if !allowed {
 			return nil, domain.ErrExamForbidden
+		}
+	}
+	if exam.PackageExamType == "cbt" {
+		provided := strings.ToUpper(strings.TrimSpace(token))
+		if provided == "" {
+			return nil, domain.ErrCBTTokenRequired
+		}
+		if provided != exam.PackageCBTToken {
+			return nil, domain.ErrCBTTokenInvalid
 		}
 	}
 	attempt, err := s.exams.StartOrGetUserExam(ctx, userID, examID, now)
@@ -107,7 +125,7 @@ func (s *CBTService) SyncAnswer(ctx context.Context, userID string, input domain
 		return nil, domain.ErrInvalidAnswer
 	}
 	input.SelectedOption = strings.TrimSpace(input.SelectedOption)
-	if input.SelectedOption == "" || len(input.SelectedOption) > 500 {
+	if input.SelectedOption == "" || len(input.SelectedOption) > maxAnswerLength {
 		return nil, domain.ErrInvalidAnswer
 	}
 	now := s.now().UTC()
@@ -199,6 +217,11 @@ func (s *CBTService) SubmitExam(ctx context.Context, userID, userExamID string) 
 		}
 		canonical, valid := canonicalAnswer(question.QuestionType, question.Options, question.CategoryLabels, selectedOption, false)
 		if !valid {
+			continue
+		}
+		if question.QuestionType == domain.QuestionTypeEssay {
+			// Jawaban esai disimpan untuk dinilai manual dan tidak dihitung dalam skor otomatis.
+			batch = append(batch, domain.UserAnswer{UserExamID: userExamID, QuestionID: questionID, SelectedOption: canonical, IsCorrect: false})
 			continue
 		}
 		normalizedAnswers[questionID] = canonical

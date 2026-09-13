@@ -128,6 +128,67 @@ func (h *PaymentHandler) ClaimFreePackage(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusCreated, map[string]any{"package": item})
 }
 
+func (h *PaymentHandler) MyTransactions(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "session invalid")
+		return
+	}
+	items, err := h.service.ListMyTransactions(r.Context(), claims.UserID)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "list my transactions", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+func (h *PaymentHandler) PendingTransactions(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "session invalid")
+		return
+	}
+	items, err := h.service.ListPendingTransactions(r.Context(), claims.UserID)
+	if err != nil {
+		if errors.Is(err, domain.ErrInvalidPayment) {
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		h.logger.ErrorContext(r.Context(), "list pending transactions", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if items == nil {
+		items = []domain.PendingTransaction{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"data": items})
+}
+
+func (h *PaymentHandler) InvoicePDF(w http.ResponseWriter, r *http.Request) {
+	claims, _ := middleware.ClaimsFromContext(r.Context())
+	pdf, invoiceNumber, err := h.service.GenerateInvoicePDF(r.Context(), chi.URLParam(r, "id"), claims.UserID, isStaffRole(claims.Role))
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrTransactionNotFound):
+			writeError(w, http.StatusNotFound, "transaksi tidak ditemukan")
+		default:
+			h.logger.ErrorContext(r.Context(), "generate invoice pdf", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal server error")
+		}
+		return
+	}
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+invoiceNumber+".pdf\"")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(pdf)
+}
+
+func isStaffRole(role string) bool {
+	return role == domain.RoleOwner || role == domain.RoleAdmin || role == domain.RoleFinance
+}
+
 func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 	claims, ok := middleware.ClaimsFromContext(r.Context())
 	if !ok {
@@ -146,8 +207,14 @@ func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, err.Error())
 		case errors.Is(err, domain.ErrPackageAlreadyOwned):
 			writeError(w, http.StatusConflict, "Paket ini sudah kamu miliki dan tidak dapat dipesan kembali.")
+		case errors.Is(err, domain.ErrPendingPaymentExists):
+			writeError(w, http.StatusConflict, "Masih ada pembayaran yang belum selesai untuk paket ini. Lanjutkan pembayaran yang tertunda.")
+		case errors.Is(err, domain.ErrNotFreePackage):
+			writeError(w, http.StatusUnprocessableEntity, "Paket ini gratis, silakan gunakan tombol \"Ambil Gratis\".")
 		case errors.Is(err, domain.ErrInvalidPayment):
 			writeError(w, http.StatusUnprocessableEntity, err.Error())
+		case errors.Is(err, domain.ErrInvalidReferralCode):
+			writeError(w, http.StatusUnprocessableEntity, "Kode rujukan tidak dikenal atau tidak berlaku.")
 		default:
 			h.logger.ErrorContext(r.Context(), "checkout package", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal server error")
@@ -169,7 +236,7 @@ func (h *PaymentHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, domain.ErrInvalidWebhookSignature):
 			writeError(w, http.StatusUnauthorized, err.Error())
-		case errors.Is(err, domain.ErrInvalidPayment), errors.Is(err, domain.ErrInvalidPaymentTransition):
+		case errors.Is(err, domain.ErrInvalidPayment), errors.Is(err, domain.ErrInvalidPaymentTransition), errors.Is(err, domain.ErrPaymentExpired):
 			writeError(w, http.StatusBadRequest, err.Error())
 		case errors.Is(err, domain.ErrTransactionNotFound):
 			writeError(w, http.StatusNotFound, err.Error())

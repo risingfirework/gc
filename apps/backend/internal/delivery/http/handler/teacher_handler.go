@@ -46,7 +46,14 @@ func (h *TeacherHandler) UpdatePayoutAccount(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"payout_account": item})
 }
 func (h *TeacherHandler) CreatePayoutRequest(w http.ResponseWriter, r *http.Request) {
-	item, err := h.service.CreatePayoutRequest(r.Context(), h.publisherID(r))
+	var input struct {
+		Amount float64 `json:"amount"`
+	}
+	if decodeJSON(w, r, &input) != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	item, err := h.service.CreatePayoutRequest(r.Context(), h.publisherID(r), input.Amount)
 	if writeAdminError(h.logger, w, r, err) {
 		return
 	}
@@ -58,6 +65,23 @@ func (h *TeacherHandler) CancelPayoutRequest(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"payout_request": item})
+}
+
+// Appeal menerima bukti sanggah guru (gambar/surat keterangan mengajar) saat
+// pendaftarannya ditolak, lalu mengembalikan status ke tahap verifikasi.
+func (h *TeacherHandler) Appeal(w http.ResponseWriter, r *http.Request) {
+	var input domain.TeacherAppealRequest
+	if decodeJSON(w, r, &input) != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	if err := h.service.Appeal(r.Context(), h.publisherID(r), input); err != nil {
+		if writeAdminError(h.logger, w, r, err) {
+			return
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"status": domain.TeacherVerificationPending})
 }
 func (h *TeacherHandler) CreatePackage(w http.ResponseWriter, r *http.Request) {
 	var input domain.AdminPackageRequest
@@ -131,6 +155,34 @@ func (h *TeacherHandler) DeleteExam(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(204)
 }
+func (h *TeacherHandler) CBTSettings(w http.ResponseWriter, r *http.Request) {
+	items, err := h.service.ListCBTPublishSettings(r.Context(), h.publisherID(r))
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+func (h *TeacherHandler) SetCBTPublish(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		PublishPembahasan bool `json:"publish_pembahasan"`
+	}
+	if decodeJSON(w, r, &input) != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	item, err := h.service.SetExamPublishPembahasan(r.Context(), h.publisherID(r), chi.URLParam(r, "id"), input.PublishPembahasan)
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": item})
+}
+func (h *TeacherHandler) CBTParticipants(w http.ResponseWriter, r *http.Request) {
+	items, err := h.service.ListCBTParticipants(r.Context(), h.publisherID(r), chi.URLParam(r, "id"))
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
 func (h *TeacherHandler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 	var input domain.AdminQuestionRequest
 	if decodeJSON(w, r, &input) != nil {
@@ -160,4 +212,19 @@ func (h *TeacherHandler) DeleteQuestion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(204)
+}
+func (h *TeacherHandler) BulkDeleteQuestions(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		IDs       []string `json:"ids"`
+		PackageID string   `json:"package_id"`
+	}
+	if decodeJSON(w, r, &input) != nil {
+		writeError(w, 400, "invalid JSON request")
+		return
+	}
+	deleted, err := h.service.BulkDeleteQuestions(r.Context(), h.publisherID(r), input.IDs, input.PackageID)
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, 200, map[string]any{"deleted": deleted})
 }

@@ -1,3 +1,4 @@
+// Package redis mengimplementasikan repository domain di atas Redis.
 package redis
 
 import (

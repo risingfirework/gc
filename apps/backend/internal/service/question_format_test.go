@@ -10,11 +10,12 @@ func TestCanonicalTKAAnswers(t *testing.T) {
 	options := []domain.QuestionOption{{Key: "A", Content: "Satu"}, {Key: "B", Content: "Dua"}, {Key: "C", Content: "Tiga"}}
 	tests := []struct {
 		name, questionType, input, want string
-		labels                         []string
+		labels                          []string
 	}{
 		{"single", domain.QuestionTypeSingleChoice, " a ", "A", nil},
 		{"mcma sorted", domain.QuestionTypeMultipleChoice, "C, A", "A,C", nil},
 		{"category sorted", domain.QuestionTypeCategory, "C=Benar;A=Benar;B=Salah", "A=Benar;B=Salah;C=Benar", []string{"Benar", "Salah"}},
+		{"essay trimmed", domain.QuestionTypeEssay, "  Jawaban panjang  ", "Jawaban panjang", nil},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -33,5 +34,8 @@ func TestCanonicalTKAAnswersRejectsIncompleteKeys(t *testing.T) {
 	}
 	if _, valid := canonicalAnswer(domain.QuestionTypeCategory, options, []string{"Benar", "Salah"}, "A=Benar", false); valid {
 		t.Fatal("incomplete category answer must be rejected")
+	}
+	if _, valid := canonicalAnswer(domain.QuestionTypeEssay, nil, nil, "   ", false); valid {
+		t.Fatal("empty essay answer must be rejected")
 	}
 }

@@ -20,9 +20,9 @@ func createPackageBundle(ctx context.Context, db *pgxpool.Pool, publisherID *str
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var pkg domain.AdminPackage
-	err = tx.QueryRow(ctx, `INSERT INTO packages(title,description,price,validity_days,status,publisher_id,kode,jenjang) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING `+adminPackageColumns,
-		input.Package.Title, input.Package.Description, input.Package.Price, input.Package.ValidityDays, input.Package.Status, publisherID, input.Package.Kode, input.Package.Jenjang,
-	).Scan(&pkg.ID, &pkg.Title, &pkg.Description, &pkg.Price, &pkg.ValidityDays, &pkg.Status, &pkg.Kode, &pkg.Jenjang, &pkg.PublisherID, &pkg.CreatedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO packages(title,description,price,validity_days,status,publisher_id,kode,jenjang,exam_type,cbt_token,start_date,end_date,kategori_id,kelas_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz,$12::timestamptz,$13::uuid,$14::uuid) RETURNING `+adminPackageColumns,
+		input.Package.Title, input.Package.Description, input.Package.Price, input.Package.ValidityDays, input.Package.Status, publisherID, nullableKode(input.Package.Kode), input.Package.Jenjang, input.Package.ExamType, input.Package.CBTToken, nullableTimestamptz(input.Package.StartDate), nullableTimestamptz(input.Package.EndDate), input.Package.KategoriID, input.Package.KelasID,
+	).Scan(&pkg.ID, &pkg.Title, &pkg.Description, &pkg.Price, &pkg.ValidityDays, &pkg.Status, &pkg.Kode, &pkg.Jenjang, &pkg.ExamType, &pkg.CBTToken, &pkg.StartDate, &pkg.EndDate, &pkg.KategoriID, &pkg.KelasID, &pkg.PublisherID, &pkg.CreatedAt)
 	if err != nil {
 		return nil, adminMutationError(err)
 	}

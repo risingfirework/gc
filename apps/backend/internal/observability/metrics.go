@@ -1,3 +1,4 @@
+// Package observability menyediakan metrik Prometheus dan sentry.
 package observability
 
 import (

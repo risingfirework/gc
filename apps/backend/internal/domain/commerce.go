@@ -15,6 +15,9 @@ var (
 	ErrNoPurchasedPackage       = errors.New("no purchased package")
 	ErrNotFreePackage           = errors.New("package is not free")
 	ErrPackageAlreadyOwned      = errors.New("package already owned")
+	ErrTransactionNotRefundable = errors.New("transaction cannot be refunded")
+	ErrPaymentExpired           = errors.New("payment window expired")
+	ErrPendingPaymentExists     = errors.New("pending payment for this package already exists")
 )
 
 type Package struct {
@@ -42,22 +45,24 @@ type OwnedPackage struct {
 }
 
 type Transaction struct {
-	ID            string     `json:"id"`
-	UserID        string     `json:"user_id"`
-	PackageID     string     `json:"package_id"`
-	InvoiceNumber string     `json:"invoice_number"`
-	Amount        float64    `json:"amount"`
-	PaymentStatus string     `json:"payment_status"`
-	PaymentMethod *string    `json:"payment_method,omitempty"`
-	PaymentURL    *string    `json:"payment_url,omitempty"`
-	ExpiresAt     *time.Time `json:"expires_at,omitempty"`
-	PaidAt        *time.Time `json:"paid_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
+	ID                 string     `json:"id"`
+	UserID             string     `json:"user_id"`
+	PackageID          string     `json:"package_id"`
+	InvoiceNumber      string     `json:"invoice_number"`
+	Amount             float64    `json:"amount"`
+	PlatformCommission float64    `json:"platform_commission"`
+	PaymentStatus      string     `json:"payment_status"`
+	PaymentMethod      *string    `json:"payment_method,omitempty"`
+	PaymentURL         *string    `json:"payment_url,omitempty"`
+	ExpiresAt          *time.Time `json:"expires_at,omitempty"`
+	PaidAt             *time.Time `json:"paid_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 type CheckoutRequest struct {
 	PackageID     string `json:"package_id"`
 	PaymentMethod string `json:"payment_method"`
+	ReferralCode  string `json:"referral_code,omitempty"`
 }
 
 type PackageViewRequest struct {
@@ -68,6 +73,16 @@ type CheckoutResponse struct {
 	Transaction Transaction `json:"transaction"`
 	PaymentURL  string      `json:"payment_url"`
 	ExpiresAt   time.Time   `json:"expires_at"`
+}
+
+type PendingTransaction struct {
+	ID            string    `json:"id"`
+	InvoiceNumber string    `json:"invoice_number"`
+	PackageTitle  string    `json:"package_title"`
+	Amount        float64   `json:"amount"`
+	PaymentMethod string    `json:"payment_method,omitempty"`
+	PaymentURL    string    `json:"payment_url"`
+	ExpiresAt     time.Time `json:"expires_at,omitempty"`
 }
 
 type UserPricingPolicy struct {
@@ -84,6 +99,25 @@ type PaymentWebhookRequest struct {
 	PaidAt        *time.Time `json:"paid_at,omitempty"`
 }
 
+type Invoice struct {
+	PlatformName    string
+	PlatformTagline string
+	InvoiceNumber   string
+	BuyerName       string
+	BuyerEmail      string
+	BuyerSchool     string
+	PackageTitle    string
+	PackageKode     string
+	PackageJenjang  string
+	PackageValidity int
+	Price           float64
+	PaymentMethod   string
+	PaymentStatus   string
+	PaidAt          *time.Time
+	CreatedAt       time.Time
+	TransactionID   string
+}
+
 type PaymentRepository interface {
 	ListPackages(ctx context.Context, limit, offset int) ([]Package, error)
 	GetPackage(ctx context.Context, packageID string) (*Package, error)
@@ -93,6 +127,14 @@ type PaymentRepository interface {
 	ProcessWebhook(ctx context.Context, event PaymentWebhookRequest, payloadSHA256 string, now time.Time) (bool, error)
 	GetUserFinancePolicy(ctx context.Context, userID string) (discountPercent float64, accountActive bool, err error)
 	TrackPackageView(ctx context.Context, packageID, visitorKey string) (int64, error)
+	HasEverOwnedPackage(ctx context.Context, userID, packageID string) (bool, error)
+	HasPendingCheckout(ctx context.Context, userID, packageID, idempotencyKey string) (bool, error)
+	ListMyTransactions(ctx context.Context, userID string) ([]AdminTransaction, error)
+	ListPendingTransactions(ctx context.Context, userID string) ([]PendingTransaction, error)
+	ExpirePendingTransactions(ctx context.Context, now time.Time) (int64, error)
+	GetInvoice(ctx context.Context, transactionID, requesterID string, isAdmin bool) (*Invoice, error)
+	FindReferralAffiliate(ctx context.Context, code string) (string, error)
+	InsertReferral(ctx context.Context, affiliateID, referredUserID string) error
 }
 
 type PaymentGateway interface {
@@ -108,4 +150,8 @@ type PaymentService interface {
 	Checkout(ctx context.Context, userID, idempotencyKey string, input CheckoutRequest) (*CheckoutResponse, error)
 	HandleWebhook(ctx context.Context, rawBody []byte, timestamp, signature string) (bool, error)
 	TrackPackageView(ctx context.Context, packageID, visitorKey string) (int64, error)
+	ListMyTransactions(ctx context.Context, userID string) ([]AdminTransaction, error)
+	ListPendingTransactions(ctx context.Context, userID string) ([]PendingTransaction, error)
+	ExpirePendingTransactions(ctx context.Context) (int64, error)
+	GenerateInvoicePDF(ctx context.Context, transactionID, requesterID string, isAdmin bool) ([]byte, string, error)
 }

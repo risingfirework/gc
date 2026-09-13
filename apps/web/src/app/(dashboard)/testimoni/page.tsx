@@ -4,17 +4,20 @@ import Link from "next/link";
 import BrandLogo from "@/components/BrandLogo";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { APIError, api, Testimonial, tokenStore } from "@/services/api";
+import { APIError, api, SiteSettings, Testimonial, tokenStore } from "@/services/api";
 import StudentMenu from "@/components/StudentMenu";
 
 export default function TestimoniInputPage() {
   const router = useRouter();
+  const [settings, setSettings] = useState<SiteSettings>();
   const [myTestimonial, setMyTestimonial] = useState<Testimonial | null>(null);
   const [quote, setQuote] = useState("");
   const [saving, setSaving] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => { api.siteSettings().then(setSettings).catch(() => undefined); }, []);
 
   useEffect(() => {
     if (!tokenStore.hasToken()) {
@@ -63,7 +66,7 @@ export default function TestimoniInputPage() {
     <main>
       <div className="container testimoni-page">
         <nav className="dashboard-nav">
-          <Link className="brand" href="/dashboard"><BrandLogo/>TKA Juara</Link>
+          <Link className="brand" href="/dashboard"><BrandLogo logoDataURL={settings?.logo_data_url}/>{settings?.platform_name??""}</Link>
           <StudentMenu active="testimoni" loggingOut={loggingOut} onLogout={() => void logout()} />
         </nav>
         <section className="dashboard">
@@ -79,7 +82,7 @@ export default function TestimoniInputPage() {
                 </div>
               ) : (
                 <div>
-                  <p className="muted">Tulis pengalamanmu menggunakan TKA Juara. Testimoni terbaik akan ditampilkan di halaman utama.</p>
+                  <p className="muted">Tulis pengalamanmu menggunakan {settings?.platform_name??"platform ini"}. Testimoni terbaik akan ditampilkan di halaman utama.</p>
                   <textarea value={quote} onChange={(event) => setQuote(event.target.value)} placeholder="Tulis testimoni Anda di sini..." style={{ minHeight: 140, width: "100%" }} />
                   <div className="form-actions"><button className="button" disabled={saving || !quote.trim()} onClick={() => void submit()}>{saving ? "Mengirim..." : "Kirim testimoni"}</button></div>
                 </div>

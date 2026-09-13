@@ -91,7 +91,7 @@ func (v *GoogleVerifier) fetchKeys(ctx context.Context) (map[string]*rsa.PublicK
 	if err != nil {
 		return nil, fmt.Errorf("fetch google jwks: %w", err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetch google jwks: unexpected status %d", response.StatusCode)
 	}

@@ -43,17 +43,16 @@ services:
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD:-tka_local_password}
     command:
-      - psql
-      - -v
-      - ON_ERROR_STOP=1
-      - -h
-      - postgres
-      - -U
-      - ${POSTGRES_USER:-tka}
-      - -d
-      - ${POSTGRES_DB:-tka}
-      - -f
-      - /seeds/001_development.sql
+      - sh
+      - -c
+      - |
+        set -e
+        if [ "$(psql -h postgres -U ${POSTGRES_USER:-tka} -d ${POSTGRES_DB:-tka} -tAc "SELECT COUNT(*) FROM packages")" -gt 0 ]; then
+          echo "Database sudah memiliki data, seed dilewati."
+          exit 0
+        fi
+        psql -v ON_ERROR_STOP=1 -h postgres -U ${POSTGRES_USER:-tka} -d ${POSTGRES_DB:-tka} -f /seeds/001_development.sql
+        echo "Seed selesai dijalankan pada database baru."
     volumes:
       - ./apps/backend/db/seeds:/seeds:ro
     depends_on:
@@ -80,15 +79,29 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      SIMPKB_CHECK_URL: ${SIMPKB_CHECK_URL:-http://simpkb-check:8080}
+      SIMPKB_CHECK_INTERVAL: ${SIMPKB_CHECK_INTERVAL:-5m}
     expose: ["8080"]
     depends_on:
       seed: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      simpkb-check: { condition: service_started }
     healthcheck:
       test: ["CMD", "/tka-api", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 20
+    restart: unless-stopped
+
+  simpkb-check:
+    build: ./apps/simpkb-check
+    expose: ["8080"]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
     restart: unless-stopped
 
   web:

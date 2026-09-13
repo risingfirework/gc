@@ -24,13 +24,16 @@ func NewExamRepository(db *pgxpool.Pool) *ExamRepository {
 
 func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string) (*domain.Exam, []domain.Question, error) {
 	const examQuery = `
-		SELECT id, package_id, title, duration_minutes, total_questions, passing_score, scoring_method, created_at
-		FROM exams
-		WHERE id = $1`
+		SELECT e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method, e.created_at,
+		       p.exam_type, COALESCE(p.cbt_token,'')
+		FROM exams e
+		JOIN packages p ON p.id = e.package_id
+		WHERE e.id = $1`
 	var exam domain.Exam
 	err := r.db.QueryRow(ctx, examQuery, examID).Scan(
 		&exam.ID, &exam.PackageID, &exam.Title, &exam.DurationMinutes,
 		&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod, &exam.CreatedAt,
+		&exam.PackageExamType, &exam.PackageCBTToken,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, domain.ErrExamNotFound
@@ -81,11 +84,68 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 	return &exam, questions, nil
 }
 
+func (r *ExamRepository) LookupCBTByToken(ctx context.Context, token, userID string) ([]domain.CBTLookupPackage, error) {
+	const query = `
+		SELECT p.id, p.title, COALESCE(p.kode,''), p.jenjang, p.price,
+		       e.id, e.title, e.duration_minutes, e.total_questions, e.passing_score,
+		       e.publish_pembahasan,
+		       COALESCE(ue.user_exam_id::text,'')
+		FROM packages p
+		JOIN exams e ON e.package_id = p.id
+		LEFT JOIN LATERAL (
+			SELECT ue.id AS user_exam_id
+			FROM user_exams ue
+			WHERE ue.exam_id = e.id AND ue.user_id = $2 AND ue.status = 'submitted'
+			ORDER BY ue.finished_at DESC NULLS LAST
+			LIMIT 1
+		) ue ON true
+		WHERE p.exam_type = 'cbt' AND p.status = 'active' AND e.status = 'active'
+		  AND UPPER(TRIM(p.cbt_token)) = UPPER($1)
+		ORDER BY p.created_at, p.id, e.created_at, e.id`
+	rows, err := r.db.Query(ctx, query, token, userID)
+	if err != nil {
+		return nil, fmt.Errorf("lookup cbt packages: %w", err)
+	}
+	defer rows.Close()
+	packageIndex := map[string]int{}
+	result := make([]domain.CBTLookupPackage, 0)
+	for rows.Next() {
+		var packageItem domain.CBTLookupPackage
+		var exam domain.CBTLookupExam
+		var attemptID string
+		if err := rows.Scan(
+			&packageItem.ID, &packageItem.Title, &packageItem.Kode, &packageItem.Jenjang, &packageItem.Price,
+			&exam.ExamID, &exam.Title, &exam.DurationMinutes, &exam.TotalQuestions, &exam.PassingScore,
+			&exam.PublishPembahasan,
+			&attemptID,
+		); err != nil {
+			return nil, fmt.Errorf("scan cbt lookup: %w", err)
+		}
+		exam.Submitted = attemptID != ""
+		if attemptID != "" {
+			exam.UserExamID = attemptID
+		}
+		index, exists := packageIndex[packageItem.ID]
+		if !exists {
+			index = len(result)
+			packageIndex[packageItem.ID] = index
+			result = append(result, packageItem)
+		}
+		result[index].Exams = append(result[index].Exams, exam)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate cbt lookup: %w", err)
+	}
+	return result, nil
+}
+
 func (r *ExamRepository) ListExamsByPackage(ctx context.Context, userID, packageID string) ([]domain.ExamSummary, error) {
 	const query = `
 		SELECT e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method,
+		       e.publish_pembahasan,
 		       COALESCE(ur.user_exam_id::text,''), ur.total_score, ur.finished_at
 		FROM exams e
+		JOIN packages p ON p.id = e.package_id
 		LEFT JOIN LATERAL (
 			SELECT ue.id AS user_exam_id, ue.total_score, ue.finished_at
 			FROM user_exams ue
@@ -94,6 +154,11 @@ func (r *ExamRepository) ListExamsByPackage(ctx context.Context, userID, package
 			LIMIT 1
 		) ur ON true
 		WHERE e.package_id = $1 AND e.status = 'active'
+		  AND (
+		      p.exam_type <> 'cbt'
+		      OR e.publish_pembahasan
+		      OR ur.user_exam_id IS NULL
+		  )
 		ORDER BY e.created_at, e.id`
 	rows, err := r.db.Query(ctx, query, packageID, userID)
 	if err != nil {
@@ -107,6 +172,7 @@ func (r *ExamRepository) ListExamsByPackage(ctx context.Context, userID, package
 		if err := rows.Scan(
 			&exam.ID, &exam.PackageID, &exam.Title, &exam.DurationMinutes,
 			&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod,
+			&exam.PublishPembahasan,
 			&attemptID, &exam.TotalScore, &exam.FinishedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan package exam: %w", err)
@@ -167,15 +233,18 @@ func (r *ExamRepository) GetUserExam(ctx context.Context, userExamID, userID str
 func (r *ExamRepository) UpsertAnswerFallback(ctx context.Context, userExamID, userID, questionID, selectedOption string) error {
 	const query = `
 		INSERT INTO user_answers (user_exam_id, question_id, selected_option, is_correct, updated_at)
-		SELECT ue.id, q.id, $4, q.correct_answer = $4, NOW()
+		SELECT ue.id, q.id, $4, CASE WHEN q.question_type = 'essay' THEN false ELSE q.correct_answer = $4 END, NOW()
 		FROM user_exams ue
 		JOIN questions q ON q.exam_id = ue.exam_id AND q.id = $3
 		WHERE ue.id = $1
 		  AND ue.user_id = $2
 		  AND ue.status = 'ongoing'
-		  AND EXISTS (
-		      SELECT 1 FROM jsonb_array_elements(q.options_json) option
-		      WHERE option->>'key' = $4
+		  AND (
+		      q.question_type = 'essay'
+		      OR EXISTS (
+		          SELECT 1 FROM jsonb_array_elements(q.options_json) option
+		          WHERE option->>'key' = $4
+		      )
 		  )
 		ON CONFLICT (user_exam_id, question_id)
 		DO UPDATE SET

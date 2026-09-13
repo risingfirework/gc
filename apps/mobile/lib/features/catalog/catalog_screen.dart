@@ -74,7 +74,7 @@ class _CatalogScreenState extends ConsumerState<CatalogScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('TKA Juara')),
+        appBar: AppBar(title: const Text('Tryout TKA')),
         body: RefreshIndicator(
           onRefresh: () async {
             setState(() => packages =

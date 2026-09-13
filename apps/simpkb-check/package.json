@@ -1,0 +1,13 @@
+{
+  "name": "simpkb-check",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Microservice pengecekan NIK guru ke portal.simpkb.id dengan screenshot hasil pencarian",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "playwright": "1.48.2"
+  }
+}

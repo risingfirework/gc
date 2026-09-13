@@ -13,9 +13,9 @@ import (
 	"tka/apps/backend/internal/domain"
 )
 
-const adminPackageColumns = `id,title,description,price,validity_days,status,kode,jenjang,COALESCE(publisher_id::text,''),created_at`
+const adminPackageColumns = `id,title,description,price,validity_days,status,COALESCE(kode,''),jenjang,exam_type,COALESCE(cbt_token,''),COALESCE(to_char(start_date AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),''),COALESCE(to_char(end_date AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),''),COALESCE(kategori_id::text,''),COALESCE(kelas_id::text,''),COALESCE(publisher_id::text,''),created_at`
 
-const adminPackageSelectColumns = `p.id,p.title,p.description,p.price,p.validity_days,p.status,p.kode,p.jenjang,COALESCE(p.publisher_id::text,''),COALESCE(pu.email,''),p.created_at,
+const adminPackageSelectColumns = `p.id,p.title,p.description,p.price,p.validity_days,p.status,COALESCE(p.kode,''),p.jenjang,p.exam_type,COALESCE(p.cbt_token,''),COALESCE(to_char(p.start_date AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),''),COALESCE(to_char(p.end_date AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS"Z"'),''),COALESCE(p.kategori_id::text,''),(SELECT k.nama FROM kategori k WHERE k.id=p.kategori_id),COALESCE(p.kelas_id::text,''),(SELECT kl.nama FROM kelas kl WHERE kl.id=p.kelas_id),COALESCE(p.publisher_id::text,''),COALESCE(pu.email,''),p.created_at,
 	(SELECT COUNT(*) FROM transactions t WHERE t.package_id=p.id AND t.payment_status='paid'),
 	(SELECT COUNT(*) FROM package_views pv WHERE pv.package_id=p.id)`
 
@@ -23,9 +23,28 @@ type TeacherRepository struct{ db *pgxpool.Pool }
 
 func NewTeacherRepository(db *pgxpool.Pool) *TeacherRepository { return &TeacherRepository{db: db} }
 
+// Appeal mencatat bukti sanggah guru setelah pendaftarannya ditolak. Status
+// kembali menjadi pending dan alasan penolakan dihapus agar diverifikasi ulang.
+func (r *TeacherRepository) Appeal(ctx context.Context, userID, appealImageDataURL string) error {
+	commandTag, err := r.db.Exec(ctx, `UPDATE users
+		SET teacher_verification_status='pending',
+		    teacher_rejection_reason='',
+		    teacher_appeal_image=$2,
+		    teacher_verified_at=NULL,
+		    updated_at=NOW()
+		WHERE id=$1 AND role='teacher' AND teacher_verification_status='rejected'`, userID, appealImageDataURL)
+	if err != nil {
+		return fmt.Errorf("teacher appeal: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return domain.ErrInvalidInput
+	}
+	return nil
+}
+
 func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string) (*domain.TeacherDashboard, error) {
-	result := &domain.TeacherDashboard{Levels: []string{}, Mapels: []domain.MasterItem{}, AcademicYears: []domain.MasterItem{}, Packages: []domain.AdminPackage{}, Exams: []domain.AdminExam{}, Questions: []domain.AdminQuestion{}, Transactions: []domain.AdminTransaction{}, Commissions: []domain.TeacherCommission{}, Payouts: []domain.TeacherPayout{}, PayoutRequests: []domain.TeacherWithdrawalRequest{}}
-	if err := r.db.QueryRow(ctx, `SELECT `+financeSettingsColumns+` FROM finance_settings WHERE singleton=TRUE`).Scan(&result.FinanceSettings.PlatformCommissionPercent, &result.FinanceSettings.DefaultDiscountPercent, &result.FinanceSettings.TaxPercent, &result.FinanceSettings.MinimumPayout, &result.FinanceSettings.PayoutCycle, &result.FinanceSettings.AutoPayout, &result.FinanceSettings.TeacherUploadFee, &result.FinanceSettings.TeacherSalesBonusPercent, &result.FinanceSettings.CommissionHoldDays, &result.FinanceSettings.UpdatedAt); err != nil {
+	result := &domain.TeacherDashboard{Levels: []string{}, Mapels: []domain.MasterItem{}, AcademicYears: []domain.MasterItem{}, Kategoris: []domain.MasterItem{}, Kelas: []domain.MasterItem{}, Packages: []domain.AdminPackage{}, Exams: []domain.AdminExam{}, Questions: []domain.AdminQuestion{}, Transactions: []domain.AdminTransaction{}, Commissions: []domain.TeacherCommission{}, Payouts: []domain.TeacherPayout{}, PayoutRequests: []domain.TeacherWithdrawalRequest{}}
+	if err := r.db.QueryRow(ctx, `SELECT `+financeSettingsColumns+` FROM finance_settings WHERE singleton=TRUE`).Scan(&result.FinanceSettings.PlatformCommissionPercent, &result.FinanceSettings.DefaultDiscountPercent, &result.FinanceSettings.TaxPercent, &result.FinanceSettings.MinimumPayout, &result.FinanceSettings.PayoutCycle, &result.FinanceSettings.AutoPayout, &result.FinanceSettings.TeacherUploadFee, &result.FinanceSettings.TeacherSalesBonusPercent, &result.FinanceSettings.AffiliateRatePercent, &result.FinanceSettings.CommissionHoldDays, &result.FinanceSettings.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("teacher finance settings: %w", err)
 	}
 	const counts = `SELECT
@@ -53,6 +72,12 @@ func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string
 	if err := scanMasterList(ctx, r.db, domain.MasterTahunAjaran, &result.AcademicYears); err != nil {
 		return nil, err
 	}
+	if err := scanMasterList(ctx, r.db, domain.MasterKategori, &result.Kategoris); err != nil {
+		return nil, err
+	}
+	if err := scanMasterList(ctx, r.db, domain.MasterKelas, &result.Kelas); err != nil {
+		return nil, err
+	}
 	packages, err := r.db.Query(ctx, `SELECT `+adminPackageSelectColumns+` FROM packages p LEFT JOIN users pu ON pu.id=p.publisher_id WHERE p.publisher_id=$1 ORDER BY p.created_at DESC LIMIT 200`, publisherID)
 	if err != nil {
 		return nil, fmt.Errorf("teacher packages: %w", err)
@@ -60,7 +85,7 @@ func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string
 	defer packages.Close()
 	for packages.Next() {
 		var item domain.AdminPackage
-		if err := packages.Scan(&item.ID, &item.Title, &item.Description, &item.Price, &item.ValidityDays, &item.Status, &item.Kode, &item.Jenjang, &item.PublisherID, &item.PublisherEmail, &item.CreatedAt, &item.SalesCount, &item.ViewCount); err != nil {
+		if err := packages.Scan(&item.ID, &item.Title, &item.Description, &item.Price, &item.ValidityDays, &item.Status, &item.Kode, &item.Jenjang, &item.ExamType, &item.CBTToken, &item.StartDate, &item.EndDate, &item.KategoriID, &item.KategoriName, &item.KelasID, &item.KelasName, &item.PublisherID, &item.PublisherEmail, &item.CreatedAt, &item.SalesCount, &item.ViewCount); err != nil {
 			return nil, err
 		}
 		result.Packages = append(result.Packages, item)
@@ -68,14 +93,14 @@ func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string
 	if err := packages.Err(); err != nil {
 		return nil, err
 	}
-	exams, err := r.db.Query(ctx, `SELECT e.id,e.package_id,e.title,p.title,COALESCE(e.mapel_id::text,''),COALESCE(e.tahun_ajaran_id::text,''),e.duration_minutes,e.total_questions,e.passing_score,e.status,e.created_at FROM exams e JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$1 ORDER BY e.created_at DESC LIMIT 100`, publisherID)
+	exams, err := r.db.Query(ctx, `SELECT e.id,e.package_id,e.title,p.title,COALESCE(e.mapel_id::text,''),COALESCE(e.tahun_ajaran_id::text,''),e.duration_minutes,e.total_questions,e.passing_score,e.status,e.publish_pembahasan,e.created_at FROM exams e JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$1 ORDER BY e.created_at DESC LIMIT 100`, publisherID)
 	if err != nil {
 		return nil, fmt.Errorf("teacher exams: %w", err)
 	}
 	defer exams.Close()
 	for exams.Next() {
 		var item domain.AdminExam
-		if err := exams.Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.CreatedAt); err != nil {
+		if err := exams.Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.PublishPembahasan, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		result.Exams = append(result.Exams, item)
@@ -124,7 +149,7 @@ func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string
 	const commissionsQuery = `SELECT c.id,c.teacher_id,u.email,c.package_id,p.title,COALESCE(t.invoice_number,''),c.kind,c.base_amount,c.rate_percent,c.amount,
 		CASE WHEN c.status='pending' AND c.available_at<=NOW() THEN 'available' ELSE c.status END,c.available_at,c.paid_at,c.payout_reference,c.created_at
 		FROM teacher_commissions c JOIN users u ON u.id=c.teacher_id JOIN packages p ON p.id=c.package_id LEFT JOIN transactions t ON t.id=c.transaction_id
-		WHERE c.teacher_id=$1 ORDER BY c.created_at DESC LIMIT 300`
+		WHERE c.teacher_id=$1 AND NOT (c.split_group IS NOT NULL AND c.amount=0) ORDER BY c.created_at DESC LIMIT 300`
 	commissionRows, err := r.db.Query(ctx, commissionsQuery, publisherID)
 	if err != nil {
 		return nil, fmt.Errorf("teacher commissions: %w", err)
@@ -148,14 +173,14 @@ func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string
 		COALESCE(SUM(amount) FILTER (WHERE status='paid'),0) FROM teacher_commissions WHERE teacher_id=$1`, publisherID).Scan(&result.CommissionSummary.UploadFees, &result.CommissionSummary.SaleBonus, &result.CommissionSummary.Held, &result.CommissionSummary.Available, &result.CommissionSummary.Paid); err != nil {
 		return nil, fmt.Errorf("teacher commission summary: %w", err)
 	}
-	requestRows, err := r.db.Query(ctx, `SELECT pr.id,pr.teacher_id,u.email,pr.amount,pr.status,pr.payout_method,pr.provider,pr.account_number,pr.account_holder_name,pr.phone,pr.admin_note,pr.transfer_reference,pr.submitted_at,pr.reviewed_at,pr.paid_at,pr.updated_at FROM teacher_payout_requests pr JOIN users u ON u.id=pr.teacher_id WHERE pr.teacher_id=$1 ORDER BY pr.submitted_at DESC LIMIT 100`, publisherID)
+	requestRows, err := r.db.Query(ctx, `SELECT pr.id,pr.teacher_id,u.email,pr.amount,pr.status,pr.payout_method,pr.provider,pr.account_number,pr.account_holder_name,pr.phone,pr.admin_note,pr.transfer_reference,pr.proof_url,pr.submitted_at,pr.reviewed_at,pr.paid_at,pr.updated_at FROM teacher_payout_requests pr JOIN users u ON u.id=pr.teacher_id WHERE pr.teacher_id=$1 ORDER BY pr.submitted_at DESC LIMIT 100`, publisherID)
 	if err != nil {
 		return nil, fmt.Errorf("teacher payout requests: %w", err)
 	}
 	defer requestRows.Close()
 	for requestRows.Next() {
 		var item domain.TeacherWithdrawalRequest
-		if err := requestRows.Scan(&item.ID, &item.TeacherID, &item.TeacherEmail, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); err != nil {
+		if err := requestRows.Scan(&item.ID, &item.TeacherID, &item.TeacherEmail, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.ProofURL, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result.PayoutRequests = append(result.PayoutRequests, item)
@@ -178,7 +203,7 @@ func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string
 	return result, payoutRows.Err()
 }
 
-func (r *TeacherRepository) CreatePayoutRequest(ctx context.Context, publisherID string) (*domain.TeacherWithdrawalRequest, error) {
+func (r *TeacherRepository) CreatePayoutRequest(ctx context.Context, publisherID string, amount float64) (*domain.TeacherWithdrawalRequest, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin payout request: %w", err)
@@ -187,7 +212,7 @@ func (r *TeacherRepository) CreatePayoutRequest(ctx context.Context, publisherID
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, publisherID); err != nil {
 		return nil, err
 	}
-	var minimum, amount float64
+	var minimum float64
 	if err := tx.QueryRow(ctx, `SELECT minimum_payout FROM finance_settings WHERE singleton=TRUE`).Scan(&minimum); err != nil {
 		return nil, err
 	}
@@ -204,22 +229,70 @@ func (r *TeacherRepository) CreatePayoutRequest(ctx context.Context, publisherID
 	if active {
 		return nil, domain.ErrPayoutRequestActive
 	}
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(amount),0) FROM teacher_commissions WHERE teacher_id=$1 AND payout_request_id IS NULL AND (status='available' OR (status='pending' AND available_at<=NOW()))`, publisherID).Scan(&amount); err != nil {
+	var available float64
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(SUM(amount),0) FROM teacher_commissions WHERE teacher_id=$1 AND payout_request_id IS NULL AND (status='available' OR (status='pending' AND available_at<=NOW()))`, publisherID).Scan(&available); err != nil {
 		return nil, err
 	}
-	if amount <= 0 || amount < minimum {
+	if amount < minimum {
 		return nil, domain.ErrPayoutMinimum
 	}
-	var item domain.TeacherWithdrawalRequest
-	if err := tx.QueryRow(ctx, `INSERT INTO teacher_payout_requests(teacher_id,amount,payout_method,provider,account_number,account_holder_name,phone) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,teacher_id,amount,status,payout_method,provider,account_number,account_holder_name,phone,admin_note,transfer_reference,submitted_at,reviewed_at,paid_at,updated_at`, publisherID, amount, method, provider, number, holder, phone).Scan(&item.ID, &item.TeacherID, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); err != nil {
-		return nil, adminMutationError(err)
+	if available < amount {
+		return nil, domain.ErrInsufficientPayoutBalance
 	}
-	command, err := tx.Exec(ctx, `UPDATE teacher_commissions SET payout_request_id=$2 WHERE teacher_id=$1 AND payout_request_id IS NULL AND (status='available' OR (status='pending' AND available_at<=NOW()))`, publisherID, item.ID)
+	var partial struct {
+		id       string
+		amount   float64
+		original float64
+	}
+	rows, err := tx.Query(ctx, `SELECT id,amount FROM teacher_commissions WHERE teacher_id=$1 AND payout_request_id IS NULL AND (status='available' OR (status='pending' AND available_at<=NOW())) ORDER BY available_at,created_at FOR UPDATE`, publisherID)
 	if err != nil {
 		return nil, err
 	}
-	if command.RowsAffected() == 0 {
-		return nil, domain.ErrPayoutMinimum
+	defer rows.Close()
+	var toReserve []string
+	var remaining = amount
+	partial.amount = -1
+	for rows.Next() {
+		var cid string
+		var cAmount float64
+		if err := rows.Scan(&cid, &cAmount); err != nil {
+			return nil, err
+		}
+		if remaining <= 0 {
+			break
+		}
+		if cAmount >= remaining {
+			partial.id = cid
+			partial.amount = remaining
+			partial.original = cAmount
+			break
+		}
+		toReserve = append(toReserve, cid)
+		remaining -= cAmount
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	if len(toReserve) == 0 && partial.amount < 0 {
+		return nil, domain.ErrInsufficientPayoutBalance
+	}
+	var item domain.TeacherWithdrawalRequest
+	if err := tx.QueryRow(ctx, `INSERT INTO teacher_payout_requests(teacher_id,amount,payout_method,provider,account_number,account_holder_name,phone) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,teacher_id,amount,status,payout_method,provider,account_number,account_holder_name,phone,admin_note,transfer_reference,proof_url,submitted_at,reviewed_at,paid_at,updated_at`, publisherID, amount, method, provider, number, holder, phone).Scan(&item.ID, &item.TeacherID, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.ProofURL, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); err != nil {
+		return nil, adminMutationError(err)
+	}
+	for _, cid := range toReserve {
+		if _, err := tx.Exec(ctx, `UPDATE teacher_commissions SET payout_request_id=$2 WHERE id=$1`, cid, item.ID); err != nil {
+			return nil, err
+		}
+	}
+	if partial.amount >= 0 {
+		if _, err := tx.Exec(ctx, `UPDATE teacher_commissions SET amount=$2,payout_request_id=$3,split_group=$3 WHERE id=$1`, partial.id, partial.amount, item.ID); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO teacher_commissions(teacher_id,package_id,transaction_id,kind,base_amount,rate_percent,amount,status,available_at,split_group) SELECT teacher_id,package_id,transaction_id,kind,base_amount,rate_percent,$2,'available',available_at,$3 FROM teacher_commissions WHERE id=$1`, partial.id, partial.original-partial.amount, item.ID); err != nil {
+			return nil, err
+		}
 	}
 	if err := tx.QueryRow(ctx, `SELECT email FROM users WHERE id=$1`, publisherID).Scan(&item.TeacherEmail); err != nil {
 		return nil, err
@@ -237,8 +310,8 @@ func (r *TeacherRepository) CancelPayoutRequest(ctx context.Context, publisherID
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var item domain.TeacherWithdrawalRequest
-	const query = `UPDATE teacher_payout_requests SET status='cancelled',updated_at=NOW() WHERE id=$1 AND teacher_id=$2 AND status='submitted' RETURNING id,teacher_id,amount,status,payout_method,provider,account_number,account_holder_name,phone,admin_note,transfer_reference,submitted_at,reviewed_at,paid_at,updated_at`
-	if err := tx.QueryRow(ctx, query, requestID, publisherID).Scan(&item.ID, &item.TeacherID, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); errors.Is(err, pgx.ErrNoRows) {
+	const query = `UPDATE teacher_payout_requests SET status='cancelled',updated_at=NOW() WHERE id=$1 AND teacher_id=$2 AND status IN ('submitted','approved') RETURNING id,teacher_id,amount,status,payout_method,provider,account_number,account_holder_name,phone,admin_note,transfer_reference,proof_url,submitted_at,reviewed_at,paid_at,updated_at`
+	if err := tx.QueryRow(ctx, query, requestID, publisherID).Scan(&item.ID, &item.TeacherID, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.ProofURL, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrPayoutTransition
 	} else if err != nil {
 		return nil, err
@@ -269,12 +342,15 @@ func (r *TeacherRepository) UpdatePayoutAccount(ctx context.Context, publisherID
 }
 
 func (r *TeacherRepository) CreatePackage(ctx context.Context, publisherID string, input domain.AdminPackageRequest) (*domain.AdminPackage, error) {
-	const query = `INSERT INTO packages(title,description,price,validity_days,status,publisher_id,kode,jenjang) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING ` + adminPackageColumns
-	return r.adminPackageRow(ctx, query, input.Title, input.Description, input.Price, input.ValidityDays, input.Status, publisherID, input.Kode, input.Jenjang)
+	const query = `INSERT INTO packages(title,description,price,validity_days,status,publisher_id,kode,jenjang,exam_type,cbt_token,start_date,end_date,kategori_id,kelas_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::timestamptz,$12::timestamptz,$13::uuid,$14::uuid) RETURNING ` + adminPackageColumns
+	return r.adminPackageRow(ctx, query, input.Title, input.Description, input.Price, input.ValidityDays, input.Status, publisherID, nullableKode(input.Kode), input.Jenjang, input.ExamType, input.CBTToken, nullableTimestamptz(input.StartDate), nullableTimestamptz(input.EndDate), input.KategoriID, input.KelasID)
+}
+func (r *TeacherRepository) GetPackage(ctx context.Context, publisherID, id string) (*domain.AdminPackage, error) {
+	return r.adminPackageRow(ctx, `SELECT `+adminPackageColumns+` FROM packages WHERE id=$1 AND publisher_id=$2`, id, publisherID)
 }
 func (r *TeacherRepository) UpdatePackage(ctx context.Context, publisherID, id string, input domain.AdminPackageRequest) (*domain.AdminPackage, error) {
-	const query = `UPDATE packages SET title=$3,description=$4,price=$5,validity_days=$6,kode=$7,jenjang=$8 WHERE id=$1 AND publisher_id=$2 RETURNING ` + adminPackageColumns
-	item, err := r.adminPackageRow(ctx, query, id, publisherID, input.Title, input.Description, input.Price, input.ValidityDays, input.Kode, input.Jenjang)
+	const query = `UPDATE packages SET title=$3,description=$4,price=$5,validity_days=$6,kode=$7,jenjang=$8,exam_type=$9,cbt_token=$10,start_date=$11::timestamptz,end_date=$12::timestamptz,kategori_id=$13::uuid,kelas_id=$14::uuid WHERE id=$1 AND publisher_id=$2 RETURNING ` + adminPackageColumns
+	item, err := r.adminPackageRow(ctx, query, id, publisherID, input.Title, input.Description, input.Price, input.ValidityDays, input.Kode, input.Jenjang, input.ExamType, input.CBTToken, nullableTimestamptz(input.StartDate), nullableTimestamptz(input.EndDate), input.KategoriID, input.KelasID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrPackageNotFound
 	}
@@ -282,18 +358,77 @@ func (r *TeacherRepository) UpdatePackage(ctx context.Context, publisherID, id s
 }
 func (r *TeacherRepository) adminPackageRow(ctx context.Context, query string, args ...any) (*domain.AdminPackage, error) {
 	var item domain.AdminPackage
-	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.Title, &item.Description, &item.Price, &item.ValidityDays, &item.Status, &item.Kode, &item.Jenjang, &item.PublisherID, &item.CreatedAt)
+	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.Title, &item.Description, &item.Price, &item.ValidityDays, &item.Status, &item.Kode, &item.Jenjang, &item.ExamType, &item.CBTToken, &item.StartDate, &item.EndDate, &item.KategoriID, &item.KelasID, &item.PublisherID, &item.CreatedAt)
 	if err != nil {
 		return nil, adminMutationError(err)
 	}
 	return &item, nil
 }
 func (r *TeacherRepository) DeletePackage(ctx context.Context, publisherID, id string) error {
-	return r.teacherDeleteByID(ctx, `DELETE FROM packages WHERE id=$1 AND publisher_id=$2`, domain.ErrPackageNotFound, id, publisherID)
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin delete package: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var examType string
+	if err := tx.QueryRow(ctx, `SELECT exam_type FROM packages WHERE id=$1 AND publisher_id=$2`, id, publisherID).Scan(&examType); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ErrPackageNotFound
+		}
+		return fmt.Errorf("get package exam type: %w", err)
+	}
+	if examType == "cbt" {
+		var hasSales bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM transactions WHERE package_id=$1)`, id).Scan(&hasSales); err != nil {
+			return fmt.Errorf("check package transactions: %w", err)
+		}
+		if hasSales {
+			return domain.ErrPackageInUse
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM user_exams WHERE exam_id IN (SELECT id FROM exams WHERE package_id=$1)`, id); err != nil {
+			return adminMutationError(err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM user_packages WHERE package_id=$1`, id); err != nil {
+			return adminMutationError(err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM exams WHERE package_id=$1`, id); err != nil {
+			return adminMutationError(err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM packages WHERE id=$1 AND publisher_id=$2`, id, publisherID); err != nil {
+			return adminMutationError(err)
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("commit delete cbt package: %w", err)
+		}
+		return nil
+	}
+	var hasAttempts, inUse bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_exams ue JOIN exams e ON e.id=ue.exam_id WHERE e.package_id=$1)`, id).Scan(&hasAttempts); err != nil {
+		return fmt.Errorf("check package attempts: %w", err)
+	}
+	if hasAttempts {
+		return domain.ErrPackageHasAttempts
+	}
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM transactions WHERE package_id=$1) OR EXISTS(SELECT 1 FROM user_packages WHERE package_id=$1)`, id).Scan(&inUse); err != nil {
+		return fmt.Errorf("check package usage: %w", err)
+	}
+	if inUse {
+		return domain.ErrPackageInUse
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM exams WHERE package_id=$1`, id); err != nil {
+		return adminMutationError(err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM packages WHERE id=$1 AND publisher_id=$2`, id, publisherID); err != nil {
+		return adminMutationError(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit delete package: %w", err)
+	}
+	return nil
 }
 
 func (r *TeacherRepository) CreateExam(ctx context.Context, publisherID string, input domain.AdminExamRequest) (*domain.AdminExam, error) {
-	const query = `WITH changed AS (INSERT INTO exams(package_id,title,mapel_id,tahun_ajaran_id,duration_minutes,total_questions,passing_score,status) SELECT $1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8 FROM packages WHERE id=$1 AND publisher_id=$9 RETURNING *) SELECT c.id,c.package_id,c.title,p.title,COALESCE(c.mapel_id::text,''),COALESCE(c.tahun_ajaran_id::text,''),c.duration_minutes,c.total_questions,c.passing_score,c.status,c.created_at FROM changed c JOIN packages p ON p.id=c.package_id`
+	const query = `WITH changed AS (INSERT INTO exams(package_id,title,mapel_id,tahun_ajaran_id,duration_minutes,total_questions,passing_score,status) SELECT $1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8 FROM packages WHERE id=$1 AND publisher_id=$9 RETURNING *) SELECT c.id,c.package_id,c.title,p.title,COALESCE(c.mapel_id::text,''),COALESCE(c.tahun_ajaran_id::text,''),c.duration_minutes,c.total_questions,c.passing_score,c.status,c.publish_pembahasan,c.created_at FROM changed c JOIN packages p ON p.id=c.package_id`
 	item, err := r.teacherExamRow(ctx, query, input.PackageID, input.Title, input.MapelID, input.TahunAjaranID, input.DurationMinutes, input.TotalQuestions, input.PassingScore, input.Status, publisherID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrPackageNotFound
@@ -301,7 +436,7 @@ func (r *TeacherRepository) CreateExam(ctx context.Context, publisherID string, 
 	return item, err
 }
 func (r *TeacherRepository) UpdateExam(ctx context.Context, publisherID, id string, input domain.AdminExamRequest) (*domain.AdminExam, error) {
-	const query = `WITH changed AS (UPDATE exams SET package_id=$3,title=$4,mapel_id=NULLIF($5,'')::uuid,tahun_ajaran_id=NULLIF($6,'')::uuid,duration_minutes=$7,total_questions=$8,passing_score=$9,status=$10 WHERE id=$1 AND package_id IN (SELECT id FROM packages WHERE publisher_id=$2) RETURNING *) SELECT c.id,c.package_id,c.title,p.title,COALESCE(c.mapel_id::text,''),COALESCE(c.tahun_ajaran_id::text,''),c.duration_minutes,c.total_questions,c.passing_score,c.status,c.created_at FROM changed c JOIN packages p ON p.id=c.package_id`
+	const query = `WITH changed AS (UPDATE exams SET package_id=$3,title=$4,mapel_id=NULLIF($5,'')::uuid,tahun_ajaran_id=NULLIF($6,'')::uuid,duration_minutes=$7,total_questions=$8,passing_score=$9,status=$10 WHERE id=$1 AND package_id IN (SELECT id FROM packages WHERE publisher_id=$2) RETURNING *) SELECT c.id,c.package_id,c.title,p.title,COALESCE(c.mapel_id::text,''),COALESCE(c.tahun_ajaran_id::text,''),c.duration_minutes,c.total_questions,c.passing_score,c.status,c.publish_pembahasan,c.created_at FROM changed c JOIN packages p ON p.id=c.package_id`
 	item, err := r.teacherExamRow(ctx, query, id, publisherID, input.PackageID, input.Title, input.MapelID, input.TahunAjaranID, input.DurationMinutes, input.TotalQuestions, input.PassingScore, input.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound
@@ -310,14 +445,136 @@ func (r *TeacherRepository) UpdateExam(ctx context.Context, publisherID, id stri
 }
 func (r *TeacherRepository) teacherExamRow(ctx context.Context, query string, args ...any) (*domain.AdminExam, error) {
 	var item domain.AdminExam
-	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.CreatedAt)
+	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.PublishPembahasan, &item.CreatedAt)
 	if err != nil {
 		return nil, adminMutationError(err)
 	}
 	return &item, nil
 }
 func (r *TeacherRepository) DeleteExam(ctx context.Context, publisherID, id string) error {
+	var hasAttempts bool
+	if err := r.db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_exams ue JOIN exams e ON e.id=ue.exam_id WHERE e.id=$1 AND e.package_id IN (SELECT id FROM packages WHERE publisher_id=$2))`, id, publisherID).Scan(&hasAttempts); err != nil {
+		return fmt.Errorf("check exam attempts: %w", err)
+	}
+	if hasAttempts {
+		return domain.ErrExamHasAttempts
+	}
 	return r.teacherDeleteByID(ctx, `DELETE FROM exams WHERE id=$1 AND package_id IN (SELECT id FROM packages WHERE publisher_id=$2)`, domain.ErrExamNotFound, id, publisherID)
+}
+
+func (r *TeacherRepository) ListCBTPublishSettings(ctx context.Context, publisherID string) ([]domain.CBTPublishSetting, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT e.id, e.package_id, p.title, COALESCE(p.kode,''), p.jenjang,
+		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
+		       e.publish_pembahasan,
+		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
+		       COALESCE(pu.email,'')
+		FROM exams e
+		JOIN packages p ON p.id = e.package_id
+		LEFT JOIN users pu ON pu.id = p.publisher_id
+		WHERE p.exam_type = 'cbt' AND p.publisher_id = $1
+		ORDER BY p.created_at DESC, p.id, e.created_at DESC, e.id`, publisherID)
+	if err != nil {
+		return nil, fmt.Errorf("list teacher cbt publish settings: %w", err)
+	}
+	defer rows.Close()
+	items := make([]domain.CBTPublishSetting, 0)
+	for rows.Next() {
+		var item domain.CBTPublishSetting
+		if err := rows.Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
+			&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
+			&item.PublishPembahasan, &item.Participated, &item.PublisherEmail); err != nil {
+			return nil, fmt.Errorf("scan cbt publish setting: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate teacher cbt publish settings: %w", err)
+	}
+	return items, nil
+}
+
+func (r *TeacherRepository) SetExamPublishPembahasan(ctx context.Context, publisherID, examID string, publish bool) (*domain.CBTPublishSetting, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE exams SET publish_pembahasan = $3 WHERE id = $1 AND package_id IN (SELECT id FROM packages WHERE publisher_id = $2)`, examID, publisherID, publish)
+	if err != nil {
+		return nil, adminMutationError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, domain.ErrExamNotFound
+	}
+	item, err := r.getCBTPublishSetting(ctx, publisherID, examID)
+	if err != nil {
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *TeacherRepository) getCBTPublishSetting(ctx context.Context, publisherID, examID string) (*domain.CBTPublishSetting, error) {
+	const query = `
+		SELECT e.id, e.package_id, p.title, COALESCE(p.kode,''), p.jenjang,
+		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
+		       e.publish_pembahasan,
+		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
+		       COALESCE(pu.email,'')
+		FROM exams e
+		JOIN packages p ON p.id = e.package_id
+		LEFT JOIN users pu ON pu.id = p.publisher_id
+		WHERE e.id = $2 AND p.publisher_id = $1`
+	var item domain.CBTPublishSetting
+	err := r.db.QueryRow(ctx, query, publisherID, examID).Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
+		&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
+		&item.PublishPembahasan, &item.Participated, &item.PublisherEmail)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrExamNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("select cbt publish setting: %w", err)
+	}
+	return &item, nil
+}
+
+func (r *TeacherRepository) ListCBTParticipants(ctx context.Context, publisherID, examID string) ([]domain.CBTParticipant, error) {
+	const query = `
+		SELECT ue.id, ue.user_id, COALESCE(u.name,''), u.email, COALESCE(u.school_level,''), ue.status,
+		       ue.started_at, ue.finished_at, COALESCE(ue.total_score,0), e.passing_score, e.total_questions,
+		       COUNT(ua.id)
+		FROM user_exams ue
+		JOIN users u ON u.id = ue.user_id
+		JOIN exams e ON e.id = ue.exam_id
+		JOIN packages p ON p.id = e.package_id
+		LEFT JOIN user_answers ua ON ua.user_exam_id = ue.id
+		WHERE ue.exam_id = $2 AND p.publisher_id = $1
+		GROUP BY ue.id, u.id, e.passing_score, e.total_questions
+		ORDER BY (ue.status = 'submitted') ASC,
+		         CASE WHEN ue.status = 'ongoing' THEN ue.started_at ELSE COALESCE(ue.finished_at, ue.started_at) END,
+		         ue.id`
+	rows, err := r.db.Query(ctx, query, publisherID, examID)
+	if err != nil {
+		return nil, fmt.Errorf("list cbt participants: %w", err)
+	}
+	defer rows.Close()
+	items := make([]domain.CBTParticipant, 0)
+	for rows.Next() {
+		var item domain.CBTParticipant
+		var answered int64
+		if err := rows.Scan(&item.UserExamID, &item.UserID, &item.Name, &item.Email, &item.SchoolLevel, &item.Status,
+			&item.StartedAt, &item.FinishedAt, &item.TotalScore, &item.PassingScore, &item.TotalQuestions, &answered); err != nil {
+			return nil, fmt.Errorf("scan cbt participant: %w", err)
+		}
+		if item.Status == "ongoing" {
+			next := int(answered) + 1
+			if next > item.TotalQuestions {
+				next = item.TotalQuestions
+			}
+			item.CurrentQuestion = &next
+		}
+		item.Passed = item.Status == "submitted" && item.TotalScore >= item.PassingScore
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate cbt participants: %w", err)
+	}
+	return items, nil
 }
 
 func (r *TeacherRepository) CreateQuestion(ctx context.Context, publisherID string, input domain.AdminQuestionRequest) (*domain.AdminQuestion, error) {
@@ -370,6 +627,22 @@ func (r *TeacherRepository) teacherQuestionRow(ctx context.Context, query string
 }
 func (r *TeacherRepository) DeleteQuestion(ctx context.Context, publisherID, id string) error {
 	return r.teacherDeleteByID(ctx, `DELETE FROM questions WHERE id=$1 AND exam_id IN (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$2)`, domain.ErrQuestionNotFound, id, publisherID)
+}
+func (r *TeacherRepository) BulkDeleteQuestions(ctx context.Context, publisherID string, ids []string, packageID string) (int, error) {
+	var query string
+	var args []any
+	if packageID != "" {
+		query = `DELETE FROM questions WHERE exam_id IN (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$1 AND e.package_id=$2)`
+		args = []any{publisherID, packageID}
+	} else {
+		query = `DELETE FROM questions WHERE id = ANY($1::uuid[]) AND exam_id IN (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$2)`
+		args = []any{ids, publisherID}
+	}
+	tag, err := r.db.Exec(ctx, query, args...)
+	if err != nil {
+		return 0, adminMutationError(err)
+	}
+	return int(tag.RowsAffected()), nil
 }
 
 func (r *TeacherRepository) teacherDeleteByID(ctx context.Context, query string, notFound error, args ...any) error {

@@ -15,6 +15,10 @@ func normalizeQuestion(input domain.AdminQuestionRequest) domain.AdminQuestionRe
 	if input.QuestionType == "" {
 		input.QuestionType = domain.QuestionTypeSingleChoice
 	}
+	if input.QuestionType == domain.QuestionTypeEssay {
+		input.Options = []domain.QuestionOption{}
+		input.CategoryLabels = []string{}
+	}
 	input.PresentationType = domain.PresentationTypeSingle
 	input.GroupCode = ""
 	input.StimulusText = ""
@@ -115,6 +119,11 @@ func canonicalAnswer(questionType string, options []domain.QuestionOption, label
 			parts = append(parts, key+"="+values[key])
 		}
 		return strings.Join(parts, ";"), true
+	case domain.QuestionTypeEssay:
+		if answer == "" {
+			return "", false
+		}
+		return answer, true
 	default:
 		return "", false
 	}

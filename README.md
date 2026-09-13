@@ -79,6 +79,8 @@ Auth memakai adapter PostgreSQL (`pgxpool`) dan Redis (`go-redis`). Detail migra
 
 Nilai demo menggunakan persentase jawaban benar. Kolom `difficulty` dan `discrimination` pada skema soal merupakan fondasi IRT, tetapi kalibrasi parameter dan model 2PL/3PL perlu dataset respons yang memadai serta validasi psikometrik sebelum dipakai untuk keputusan kelulusan.
 
+Gambar (logo situs, bukti sanggah guru, screenshot SIMPKB, QR autentikator) disimpan inline sebagai data URL Base64 di kolom `TEXT` database. Ini cukup pada skala kecil; untuk volume besar ganti ke object storage (S3/MinIO) dan simpan hanya referensi URL-nya.
+
 ## Stress test K6
 
 Jalankan smoke test dahulu dari mesin terpisah, lalu naikkan beban bertahap. Target 20.000
@@ -97,7 +99,8 @@ kurang dari 0,1%. Hasil hanya representatif jika dijalankan pada staging yang se
 ## Deployment production
 
 1. Salin `.env.production.example` menjadi `.env.production`.
-2. Buat semua file pada `secrets/README.md`, lalu pasang sertifikat TLS pada path yang
+2. Buat semua file pada `secrets/README.md` (termasuk `smtp_password.txt` bila
+   email reset kata sandi ingin aktif), lalu pasang sertifikat TLS pada path yang
    dikonfigurasi. Jangan commit nilai rahasia.
 3. Validasi dan jalankan stack:
 
@@ -107,11 +110,21 @@ docker compose --env-file .env.production -f docker-compose.prod.yml up -d --bui
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
 ```
 
-Migration dijalankan oleh service one-shot `migrate`. Untuk menambah replika API di satu
-host gunakan `--scale backend=4`. PostgreSQL dan Redis tidak membuka port ke host; trafik
-publik hanya masuk melalui Nginx HTTPS. Compose ini merupakan baseline single-host. Untuk
-high availability lintas node, gunakan managed PostgreSQL/Redis atau orkestrator seperti
-Kubernetes/Swarm, external load balancer, backup teruji, dan monitoring.
+Migration dijalankan oleh service one-shot `migrate`. Database produksi baru tidak
+berisi akun apa pun; buat owner pertama kali setelah stack sehat:
+
+```bash
+CREATE_OWNER_PASSWORD='password-kuat' scripts/create-owner.sh admin@tka.example.com
+```
+
+Jika email reset kata sandi dibutuhkan, isi `SMTP_HOST/SMTP_PORT/SMTP_USERNAME/SMTP_FROM`
+di `.env.production` dan password SMTP pada `secrets/smtp_password.txt`.
+
+Untuk menambah replika API di satu host gunakan `--scale backend=4`. PostgreSQL dan Redis
+tidak membuka port ke host; trafik publik hanya masuk melalui Nginx HTTPS. Compose ini
+merupakan baseline single-host. Untuk high availability lintas node, gunakan managed
+PostgreSQL/Redis atau orkestrator seperti Kubernetes/Swarm, external load balancer, backup
+teruji, dan monitoring.
 
 Panduan backup, disaster recovery, monitoring, alerting, cleanup, dan blue/green deployment
 tersedia di `docs/post-launch-operations.md`.

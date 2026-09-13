@@ -11,14 +11,14 @@ import (
 	"tka/apps/backend/internal/domain"
 )
 
-const financeSettingsColumns = `platform_commission_percent,default_discount_percent,tax_percent,minimum_payout,payout_cycle,auto_payout,teacher_upload_fee,teacher_sales_bonus_percent,commission_hold_days,updated_at`
+const financeSettingsColumns = `platform_commission_percent,default_discount_percent,tax_percent,minimum_payout,payout_cycle,auto_payout,teacher_upload_fee,teacher_sales_bonus_percent,affiliate_rate_percent,commission_hold_days,updated_at`
 
 func (r *AdminRepository) GetFinanceDashboard(ctx context.Context) (*domain.FinanceDashboard, error) {
 	result := &domain.FinanceDashboard{Users: []domain.UserFinanceProfile{}, Commissions: []domain.TeacherCommission{}, Payouts: []domain.TeacherPayout{}, PayoutAccounts: []domain.TeacherPayoutAccount{}, PayoutRequests: []domain.TeacherWithdrawalRequest{}}
 	if err := r.db.QueryRow(ctx, `SELECT `+financeSettingsColumns+` FROM finance_settings WHERE singleton=TRUE`).Scan(
 		&result.Settings.PlatformCommissionPercent, &result.Settings.DefaultDiscountPercent, &result.Settings.TaxPercent,
 		&result.Settings.MinimumPayout, &result.Settings.PayoutCycle, &result.Settings.AutoPayout, &result.Settings.TeacherUploadFee,
-		&result.Settings.TeacherSalesBonusPercent, &result.Settings.CommissionHoldDays, &result.Settings.UpdatedAt,
+		&result.Settings.TeacherSalesBonusPercent, &result.Settings.AffiliateRatePercent, &result.Settings.CommissionHoldDays, &result.Settings.UpdatedAt,
 	); err != nil {
 		return nil, fmt.Errorf("finance settings: %w", err)
 	}
@@ -72,14 +72,14 @@ func (r *AdminRepository) GetFinanceDashboard(ctx context.Context) (*domain.Fina
 	if err := accountRows.Err(); err != nil {
 		return nil, err
 	}
-	requestRows, err := r.db.Query(ctx, `SELECT pr.id,pr.teacher_id,u.email,pr.amount,pr.status,pr.payout_method,pr.provider,pr.account_number,pr.account_holder_name,pr.phone,pr.admin_note,pr.transfer_reference,pr.submitted_at,pr.reviewed_at,pr.paid_at,pr.updated_at FROM teacher_payout_requests pr JOIN users u ON u.id=pr.teacher_id ORDER BY CASE pr.status WHEN 'submitted' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,pr.submitted_at DESC LIMIT 300`)
+	requestRows, err := r.db.Query(ctx, `SELECT pr.id,pr.teacher_id,u.email,pr.amount,pr.status,pr.payout_method,pr.provider,pr.account_number,pr.account_holder_name,pr.phone,pr.admin_note,pr.transfer_reference,pr.proof_url,pr.submitted_at,pr.reviewed_at,pr.paid_at,pr.updated_at FROM teacher_payout_requests pr JOIN users u ON u.id=pr.teacher_id ORDER BY CASE pr.status WHEN 'submitted' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,pr.submitted_at DESC LIMIT 300`)
 	if err != nil {
 		return nil, fmt.Errorf("finance payout requests: %w", err)
 	}
 	defer requestRows.Close()
 	for requestRows.Next() {
 		var item domain.TeacherWithdrawalRequest
-		if err := requestRows.Scan(&item.ID, &item.TeacherID, &item.TeacherEmail, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); err != nil {
+		if err := requestRows.Scan(&item.ID, &item.TeacherID, &item.TeacherEmail, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.ProofURL, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan payout request: %w", err)
 		}
 		result.PayoutRequests = append(result.PayoutRequests, item)
@@ -90,7 +90,7 @@ func (r *AdminRepository) GetFinanceDashboard(ctx context.Context) (*domain.Fina
 	const commissionQuery = `SELECT c.id,c.teacher_id,u.email,c.package_id,p.title,COALESCE(t.invoice_number,''),c.kind,c.base_amount,c.rate_percent,c.amount,
 		CASE WHEN c.status='pending' AND c.available_at<=NOW() THEN 'available' ELSE c.status END,c.available_at,c.paid_at,c.payout_reference,c.created_at
 		FROM teacher_commissions c JOIN users u ON u.id=c.teacher_id JOIN packages p ON p.id=c.package_id LEFT JOIN transactions t ON t.id=c.transaction_id
-		ORDER BY c.created_at DESC LIMIT 500`
+		WHERE NOT (c.split_group IS NOT NULL AND c.amount=0) ORDER BY c.created_at DESC LIMIT 500`
 	commissionRows, err := r.db.Query(ctx, commissionQuery)
 	if err != nil {
 		return nil, fmt.Errorf("finance commissions: %w", err)
@@ -108,7 +108,7 @@ func (r *AdminRepository) GetFinanceDashboard(ctx context.Context) (*domain.Fina
 	}
 	if err := r.db.QueryRow(ctx, `SELECT
 		COALESCE(SUM(amount) FILTER (WHERE kind='upload_fee' AND status<>'cancelled'),0),
-		COALESCE(SUM(amount) FILTER (WHERE kind IN ('sales_bonus','refund_reversal') AND status<>'cancelled'),0),
+		COALESCE(SUM(amount) FILTER (WHERE kind IN ('sales_bonus','referral_bonus','refund_reversal','referral_reversal') AND status<>'cancelled'),0),
 		COALESCE(SUM(amount) FILTER (WHERE status='pending' AND available_at>NOW()),0),
 		COALESCE(SUM(amount) FILTER (WHERE (status='available' OR (status='pending' AND available_at<=NOW())) AND payout_request_id IS NULL),0),
 		COALESCE(SUM(amount) FILTER (WHERE status='paid'),0) FROM teacher_commissions`).Scan(&result.Summary.UploadFees, &result.Summary.SaleBonus, &result.Summary.Held, &result.Summary.Available, &result.Summary.Paid); err != nil {
@@ -129,10 +129,33 @@ func (r *AdminRepository) GetFinanceDashboard(ctx context.Context) (*domain.Fina
 	return result, payoutRows.Err()
 }
 
+// ExportFinanceLedger mengembalikan seluruh baris ledger komisi (tanpa batas
+// 500 milik dashboard) untuk keperluan laporan/export CSV.
+func (r *AdminRepository) ExportFinanceLedger(ctx context.Context) ([]domain.TeacherCommission, error) {
+	const query = `SELECT c.id,c.teacher_id,u.email,c.package_id,p.title,COALESCE(t.invoice_number,''),c.kind,c.base_amount,c.rate_percent,c.amount,
+		CASE WHEN c.status='pending' AND c.available_at<=NOW() THEN 'available' ELSE c.status END,c.available_at,c.paid_at,c.payout_reference,c.created_at
+		FROM teacher_commissions c JOIN users u ON u.id=c.teacher_id JOIN packages p ON p.id=c.package_id LEFT JOIN transactions t ON t.id=c.transaction_id
+		WHERE NOT (c.split_group IS NOT NULL AND c.amount=0) ORDER BY c.created_at DESC, c.id`
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("export finance ledger: %w", err)
+	}
+	defer rows.Close()
+	items := []domain.TeacherCommission{}
+	for rows.Next() {
+		var item domain.TeacherCommission
+		if err := rows.Scan(&item.ID, &item.TeacherID, &item.TeacherEmail, &item.PackageID, &item.PackageTitle, &item.InvoiceNumber, &item.Kind, &item.BaseAmount, &item.RatePercent, &item.Amount, &item.Status, &item.AvailableAt, &item.PaidAt, &item.PayoutReference, &item.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan export ledger: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *AdminRepository) UpdateFinanceSettings(ctx context.Context, input domain.FinanceSettings) (*domain.FinanceSettings, error) {
 	var item domain.FinanceSettings
-	err := r.db.QueryRow(ctx, `UPDATE finance_settings SET platform_commission_percent=$1,default_discount_percent=$2,tax_percent=$3,minimum_payout=$4,payout_cycle=$5,auto_payout=$6,teacher_upload_fee=$7,teacher_sales_bonus_percent=$8,commission_hold_days=$9,updated_at=NOW() WHERE singleton=TRUE RETURNING `+financeSettingsColumns, input.PlatformCommissionPercent, input.DefaultDiscountPercent, input.TaxPercent, input.MinimumPayout, input.PayoutCycle, input.AutoPayout, input.TeacherUploadFee, input.TeacherSalesBonusPercent, input.CommissionHoldDays).Scan(
-		&item.PlatformCommissionPercent, &item.DefaultDiscountPercent, &item.TaxPercent, &item.MinimumPayout, &item.PayoutCycle, &item.AutoPayout, &item.TeacherUploadFee, &item.TeacherSalesBonusPercent, &item.CommissionHoldDays, &item.UpdatedAt,
+	err := r.db.QueryRow(ctx, `UPDATE finance_settings SET platform_commission_percent=$1,default_discount_percent=$2,tax_percent=$3,minimum_payout=$4,payout_cycle=$5,auto_payout=$6,teacher_upload_fee=$7,teacher_sales_bonus_percent=$8,affiliate_rate_percent=$9,commission_hold_days=$10,updated_at=NOW() WHERE singleton=TRUE RETURNING `+financeSettingsColumns, input.PlatformCommissionPercent, input.DefaultDiscountPercent, input.TaxPercent, input.MinimumPayout, input.PayoutCycle, input.AutoPayout, input.TeacherUploadFee, input.TeacherSalesBonusPercent, input.AffiliateRatePercent, input.CommissionHoldDays).Scan(
+		&item.PlatformCommissionPercent, &item.DefaultDiscountPercent, &item.TaxPercent, &item.MinimumPayout, &item.PayoutCycle, &item.AutoPayout, &item.TeacherUploadFee, &item.TeacherSalesBonusPercent, &item.AffiliateRatePercent, &item.CommissionHoldDays, &item.UpdatedAt,
 	)
 	if err != nil {
 		return nil, adminMutationError(err)
@@ -189,8 +212,8 @@ func (r *AdminRepository) ReviewPayoutRequest(ctx context.Context, requestID str
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var item domain.TeacherWithdrawalRequest
-	const locked = `SELECT pr.id,pr.teacher_id,u.email,pr.amount,pr.status,pr.payout_method,pr.provider,pr.account_number,pr.account_holder_name,pr.phone,pr.admin_note,pr.transfer_reference,pr.submitted_at,pr.reviewed_at,pr.paid_at,pr.updated_at FROM teacher_payout_requests pr JOIN users u ON u.id=pr.teacher_id WHERE pr.id=$1 FOR UPDATE OF pr`
-	if err := tx.QueryRow(ctx, locked, requestID).Scan(&item.ID, &item.TeacherID, &item.TeacherEmail, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); errors.Is(err, pgx.ErrNoRows) {
+	const locked = `SELECT pr.id,pr.teacher_id,u.email,pr.amount,pr.status,pr.payout_method,pr.provider,pr.account_number,pr.account_holder_name,pr.phone,pr.admin_note,pr.transfer_reference,pr.proof_url,pr.submitted_at,pr.reviewed_at,pr.paid_at,pr.updated_at FROM teacher_payout_requests pr JOIN users u ON u.id=pr.teacher_id WHERE pr.id=$1 FOR UPDATE OF pr`
+	if err := tx.QueryRow(ctx, locked, requestID).Scan(&item.ID, &item.TeacherID, &item.TeacherEmail, &item.Amount, &item.Status, &item.PayoutMethod, &item.Provider, &item.AccountNumber, &item.AccountHolderName, &item.Phone, &item.AdminNote, &item.TransferReference, &item.ProofURL, &item.SubmittedAt, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrPayoutRequestNotFound
 	} else if err != nil {
 		return nil, err
@@ -217,6 +240,9 @@ func (r *AdminRepository) ReviewPayoutRequest(ctx context.Context, requestID str
 		if input.Reference == "" {
 			return nil, domain.ErrInvalidInput
 		}
+		if input.ProofURL == "" {
+			return nil, domain.ErrPayoutProofRequired
+		}
 		var payout domain.TeacherPayout
 		if err := tx.QueryRow(ctx, `INSERT INTO teacher_payouts(teacher_id,amount,reference,payout_request_id) VALUES($1,$2,$3,$4) RETURNING id,teacher_id,amount,reference,paid_at`, item.TeacherID, item.Amount, input.Reference, item.ID).Scan(&payout.ID, &payout.TeacherID, &payout.Amount, &payout.Reference, &payout.PaidAt); err != nil {
 			return nil, adminMutationError(err)
@@ -225,14 +251,61 @@ func (r *AdminRepository) ReviewPayoutRequest(ctx context.Context, requestID str
 			return nil, err
 		}
 	}
-	update := `UPDATE teacher_payout_requests SET status=$2,admin_note=$3,transfer_reference=CASE WHEN $2='paid' THEN $4 ELSE transfer_reference END,reviewed_at=CASE WHEN $2 IN ('approved','rejected') THEN NOW() ELSE reviewed_at END,paid_at=CASE WHEN $2='paid' THEN NOW() ELSE paid_at END,updated_at=NOW() WHERE id=$1 RETURNING status,admin_note,transfer_reference,reviewed_at,paid_at,updated_at`
-	if err := tx.QueryRow(ctx, update, requestID, input.Status, input.Note, input.Reference).Scan(&item.Status, &item.AdminNote, &item.TransferReference, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); err != nil {
+	update := `UPDATE teacher_payout_requests SET status=$2::varchar,admin_note=$3::varchar,transfer_reference=CASE WHEN $4::varchar='' THEN transfer_reference ELSE $4::varchar END,proof_url=CASE WHEN $5::varchar='' THEN proof_url ELSE $5::varchar END,reviewed_at=CASE WHEN $2::varchar IN ('approved','rejected') THEN NOW() ELSE reviewed_at END,paid_at=CASE WHEN $2::varchar='paid' THEN NOW() ELSE paid_at END,updated_at=NOW() WHERE id=$1::uuid RETURNING status,admin_note,transfer_reference,proof_url,reviewed_at,paid_at,updated_at`
+	if err := tx.QueryRow(ctx, update, requestID, input.Status, input.Note, input.Reference, input.ProofURL).Scan(&item.Status, &item.AdminNote, &item.TransferReference, &item.ProofURL, &item.ReviewedAt, &item.PaidAt, &item.UpdatedAt); err != nil {
 		return nil, err
+	}
+	link := "/dashboard/teacher"
+	switch item.Status {
+	case "approved", "paid":
+		title, body := "Pencairan disetujui", "Pengajuan pencairan Anda telah disetujui admin."
+		if item.Status == "paid" {
+			title, body = "Dana cair", "Dana pencairan Anda telah ditransfer."
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO notifications(user_id,title,body,link) VALUES($1,$2,$3,$4)`, item.TeacherID, title, body, link); err != nil {
+			return nil, fmt.Errorf("notify payout %s: %w", item.Status, err)
+		}
+	case "rejected":
+		note := item.AdminNote
+		if note == "" {
+			note = "Anda dapat mengajukan ulang setelah meneliti kendalanya."
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO notifications(user_id,title,body,link) VALUES($1,'Pencairan ditolak',$2,$3)`, item.TeacherID, note, link); err != nil {
+			return nil, fmt.Errorf("notify payout rejection: %w", err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
 	return &item, nil
+}
+
+func (r *AdminRepository) ListPayoutEligibleTeachers(ctx context.Context) ([]string, error) {
+	const query = `
+		SELECT tc.teacher_id
+		FROM teacher_commissions tc
+		JOIN teacher_payout_accounts tpa ON tpa.teacher_id = tc.teacher_id
+		WHERE tc.payout_request_id IS NULL AND (tc.status='available' OR (tc.status='pending' AND tc.available_at<=NOW()))
+		  AND NOT EXISTS (SELECT 1 FROM teacher_payout_requests pr WHERE pr.teacher_id=tc.teacher_id AND pr.status IN ('submitted','approved'))
+		GROUP BY tc.teacher_id
+		HAVING SUM(tc.amount) >= (SELECT minimum_payout FROM finance_settings WHERE singleton=TRUE)`
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("list payout eligible teachers: %w", err)
+	}
+	defer rows.Close()
+	ids := make([]string, 0, 4)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan eligible teacher: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate eligible teachers: %w", err)
+	}
+	return ids, nil
 }
 
 func (r *AdminRepository) UpdateUserFinance(ctx context.Context, userID string, input domain.UserFinanceUpdateRequest) (*domain.UserFinanceProfile, error) {

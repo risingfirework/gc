@@ -1,3 +1,4 @@
+// Package middleware menyediakan middleware HTTP (auth, rate limit, keamanan).
 package middleware
 
 import (
@@ -43,26 +44,39 @@ func ClaimsFromContext(ctx context.Context) (domain.AuthClaims, bool) {
 	return claims, ok
 }
 
+func RequireRoles(roles ...string) func(http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(roles))
+	for _, role := range roles {
+		allowed[role] = struct{}{}
+	}
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := ClaimsFromContext(r.Context())
+			if !ok {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "staff access required"})
+				return
+			}
+			if _, ok := allowed[claims.Role]; !ok {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "staff access required"})
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func RequireAdmin(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := ClaimsFromContext(r.Context())
-		if !ok || claims.Role != domain.RoleAdmin {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "admin access required"})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	// Admin (operator konten) dan owner (pemilik) diizinkan; finance tidak.
+	return RequireRoles(domain.RoleOwner, domain.RoleAdmin)(next)
 }
 
 func RequireTeacher(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, ok := ClaimsFromContext(r.Context())
-		if !ok || (claims.Role != domain.RoleTeacher && claims.Role != domain.RoleAdmin) {
-			writeJSON(w, http.StatusForbidden, map[string]string{"error": "teacher access required"})
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	return RequireRoles(domain.RoleTeacher, domain.RoleAdmin, domain.RoleOwner)(next)
+}
+
+// RequireAffiliate membatasi akses hanya untuk user dengan role affiliate.
+func RequireAffiliate(next http.Handler) http.Handler {
+	return RequireRoles(domain.RoleAffiliate)(next)
 }
 
 func writeUnauthorized(w http.ResponseWriter) {

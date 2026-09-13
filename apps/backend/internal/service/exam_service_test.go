@@ -15,6 +15,17 @@ func TestCalculateExamScoreWeighted(t *testing.T) {
 	}
 }
 
+func TestCalculateExamScoreIgnoresUngradedEssay(t *testing.T) {
+	questions := []domain.Question{
+		{ID: "pg", QuestionType: domain.QuestionTypeSingleChoice, CorrectAnswer: "A", ScoreWeight: 1},
+		{ID: "essay", QuestionType: domain.QuestionTypeEssay, CorrectAnswer: "Referensi", ScoreWeight: 1},
+	}
+	got := CalculateExamScore("standard", questions, map[string]string{"pg": "A"})
+	if got != 50 {
+		t.Fatalf("essay kehilangan bobot harus tetap masuk penyebut; expected 50, got %v", got)
+	}
+}
+
 func TestCalculateExamScoreIRTOrdersAbility(t *testing.T) {
 	questions := []domain.Question{
 		{ID: "1", CorrectAnswer: "A", Discrimination: 1.2, Difficulty: -0.5},

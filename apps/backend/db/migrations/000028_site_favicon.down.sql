@@ -1,0 +1,1 @@
+ALTER TABLE site_settings DROP COLUMN IF EXISTS favicon_data_url;

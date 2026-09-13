@@ -1,8 +1,10 @@
+// Package http merakit router HTTP dari service-service aplikasi.
 package http
 
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	sentryhttp "github.com/getsentry/sentry-go/http"
@@ -16,11 +18,25 @@ import (
 )
 
 type RouterOptions struct {
-	Metrics      *observability.Metrics
-	EnableSentry bool
-	Admin        domain.AdminService
-	Teacher      domain.TeacherService
-	Testimonial  domain.TestimonialService
+	Metrics                  *observability.Metrics
+	EnableSentry             bool
+	RateLimiter              domain.RateLimiter
+	LoginRateLimit           int
+	LoginRateWindow          time.Duration
+	ForgotPasswordRateLimit  int
+	ForgotPasswordRateWindow time.Duration
+	RegisterRateLimit        int
+	RegisterRateWindow       time.Duration
+	GoogleRateLimit          int
+	GoogleRateWindow         time.Duration
+	TrustProxy               bool
+	ViewRateLimit            int
+	ViewRateWindow           time.Duration
+	Admin                    domain.AdminService
+	Teacher                  domain.TeacherService
+	Testimonial              domain.TestimonialService
+	Notification             domain.NotificationService
+	Affiliate                domain.AffiliateService
 }
 
 func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.PaymentService, analytics domain.ExamAnalyticsService, logger *slog.Logger, allowedOrigin string, options ...RouterOptions) http.Handler {
@@ -47,62 +63,140 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 
 	authHandler := handler.NewAuthHandler(auth, logger)
 	cbtHandler := handler.NewCBTHandler(cbt, logger)
+	var analyticsHandler *handler.AnalyticsHandler
+	if analytics != nil {
+		analyticsHandler = handler.NewAnalyticsHandler(analytics, logger)
+	}
 	router.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 	router.Route("/api/v1/auth", func(router chi.Router) {
-		router.Post("/register", authHandler.Register)
-		router.Post("/login", authHandler.Login)
-		router.Post("/forgot-password", authHandler.ForgotPassword)
+		limiter := opts.RateLimiter != nil
+		trustProxy := opts.TrustProxy
+		if limiter {
+			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.RegisterRateLimit, defaultInt(opts.LoginRateLimit, 10)), positiveWindow(opts.RegisterRateWindow, positiveWindow(opts.LoginRateWindow, 15*time.Minute)), logger, trustProxy)).Post("/register", authHandler.Register)
+			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.LoginRateLimit, 10), positiveWindow(opts.LoginRateWindow, 15*time.Minute), logger, trustProxy)).Post("/login", authHandler.Login)
+			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.ForgotPasswordRateLimit, 5), positiveWindow(opts.ForgotPasswordRateWindow, 1*time.Hour), logger, trustProxy)).Post("/forgot-password", authHandler.ForgotPassword)
+			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.LoginRateLimit, 10), positiveWindow(opts.LoginRateWindow, 15*time.Minute), logger, trustProxy)).Post("/refresh", authHandler.Refresh)
+			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.GoogleRateLimit, defaultInt(opts.LoginRateLimit, 10)), positiveWindow(opts.GoogleRateWindow, positiveWindow(opts.LoginRateWindow, 15*time.Minute)), logger, trustProxy)).Post("/google", authHandler.GoogleLogin)
+		} else {
+			router.Post("/register", authHandler.Register)
+			router.Post("/login", authHandler.Login)
+			router.Post("/forgot-password", authHandler.ForgotPassword)
+			router.Post("/refresh", authHandler.Refresh)
+			router.Post("/google", authHandler.GoogleLogin)
+		}
 		router.Post("/reset-password", authHandler.ResetPassword)
-		router.Post("/google", authHandler.GoogleLogin)
+		router.Post("/verify-2fa", authHandler.Verify2FA)
 		router.With(middleware.RequireAuth(auth)).Get("/me", authHandler.CurrentUser)
 		router.With(middleware.RequireAuth(auth)).Patch("/me", authHandler.UpdateProfile)
 		router.With(middleware.RequireAuth(auth)).Post("/logout", authHandler.Logout)
+		router.Group(func(router chi.Router) {
+			// Kelola autentikator dua langkah — hanya owner & finance.
+			router.Use(middleware.RequireAuth(auth))
+			router.Get("/2fa/setup", authHandler.TwoFactorSetup)
+			router.Post("/2fa/enable", authHandler.TwoFactorEnable)
+			router.Post("/2fa/disable", authHandler.TwoFactorDisable)
+		})
 	})
 	if payment != nil {
 		paymentHandler := handler.NewPaymentHandler(payment, logger)
 		router.Get("/api/v1/packages", paymentHandler.ListPackages)
-		router.Post("/api/v1/packages/{id}/view", paymentHandler.TrackPackageView)
+		// Pembatasan per-IP mencegah penghitungan view katalog di-inflate
+		// dengan membuat visitor_key baru terus-menerus.
+		if opts.RateLimiter != nil {
+			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.ViewRateLimit, 60), positiveWindow(opts.ViewRateWindow, time.Minute), logger, opts.TrustProxy)).Post("/api/v1/packages/{id}/view", paymentHandler.TrackPackageView)
+		} else {
+			router.Post("/api/v1/packages/{id}/view", paymentHandler.TrackPackageView)
+		}
 		router.Post("/api/v1/webhooks/payment", paymentHandler.Webhook)
 		router.With(middleware.RequireAuth(auth)).Get("/api/v1/packages/mine", paymentHandler.ListMyPackages)
 		router.With(middleware.RequireAuth(auth)).Get("/api/v1/finance/me", paymentHandler.PricingPolicy)
 		router.With(middleware.RequireAuth(auth)).Get("/api/v1/packages/{id}/exams", cbtHandler.ListPackageExams)
 		router.With(middleware.RequireAuth(auth)).Post("/api/v1/packages/{id}/claim", paymentHandler.ClaimFreePackage)
 		router.With(middleware.RequireAuth(auth)).Post("/api/v1/transactions/checkout", paymentHandler.Checkout)
+		router.With(middleware.RequireAuth(auth)).Get("/api/v1/transactions/mine", paymentHandler.MyTransactions)
+		router.With(middleware.RequireAuth(auth)).Get("/api/v1/transactions/pending", paymentHandler.PendingTransactions)
+		router.With(middleware.RequireAuth(auth)).Get("/api/v1/transactions/{id}/invoice.pdf", paymentHandler.InvoicePDF)
 	}
 	if opts.Admin != nil {
 		adminHandler := handler.NewAdminHandler(opts.Admin, logger)
 		router.Get("/api/v1/settings", adminHandler.SiteSettings)
 		router.Route("/api/v1/admin", func(router chi.Router) {
 			router.Use(middleware.RequireAuth(auth))
-			router.Use(middleware.RequireAdmin)
-			router.Get("/dashboard", adminHandler.Dashboard)
-			router.Put("/settings", adminHandler.UpdateSiteSettings)
-			router.Get("/finance", adminHandler.FinanceDashboard)
-			router.Put("/finance/settings", adminHandler.UpdateFinanceSettings)
-			router.Put("/finance/users/{id}", adminHandler.UpdateUserFinance)
-			router.Post("/finance/teachers/{id}/payout", adminHandler.PayTeacherCommissions)
-			router.Patch("/finance/payout-requests/{id}", adminHandler.ReviewPayoutRequest)
-			router.Post("/users", adminHandler.CreateUser)
-			router.Patch("/users/{id}", adminHandler.UpdateUser)
-			router.Delete("/users/{id}", adminHandler.DeleteUser)
-			router.Post("/packages", adminHandler.CreatePackage)
-			router.Post("/packages/bundle", adminHandler.CreatePackageBundle)
-			router.Put("/packages/{id}", adminHandler.UpdatePackage)
-			router.Delete("/packages/{id}", adminHandler.DeletePackage)
-			router.Post("/exams", adminHandler.CreateExam)
-			router.Put("/exams/{id}", adminHandler.UpdateExam)
-			router.Delete("/exams/{id}", adminHandler.DeleteExam)
-			router.Post("/questions", adminHandler.CreateQuestion)
-			router.Put("/questions/{id}", adminHandler.UpdateQuestion)
-			router.Delete("/questions/{id}", adminHandler.DeleteQuestion)
-			router.Get("/master/{category}", adminHandler.ListMaster)
-			router.Post("/master/{category}", adminHandler.CreateMaster)
-			router.Put("/master/{category}/{id}", adminHandler.UpdateMaster)
-			router.Delete("/master/{category}/{id}", adminHandler.DeleteMaster)
+			router.Group(func(router chi.Router) {
+				// Konten & operasional: owner + admin (operator konten).
+				router.Use(middleware.RequireRoles(domain.RoleOwner, domain.RoleAdmin))
+				router.Get("/dashboard", adminHandler.Dashboard)
+				router.Put("/settings", adminHandler.UpdateSiteSettings)
+				router.Get("/packages", adminHandler.Packages)
+				router.Post("/packages", adminHandler.CreatePackage)
+				router.Post("/packages/bundle", adminHandler.CreatePackageBundle)
+				router.Put("/packages/{id}", adminHandler.UpdatePackage)
+				router.Delete("/packages/{id}", adminHandler.DeletePackage)
+				router.Post("/exams", adminHandler.CreateExam)
+				router.Get("/exams", adminHandler.Exams)
+				router.Put("/exams/{id}", adminHandler.UpdateExam)
+				router.Delete("/exams/{id}", adminHandler.DeleteExam)
+				router.Get("/cbt-settings", adminHandler.CBTSettings)
+				router.Patch("/cbt-settings/{id}", adminHandler.SetCBTPublish)
+				router.Get("/cbt-settings/{id}/participants", adminHandler.CBTParticipants)
+				router.Post("/questions", adminHandler.CreateQuestion)
+				router.Get("/questions", adminHandler.Questions)
+				router.Put("/questions/{id}", adminHandler.UpdateQuestion)
+				router.Delete("/questions/{id}", adminHandler.DeleteQuestion)
+				router.Post("/questions/bulk-delete", adminHandler.BulkDeleteQuestions)
+				router.Get("/master/{category}", adminHandler.ListMaster)
+				router.Post("/master/{category}", adminHandler.CreateMaster)
+				router.Put("/master/{category}/{id}", adminHandler.UpdateMaster)
+				router.Delete("/master/{category}/{id}", adminHandler.DeleteMaster)
+				router.Get("/teachers/verification", adminHandler.TeacherVerifications)
+				router.Post("/teachers/{id}/verify", adminHandler.ApproveTeacher)
+				router.Post("/teachers/{id}/reject", adminHandler.RejectTeacher)
+				router.Post("/teachers/{id}/simpkb/check", adminHandler.CheckTeacherSIMPKB)
+			})
+			router.Group(func(router chi.Router) {
+				// Daftar transaksi tanpa data internal lain: owner/admin/finance.
+				// Refund hanya owner/finance yang diizinkan.
+				router.Use(middleware.RequireRoles(domain.RoleOwner, domain.RoleAdmin, domain.RoleFinance))
+				router.Get("/transactions", adminHandler.Transactions)
+			})
+			router.Group(func(router chi.Router) {
+				router.Use(middleware.RequireRoles(domain.RoleOwner, domain.RoleFinance))
+				router.Post("/transactions/{id}/refund", adminHandler.RefundTransaction)
+			})
+			router.Group(func(router chi.Router) {
+				// Keuangan: owner + finance. Hanya owner yang boleh mengubah kebijakan komisi.
+				router.Use(middleware.RequireRoles(domain.RoleOwner, domain.RoleFinance))
+				router.Get("/finance", adminHandler.FinanceDashboard)
+				router.Get("/finance/export", adminHandler.FinanceExportCSV)
+				router.Post("/finance/teachers/{id}/payout", adminHandler.PayTeacherCommissions)
+				router.Patch("/finance/payout-requests/{id}", adminHandler.ReviewPayoutRequest)
+			})
+			router.Group(func(router chi.Router) {
+				// Aksen terbatas milik owner: manajemen user, kebijakan keuangan, audit log.
+				router.Use(middleware.RequireRoles(domain.RoleOwner))
+				router.Put("/finance/settings", adminHandler.UpdateFinanceSettings)
+				router.Put("/finance/users/{id}", adminHandler.UpdateUserFinance)
+				router.Get("/users", adminHandler.Users)
+				router.Post("/users", adminHandler.CreateUser)
+				router.Patch("/users/{id}", adminHandler.UpdateUser)
+				router.Delete("/users/{id}", adminHandler.DeleteUser)
+				router.Get("/audit", adminHandler.AuditLogList)
+			})
+		})
+	}
+	if opts.Affiliate != nil {
+		affiliateHandler := handler.NewAffiliateHandler(opts.Affiliate, logger)
+		router.Route("/api/v1/affiliate", func(router chi.Router) {
+			router.Use(middleware.RequireAuth(auth))
+			router.Use(middleware.RequireAffiliate)
+			router.Get("/dashboard", affiliateHandler.Dashboard)
+			router.Put("/payout-account", affiliateHandler.UpdatePayoutAccount)
+			router.Post("/payout-requests", affiliateHandler.CreatePayoutRequest)
+			router.Patch("/payout-requests/{id}/cancel", affiliateHandler.CancelPayoutRequest)
 		})
 	}
 	if opts.Teacher != nil {
@@ -111,6 +205,7 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 			router.Use(middleware.RequireAuth(auth))
 			router.Use(middleware.RequireTeacher)
 			router.Get("/dashboard", teacherHandler.Dashboard)
+			router.Post("/appeal", teacherHandler.Appeal)
 			router.Put("/payout-account", teacherHandler.UpdatePayoutAccount)
 			router.Post("/payout-requests", teacherHandler.CreatePayoutRequest)
 			router.Patch("/payout-requests/{id}/cancel", teacherHandler.CancelPayoutRequest)
@@ -121,18 +216,22 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 			router.Post("/exams", teacherHandler.CreateExam)
 			router.Put("/exams/{id}", teacherHandler.UpdateExam)
 			router.Delete("/exams/{id}", teacherHandler.DeleteExam)
+			router.Get("/cbt-settings", teacherHandler.CBTSettings)
+			router.Patch("/cbt-settings/{id}", teacherHandler.SetCBTPublish)
+			router.Get("/cbt-settings/{id}/participants", teacherHandler.CBTParticipants)
 			router.Post("/questions", teacherHandler.CreateQuestion)
 			router.Put("/questions/{id}", teacherHandler.UpdateQuestion)
 			router.Delete("/questions/{id}", teacherHandler.DeleteQuestion)
+			router.Post("/questions/bulk-delete", teacherHandler.BulkDeleteQuestions)
 		})
 	}
 	router.Group(func(router chi.Router) {
 		router.Use(middleware.RequireAuth(auth))
+		router.Get("/api/v1/cbt/lookup", cbtHandler.LookupCBT)
 		router.Get("/api/v1/exams/{id}/start", cbtHandler.StartExam)
 		router.Post("/api/v1/cbt/answers/sync", cbtHandler.SyncAnswer)
 		router.Post("/api/v1/exams/{id}/submit", cbtHandler.SubmitExam)
-		if analytics != nil {
-			analyticsHandler := handler.NewAnalyticsHandler(analytics, logger)
+		if analyticsHandler != nil {
 			router.Get("/api/v1/exams/{id}/result", analyticsHandler.Result)
 			router.Get("/api/v1/rankings/global", analyticsHandler.GlobalRanking)
 		}
@@ -150,6 +249,16 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 			router.Delete("/{id}", testimonialHandler.AdminDelete)
 		})
 	}
+	if opts.Notification != nil {
+		notificationHandler := handler.NewNotificationHandler(opts.Notification, logger)
+		router.Route("/api/v1/notifications", func(router chi.Router) {
+			router.Use(middleware.RequireAuth(auth))
+			router.Get("/", notificationHandler.List)
+			router.Get("/unread-count", notificationHandler.UnreadCount)
+			router.Patch("/{id}/read", notificationHandler.MarkRead)
+			router.Patch("/mark-all-read", notificationHandler.MarkAllRead)
+		})
+	}
 	return router
 }
 
@@ -162,16 +271,42 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func cors(allowedOrigin string) func(http.Handler) http.Handler {
+func defaultInt(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func positiveWindow(value, fallback time.Duration) time.Duration {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func cors(allowedOrigins string) func(http.Handler) http.Handler {
+	// Support comma-separated list of allowed origins
+	allowed := map[string]bool{}
+	for _, origin := range strings.Split(allowedOrigins, ",") {
+		origin = strings.TrimSpace(origin)
+		if origin != "" {
+			allowed[origin] = true
+		}
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
-			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			if r.Method == http.MethodOptions {
-				w.WriteHeader(http.StatusNoContent)
-				return
+			origin := r.Header.Get("Origin")
+			if origin != "" && allowed[origin] {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Vary", "Origin")
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Max-Age", "600")
+				if r.Method == http.MethodOptions {
+					w.WriteHeader(http.StatusNoContent)
+					return
+				}
 			}
 			next.ServeHTTP(w, r)
 		})

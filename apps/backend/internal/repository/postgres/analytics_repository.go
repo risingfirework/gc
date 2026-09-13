@@ -21,11 +21,14 @@ func NewAnalyticsRepository(db *pgxpool.Pool) *AnalyticsRepository {
 
 func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExamID string) (*domain.ExamResultResponse, error) {
 	const headerQuery = `
-		SELECT ue.id, ue.exam_id, e.title, ue.status, e.scoring_method, ue.started_at, ue.finished_at, ue.total_score, e.passing_score
-		FROM user_exams ue JOIN exams e ON e.id = ue.exam_id
+		SELECT ue.id, ue.exam_id, e.title, ue.status, e.scoring_method, ue.started_at, ue.finished_at, ue.total_score, e.passing_score,
+		       p.exam_type, e.publish_pembahasan
+		FROM user_exams ue JOIN exams e ON e.id = ue.exam_id JOIN packages p ON p.id = e.package_id
 		WHERE ue.id = $1 AND ue.user_id = $2`
 	var result domain.ExamResultResponse
-	err := r.db.QueryRow(ctx, headerQuery, userExamID, userID).Scan(&result.UserExamID, &result.ExamID, &result.Title, &result.Status, &result.ScoringMethod, &result.StartedAt, &result.FinishedAt, &result.TotalScore, &result.PassingScore)
+	var examType string
+	var publishPembahasan bool
+	err := r.db.QueryRow(ctx, headerQuery, userExamID, userID).Scan(&result.UserExamID, &result.ExamID, &result.Title, &result.Status, &result.ScoringMethod, &result.StartedAt, &result.FinishedAt, &result.TotalScore, &result.PassingScore, &examType, &publishPembahasan)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrUserExamNotFound
 	}
@@ -34,6 +37,9 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 	}
 	if result.Status != "submitted" {
 		return nil, domain.ErrExamStillRunning
+	}
+	if examType == "cbt" && !publishPembahasan {
+		return nil, domain.ErrPembahasanNotPublished
 	}
 	result.Passed = result.TotalScore >= result.PassingScore
 
@@ -106,45 +112,95 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 	return &result, nil
 }
 
-func (r *AnalyticsRepository) ListGlobalRanking(ctx context.Context, currentUserID, level string, limit int) ([]domain.GlobalRankingEntry, error) {
-	const query = `
-		WITH best_attempt AS (
-			SELECT DISTINCT ON (users.id) users.id AS user_id, ue.total_score, ue.started_at, ue.finished_at,
-			       EXTRACT(EPOCH FROM (ue.finished_at - ue.started_at))::bigint AS duration_seconds
+func (r *AnalyticsRepository) ListGlobalRanking(ctx context.Context, currentUserID, level, mode string, limit, offset int) ([]domain.GlobalRankingEntry, int, error) {
+	countQuery := `
+		SELECT COUNT(*) FROM (
+			SELECT user_id FROM (
+				SELECT ue.user_id, ue.exam_id,
+				       COUNT(*) OVER (PARTITION BY ue.exam_id) AS cohort_n,
+				       ROW_NUMBER() OVER (PARTITION BY ue.user_id, ue.exam_id
+				         ORDER BY ue.total_score DESC, EXTRACT(EPOCH FROM (ue.finished_at - ue.started_at)) ASC, ue.finished_at ASC) AS rn
+				FROM user_exams ue
+				JOIN users ON users.id = ue.user_id
+				WHERE ue.status = 'submitted' AND ue.total_score IS NOT NULL AND ue.finished_at IS NOT NULL
+				  AND users.role = 'student' AND ($1 = '' OR users.school_level = $1)
+			) ranked_rows
+			WHERE ranked_rows.rn = 1 AND ranked_rows.cohort_n > 1
+			GROUP BY user_id
+		) counted`
+	var total int
+	if err := r.db.QueryRow(ctx, countQuery, level).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count global ranking: %w", err)
+	}
+
+	query := `
+		WITH best_per_exam AS (
+			SELECT DISTINCT ON (ue.user_id, ue.exam_id) ue.user_id, ue.exam_id, ue.total_score AS best_score,
+			       EXTRACT(EPOCH FROM (ue.finished_at - ue.started_at))::bigint AS duration_seconds,
+			       ue.finished_at
 			FROM user_exams ue
 			JOIN users ON users.id = ue.user_id
 			WHERE ue.status = 'submitted' AND ue.total_score IS NOT NULL AND ue.finished_at IS NOT NULL
 			  AND users.role = 'student' AND ($1 = '' OR users.school_level = $1)
-			ORDER BY users.id, ue.total_score DESC, duration_seconds ASC, ue.finished_at ASC
+			ORDER BY ue.user_id, ue.exam_id, ue.total_score DESC, duration_seconds ASC, ue.finished_at ASC
+		), cohort AS (
+			SELECT exam_id, user_id, duration_seconds, finished_at,
+			       RANK() OVER (PARTITION BY exam_id ORDER BY best_score DESC, duration_seconds ASC, finished_at ASC) AS rank_pos,
+			       COUNT(*) OVER (PARTITION BY exam_id)::bigint AS cohort_n
+			FROM best_per_exam
+		), pct AS (
+			SELECT user_id, duration_seconds, finished_at,
+			       CASE WHEN cohort_n <= 1 THEN NULL::double precision
+			            ELSE (cohort_n - rank_pos)::double precision / (cohort_n - 1) END AS p
+			FROM cohort
+		), agg AS (
+			SELECT user_id,
+			       AVG(p) * 100 AS avg_pct,
+			       MAX(p) * 100 AS best_pct,
+			       COUNT(*)::bigint AS exams_done
+			FROM pct
+			WHERE p IS NOT NULL
+			GROUP BY user_id
+		), best_attempt AS (
+			SELECT DISTINCT ON (user_id) user_id, duration_seconds, finished_at
+			FROM pct
+			WHERE p IS NOT NULL
+			ORDER BY user_id, p DESC, duration_seconds ASC, finished_at ASC
 		), ranked AS (
-			SELECT user_id, total_score, finished_at, duration_seconds,
-			       RANK() OVER (ORDER BY total_score DESC, duration_seconds ASC, finished_at ASC) AS position
-			FROM best_attempt
+			SELECT a.user_id, a.avg_pct, a.best_pct, a.exams_done,
+			       b.duration_seconds, b.finished_at,
+			       CASE WHEN $5 = 'activity'
+			         THEN DENSE_RANK() OVER (ORDER BY a.exams_done DESC, a.avg_pct DESC, a.best_pct DESC)
+			         ELSE DENSE_RANK() OVER (ORDER BY a.avg_pct DESC, a.exams_done DESC, a.best_pct DESC)
+			       END AS position
+			FROM agg a
+			JOIN best_attempt b ON b.user_id = a.user_id
 		)
 		SELECT ranked.position, COALESCE(NULLIF(users.name,''), split_part(users.email, '@', 1)), users.school_level,
-		       ranked.total_score, ranked.duration_seconds, ranked.finished_at, ranked.user_id = $2
+		       round(ranked.avg_pct::numeric, 2)::double precision, round(ranked.best_pct::numeric, 2)::double precision,
+		       ranked.duration_seconds, ranked.finished_at, ranked.user_id = $2, ranked.exams_done
 		FROM ranked
 		JOIN users ON users.id = ranked.user_id
 		ORDER BY ranked.position, users.email
-		LIMIT $3`
-	rows, err := r.db.Query(ctx, query, level, currentUserID, limit)
+		LIMIT $3 OFFSET $4`
+	rows, err := r.db.Query(ctx, query, level, currentUserID, limit, offset, mode)
 	if err != nil {
-		return nil, fmt.Errorf("query global ranking: %w", err)
+		return nil, 0, fmt.Errorf("query global ranking: %w", err)
 	}
 	defer rows.Close()
 
 	entries := make([]domain.GlobalRankingEntry, 0, limit)
 	for rows.Next() {
 		var entry domain.GlobalRankingEntry
-		if err := rows.Scan(&entry.Rank, &entry.DisplayName, &entry.SchoolLevel, &entry.Score, &entry.DurationSeconds, &entry.FinishedAt, &entry.IsCurrentUser); err != nil {
-			return nil, fmt.Errorf("scan global ranking: %w", err)
+		if err := rows.Scan(&entry.Rank, &entry.DisplayName, &entry.SchoolLevel, &entry.Score, &entry.BestPercentile, &entry.DurationSeconds, &entry.FinishedAt, &entry.IsCurrentUser, &entry.ExamsDone); err != nil {
+			return nil, 0, fmt.Errorf("scan global ranking: %w", err)
 		}
 		entries = append(entries, entry)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate global ranking: %w", err)
+		return nil, 0, fmt.Errorf("iterate global ranking: %w", err)
 	}
-	return entries, nil
+	return entries, total, nil
 }
 
 var _ domain.AnalyticsRepository = (*AnalyticsRepository)(nil)
