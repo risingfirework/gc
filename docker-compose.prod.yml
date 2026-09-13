@@ -133,12 +133,15 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-}
       SMTP_PASSWORD_FILE: /run/secrets/smtp_password
       SMTP_FROM: ${SMTP_FROM:-}
+      SIMPKB_CHECK_URL: ${SIMPKB_CHECK_URL:-http://simpkb-check:8080}
+      SIMPKB_CHECK_INTERVAL: ${SIMPKB_CHECK_INTERVAL:-5m}
     secrets: [database_url, redis_password, jwt_secret, payment_webhook_secret, sentry_dsn, smtp_password]
     expose: ["8080"]
     networks: [edge, data]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis-cluster-init: { condition: service_completed_successfully }
+      simpkb-check: { condition: service_started }
     healthcheck:
       test: ["CMD", "/tka-api", "healthcheck"]
       interval: 15s
@@ -147,6 +150,21 @@ services:
       start_period: 15s
     read_only: true
     tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+
+  simpkb-check:
+    build: { context: ./apps/simpkb-check }
+    image: ${SIMPKB_CHECK_IMAGE:-tka/simpkb-check:local}
+    restart: unless-stopped
+    expose: ["8080"]
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     security_opt: ["no-new-privileges:true"]
     logging: *default-logging
 
