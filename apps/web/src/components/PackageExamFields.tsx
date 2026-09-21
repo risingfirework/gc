@@ -13,9 +13,11 @@ export const PackageExamFields = forwardRef<{ getValues: () => ExamEntry }, { de
       total_questions: defaultExam?.total_questions ?? defaults?.total_questions ?? 1,
       passing_score: defaultExam?.passing_score ?? defaults?.passing_score ?? 50,
       status: defaultExam?.status ?? "active",
+      shuffle_questions: defaultExam?.shuffle_questions ?? false,
+      shuffle_options: defaultExam?.shuffle_options ?? false,
     });
     useImperativeHandle(ref, () => ({ getValues: () => exam }), [exam]);
-    function update(field: keyof ExamEntry, value: string | number) {
+    function update(field: keyof ExamEntry, value: string | number | boolean) {
       setExam((current) => ({ ...current, [field]: value }));
     }
     return <div className="bundle-section">
@@ -34,6 +36,11 @@ export const PackageExamFields = forwardRef<{ getValues: () => ExamEntry }, { de
         <div><label>Nilai lulus</label><input type="number" min="0" max="100" step="0.01" value={exam.passing_score} onChange={(event) => update("passing_score", Number(event.target.value))} required /></div>
         <div><label>Status ujian</label><select value={exam.status} onChange={(event) => update("status", event.target.value as Status)}><option value="active">Aktif</option><option value="inactive">Nonaktif</option></select></div>
       </div>
+      <div className="form-grid">
+        <label className="checkbox-label"><input type="checkbox" checked={exam.shuffle_questions} onChange={(event) => update("shuffle_questions", event.target.checked)} /> Acak urutan soal per peserta</label>
+        <label className="checkbox-label"><input type="checkbox" checked={exam.shuffle_options} onChange={(event) => update("shuffle_options", event.target.checked)} /> Acak urutan opsi per peserta</label>
+      </div>
+      <p className="form-helper">Setiap peserta menerima urutan soal dan opsi yang berbeda agar jawaban antar-peserta sulit ditiru.</p>
       {showHint && <p className="muted">Isi soal nanti di dalam paket, setelah paket dibuat.</p>}
     </div>;
   },

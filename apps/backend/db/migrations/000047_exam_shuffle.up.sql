@@ -1,0 +1,4 @@
+ALTER TABLE exams ADD COLUMN shuffle_questions BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE exams ADD COLUMN shuffle_options BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE user_exams ADD COLUMN question_order_json JSONB;
+ALTER TABLE user_exams ADD COLUMN option_order_json JSONB;

@@ -1,6 +1,8 @@
 services:
   postgres:
     image: postgres:16-alpine
+    ports:
+      - "127.0.0.1:55432:5432"
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-tka}
       POSTGRES_USER: ${POSTGRES_USER:-tka}

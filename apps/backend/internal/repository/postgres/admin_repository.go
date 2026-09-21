@@ -184,13 +184,13 @@ func (r *AdminRepository) GetDashboard(ctx context.Context) (*domain.AdminDashbo
 		return nil, err
 	}
 	packages.Close()
-	exams, err := r.db.Query(ctx, `SELECT e.id,e.package_id,e.title,p.title,COALESCE(e.mapel_id::text,''),COALESCE(e.tahun_ajaran_id::text,''),e.duration_minutes,e.total_questions,e.passing_score,e.status,e.publish_pembahasan,e.created_at FROM exams e JOIN packages p ON p.id=e.package_id ORDER BY e.created_at DESC LIMIT 100`)
+	exams, err := r.db.Query(ctx, `SELECT e.id,e.package_id,e.title,p.title,COALESCE(e.mapel_id::text,''),COALESCE(e.tahun_ajaran_id::text,''),e.duration_minutes,e.total_questions,e.passing_score,e.status,e.publish_pembahasan,e.shuffle_questions,e.shuffle_options,e.created_at FROM exams e JOIN packages p ON p.id=e.package_id ORDER BY e.created_at DESC LIMIT 100`)
 	if err != nil {
 		return nil, fmt.Errorf("admin exams: %w", err)
 	}
 	for exams.Next() {
 		var item domain.AdminExam
-		if err := exams.Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.PublishPembahasan, &item.CreatedAt); err != nil {
+		if err := exams.Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.PublishPembahasan, &item.ShuffleQuestions, &item.ShuffleOptions, &item.CreatedAt); err != nil {
 			exams.Close()
 			return nil, err
 		}
@@ -407,12 +407,12 @@ func (r *AdminRepository) DeletePackage(ctx context.Context, id string) error {
 }
 
 func (r *AdminRepository) CreateExam(ctx context.Context, input domain.AdminExamRequest) (*domain.AdminExam, error) {
-	const query = `WITH changed AS (INSERT INTO exams(package_id,title,mapel_id,tahun_ajaran_id,duration_minutes,total_questions,passing_score,status) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8) RETURNING *) SELECT c.id,c.package_id,c.title,p.title,COALESCE(c.mapel_id::text,''),COALESCE(c.tahun_ajaran_id::text,''),c.duration_minutes,c.total_questions,c.passing_score,c.status,c.publish_pembahasan,c.created_at FROM changed c JOIN packages p ON p.id=c.package_id`
-	return r.examRow(ctx, query, input.PackageID, input.Title, input.MapelID, input.TahunAjaranID, input.DurationMinutes, input.TotalQuestions, input.PassingScore, input.Status)
+	const query = `WITH changed AS (INSERT INTO exams(package_id,title,mapel_id,tahun_ajaran_id,duration_minutes,total_questions,passing_score,status,shuffle_questions,shuffle_options) VALUES($1,$2,NULLIF($3,'')::uuid,NULLIF($4,'')::uuid,$5,$6,$7,$8,$9,$10) RETURNING *) SELECT c.id,c.package_id,c.title,p.title,COALESCE(c.mapel_id::text,''),COALESCE(c.tahun_ajaran_id::text,''),c.duration_minutes,c.total_questions,c.passing_score,c.status,c.publish_pembahasan,c.shuffle_questions,c.shuffle_options,c.created_at FROM changed c JOIN packages p ON p.id=c.package_id`
+	return r.examRow(ctx, query, input.PackageID, input.Title, input.MapelID, input.TahunAjaranID, input.DurationMinutes, input.TotalQuestions, input.PassingScore, input.Status, input.ShuffleQuestions, input.ShuffleOptions)
 }
 func (r *AdminRepository) UpdateExam(ctx context.Context, id string, input domain.AdminExamRequest) (*domain.AdminExam, error) {
-	const query = `WITH changed AS (UPDATE exams SET package_id=$2,title=$3,mapel_id=NULLIF($4,'')::uuid,tahun_ajaran_id=NULLIF($5,'')::uuid,duration_minutes=$6,total_questions=$7,passing_score=$8,status=$9 WHERE id=$1 RETURNING *) SELECT c.id,c.package_id,c.title,p.title,COALESCE(c.mapel_id::text,''),COALESCE(c.tahun_ajaran_id::text,''),c.duration_minutes,c.total_questions,c.passing_score,c.status,c.publish_pembahasan,c.created_at FROM changed c JOIN packages p ON p.id=c.package_id`
-	item, err := r.examRow(ctx, query, id, input.PackageID, input.Title, input.MapelID, input.TahunAjaranID, input.DurationMinutes, input.TotalQuestions, input.PassingScore, input.Status)
+	const query = `WITH changed AS (UPDATE exams SET package_id=$2,title=$3,mapel_id=NULLIF($4,'')::uuid,tahun_ajaran_id=NULLIF($5,'')::uuid,duration_minutes=$6,total_questions=$7,passing_score=$8,status=$9,shuffle_questions=$10,shuffle_options=$11 WHERE id=$1 RETURNING *) SELECT c.id,c.package_id,c.title,p.title,COALESCE(c.mapel_id::text,''),COALESCE(c.tahun_ajaran_id::text,''),c.duration_minutes,c.total_questions,c.passing_score,c.status,c.publish_pembahasan,c.shuffle_questions,c.shuffle_options,c.created_at FROM changed c JOIN packages p ON p.id=c.package_id`
+	item, err := r.examRow(ctx, query, id, input.PackageID, input.Title, input.MapelID, input.TahunAjaranID, input.DurationMinutes, input.TotalQuestions, input.PassingScore, input.Status, input.ShuffleQuestions, input.ShuffleOptions)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound
 	}
@@ -420,7 +420,7 @@ func (r *AdminRepository) UpdateExam(ctx context.Context, id string, input domai
 }
 func (r *AdminRepository) examRow(ctx context.Context, query string, args ...any) (*domain.AdminExam, error) {
 	var item domain.AdminExam
-	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.PublishPembahasan, &item.CreatedAt)
+	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.PublishPembahasan, &item.ShuffleQuestions, &item.ShuffleOptions, &item.CreatedAt)
 	if err != nil {
 		return nil, adminMutationError(err)
 	}
@@ -648,7 +648,7 @@ func (r *AdminRepository) ListAdminExams(ctx context.Context, page, perPage int,
 		args = append(args, packageID)
 	}
 	queryArgs := append(args, perPage, (page-1)*perPage)
-	rows, err := r.db.Query(ctx, `SELECT e.id,e.package_id,e.title,p.title,COALESCE(e.mapel_id::text,''),COALESCE(e.tahun_ajaran_id::text,''),e.duration_minutes,e.total_questions,e.passing_score,e.status,e.publish_pembahasan,e.created_at FROM exams e JOIN packages p ON p.id=e.package_id`+whereClause+` ORDER BY e.created_at DESC, e.id LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs))+``, queryArgs...)
+	rows, err := r.db.Query(ctx, `SELECT e.id,e.package_id,e.title,p.title,COALESCE(e.mapel_id::text,''),COALESCE(e.tahun_ajaran_id::text,''),e.duration_minutes,e.total_questions,e.passing_score,e.status,e.publish_pembahasan,e.shuffle_questions,e.shuffle_options,e.created_at FROM exams e JOIN packages p ON p.id=e.package_id`+whereClause+` ORDER BY e.created_at DESC, e.id LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs))+``, queryArgs...)
 	if err != nil {
 		return domain.Page[domain.AdminExam]{}, fmt.Errorf("admin exams list: %w", err)
 	}
@@ -656,7 +656,7 @@ func (r *AdminRepository) ListAdminExams(ctx context.Context, page, perPage int,
 	items := []domain.AdminExam{}
 	for rows.Next() {
 		var item domain.AdminExam
-		if err := rows.Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.PublishPembahasan, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.PackageID, &item.Title, &item.PackageTitle, &item.MapelID, &item.TahunAjaranID, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore, &item.Status, &item.PublishPembahasan, &item.ShuffleQuestions, &item.ShuffleOptions, &item.CreatedAt); err != nil {
 			return domain.Page[domain.AdminExam]{}, err
 		}
 		items = append(items, item)

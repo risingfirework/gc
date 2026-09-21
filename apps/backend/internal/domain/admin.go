@@ -131,6 +131,8 @@ type AdminExam struct {
 	PassingScore      float64   `json:"passing_score"`
 	Status            string    `json:"status"`
 	PublishPembahasan bool      `json:"publish_pembahasan"`
+	ShuffleQuestions  bool      `json:"shuffle_questions"`
+	ShuffleOptions    bool      `json:"shuffle_options"`
 	CreatedAt         time.Time `json:"created_at"`
 }
 
@@ -398,14 +400,16 @@ type AdminPackageRequest struct {
 }
 
 type AdminExamRequest struct {
-	PackageID       string  `json:"package_id"`
-	Title           string  `json:"title"`
-	MapelID         string  `json:"mapel_id"`
-	TahunAjaranID   string  `json:"tahun_ajaran_id"`
-	DurationMinutes int     `json:"duration_minutes"`
-	TotalQuestions  int     `json:"total_questions"`
-	PassingScore    float64 `json:"passing_score"`
-	Status          string  `json:"status"`
+	PackageID        string  `json:"package_id"`
+	Title            string  `json:"title"`
+	MapelID          string  `json:"mapel_id"`
+	TahunAjaranID    string  `json:"tahun_ajaran_id"`
+	DurationMinutes  int     `json:"duration_minutes"`
+	TotalQuestions   int     `json:"total_questions"`
+	PassingScore     float64 `json:"passing_score"`
+	Status           string  `json:"status"`
+	ShuffleQuestions bool    `json:"shuffle_questions"`
+	ShuffleOptions   bool    `json:"shuffle_options"`
 }
 
 type AdminQuestionRequest struct {

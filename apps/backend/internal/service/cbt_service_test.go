@@ -28,6 +28,12 @@ type fakeExamRepository struct {
 	submitted      []domain.UserAnswer
 	submittedScore float64
 	expired        []domain.ExpiredUserExam
+	shuffle        domain.UserExamShuffle
+}
+
+func (f *fakeExamRepository) EnsureUserExamShuffle(context.Context, string) (*domain.UserExamShuffle, error) {
+	mapping := f.shuffle
+	return &mapping, nil
 }
 
 func (f *fakeExamRepository) GetExamWithQuestions(context.Context, string) (*domain.Exam, []domain.Question, error) {

@@ -153,6 +153,13 @@ type ExamAccessRepository interface {
 	HasActivePackage(ctx context.Context, userID, packageID string, now time.Time) (bool, error)
 }
 
+// ExamShuffleRepository menyediakan permutasi acak soal/opsi yang stabil per
+// attempt. Implementasi opsional: service memakainya bila tersedia, dan
+// jatuh kembali ke urutan kanonis bila tidak.
+type ExamShuffleRepository interface {
+	EnsureUserExamShuffle(ctx context.Context, userExamID string) (*UserExamShuffle, error)
+}
+
 type CBTRepository interface {
 	SetTimer(ctx context.Context, timer ExamTimer) error
 	GetTimer(ctx context.Context, userExamID string) (*ExamTimer, error)

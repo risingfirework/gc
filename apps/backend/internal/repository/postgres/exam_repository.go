@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,7 +26,8 @@ func NewExamRepository(db *pgxpool.Pool) *ExamRepository {
 
 func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string) (*domain.Exam, []domain.Question, error) {
 	const examQuery = `
-		SELECT e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method, e.created_at,
+		SELECT e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method,
+		       e.shuffle_questions, e.shuffle_options, e.created_at,
 		       p.exam_type, COALESCE(p.cbt_token,'')
 		FROM exams e
 		JOIN packages p ON p.id = e.package_id
@@ -32,7 +35,8 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 	var exam domain.Exam
 	err := r.db.QueryRow(ctx, examQuery, examID).Scan(
 		&exam.ID, &exam.PackageID, &exam.Title, &exam.DurationMinutes,
-		&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod, &exam.CreatedAt,
+		&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod,
+		&exam.ShuffleQuestions, &exam.ShuffleOptions, &exam.CreatedAt,
 		&exam.PackageExamType, &exam.PackageCBTToken,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -403,6 +407,115 @@ func (r *ExamRepository) ListExpiredUserExams(ctx context.Context, limit int) ([
 	return items, nil
 }
 
+// EnsureUserExamShuffle memastikan permutasi soal/opsi untuk sebuah attempt
+// dibuat sekali lalu dipersistenkan, sehingga urutan tetap stabil saat peserta
+// kembali atau me-refresh. Tidak ada permutasi yang dibuat (dan kolom dibiarkan
+// NULL) bila ujian tidak mengaktifkan fitur acak pada dimensi apa pun.
+func (r *ExamRepository) EnsureUserExamShuffle(ctx context.Context, userExamID string) (*domain.UserExamShuffle, error) {
+	const head = `
+		SELECT e.id, e.shuffle_questions, e.shuffle_options,
+		       ue.question_order_json, ue.option_order_json
+		FROM user_exams ue
+		JOIN exams e ON e.id = ue.exam_id
+		WHERE ue.id = $1`
+	var examID string
+	var shuffleQuestions, shuffleOptions bool
+	var rawQuestionOrder, rawOptionOrder []byte
+	err := r.db.QueryRow(ctx, head, userExamID).Scan(
+		&examID, &shuffleQuestions, &shuffleOptions,
+		&rawQuestionOrder, &rawOptionOrder,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrUserExamNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query user exam shuffle: %w", err)
+	}
+	if !shuffleQuestions && !shuffleOptions {
+		return &domain.UserExamShuffle{}, nil
+	}
+	if rawQuestionOrder != nil || rawOptionOrder != nil {
+		var questionOrder []string
+		var optionOrder map[string][]string
+		if err := json.Unmarshal(rawQuestionOrder, &questionOrder); err != nil {
+			return nil, fmt.Errorf("decode question order: %w", err)
+		}
+		if err := json.Unmarshal(rawOptionOrder, &optionOrder); err != nil {
+			return nil, fmt.Errorf("decode option order: %w", err)
+		}
+		return &domain.UserExamShuffle{QuestionOrder: questionOrder, OptionOrder: optionOrder}, nil
+	}
+
+	var questionOrder []string
+	var optionOrder map[string][]string
+	if shuffleQuestions {
+		rows, err := r.db.Query(ctx, `SELECT id FROM questions WHERE exam_id = $1 ORDER BY id`, examID)
+		if err != nil {
+			return nil, fmt.Errorf("query question ids: %w", err)
+		}
+		ids := make([]string, 0)
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan question id: %w", err)
+			}
+			ids = append(ids, id)
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("iterate question ids: %w", err)
+		}
+		questionOrder = append([]string(nil), ids...)
+		rand.Shuffle(len(questionOrder), func(i, j int) { questionOrder[i], questionOrder[j] = questionOrder[j], questionOrder[i] })
+	}
+	if shuffleOptions {
+		rows, err := r.db.Query(ctx, `SELECT id, options_json FROM questions WHERE exam_id = $1 AND question_type <> 'essay'`, examID)
+		if err != nil {
+			return nil, fmt.Errorf("query question options: %w", err)
+		}
+		optionOrder = make(map[string][]string)
+		for rows.Next() {
+			var questionID string
+			var rawOptions []byte
+			if err := rows.Scan(&questionID, &rawOptions); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan question options: %w", err)
+			}
+			var options []domain.QuestionOption
+			if err := json.Unmarshal(rawOptions, &options); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("decode options for question %s: %w", questionID, err)
+			}
+			keys := make([]string, 0, len(options))
+			for _, option := range options {
+				keys = append(keys, strings.ToUpper(strings.TrimSpace(option.Key)))
+			}
+			rand.Shuffle(len(keys), func(i, j int) { keys[i], keys[j] = keys[j], keys[i] })
+			optionOrder[questionID] = keys
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("iterate question options: %w", err)
+		}
+	}
+	var questionJSON, optionJSON []byte
+	if len(questionOrder) > 0 {
+		if questionJSON, err = json.Marshal(questionOrder); err != nil {
+			return nil, fmt.Errorf("encode question order: %w", err)
+		}
+	}
+	if len(optionOrder) > 0 {
+		if optionJSON, err = json.Marshal(optionOrder); err != nil {
+			return nil, fmt.Errorf("encode option order: %w", err)
+		}
+	}
+	if _, err := r.db.Exec(ctx, `UPDATE user_exams SET question_order_json = $2, option_order_json = $3 WHERE id = $1`, userExamID, questionJSON, optionJSON); err != nil {
+		return nil, fmt.Errorf("persist user exam shuffle: %w", err)
+	}
+	return &domain.UserExamShuffle{QuestionOrder: questionOrder, OptionOrder: optionOrder}, nil
+}
+
 func (r *ExamRepository) HasActivePackage(ctx context.Context, userID, packageID string, now time.Time) (bool, error) {
 	const query = `SELECT EXISTS (SELECT 1 FROM user_packages WHERE user_id = $1 AND package_id = $2 AND status = 'active' AND expired_at > $3)`
 	var active bool
@@ -414,3 +527,4 @@ func (r *ExamRepository) HasActivePackage(ctx context.Context, userID, packageID
 
 var _ domain.ExamRepository = (*ExamRepository)(nil)
 var _ domain.ExamAccessRepository = (*ExamRepository)(nil)
+var _ domain.ExamShuffleRepository = (*ExamRepository)(nil)

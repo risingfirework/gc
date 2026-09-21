@@ -3,16 +3,18 @@ package domain
 import "time"
 
 type Exam struct {
-	ID              string
-	PackageID       string
-	Title           string
-	DurationMinutes int
-	TotalQuestions  int
-	PassingScore    float64
-	ScoringMethod   string
-	CreatedAt       time.Time
-	PackageExamType string
-	PackageCBTToken string
+	ID               string
+	PackageID        string
+	Title            string
+	DurationMinutes  int
+	TotalQuestions   int
+	PassingScore     float64
+	ScoringMethod    string
+	CreatedAt        time.Time
+	PackageExamType  string
+	PackageCBTToken  string
+	ShuffleQuestions bool
+	ShuffleOptions   bool
 }
 
 type QuestionOption struct {
@@ -74,6 +76,14 @@ type UserExam struct {
 	StartedAt  time.Time
 	FinishedAt *time.Time
 	TotalScore *float64
+}
+
+// UserExamShuffle adalah permutasi yang dipersistenkan per attempt (per
+// peserta) agar urutan soal dan opsi tampilan tetap konsisten sepanjang ujian
+// dan saat peserta kembali/merefresh. Order nil berarti urutan kanonis.
+type UserExamShuffle struct {
+	QuestionOrder []string            // urutan tampilan question ID
+	OptionOrder   map[string][]string // questionID -> kunci kanonis opsi dalam urutan tampilan
 }
 
 type UserAnswer struct {

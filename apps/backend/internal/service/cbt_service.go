@@ -85,16 +85,7 @@ func (s *CBTService) StartExam(ctx context.Context, userID, examID, token string
 		// PostgreSQL timestamps remain authoritative; SyncAnswer will use its durable fallback.
 		s.logger.WarnContext(ctx, "Redis timer unavailable; using database fallback", "user_exam_id", attempt.ID, "error", err)
 	}
-	publicQuestions := make([]domain.QuestionResponse, len(questions))
-	for i, question := range questions {
-		publicQuestions[i] = domain.QuestionResponse{
-			ID: question.ID, SubjectName: question.SubjectName, ContentText: question.ContentText,
-			QuestionType: question.QuestionType, PresentationType: question.PresentationType,
-			GroupCode: question.GroupCode, StimulusText: question.StimulusText,
-			QuestionImageURL: question.QuestionImageURL, StimulusImageURL: question.StimulusImageURL,
-			CategoryLabels: question.CategoryLabels, Options: question.Options,
-		}
-	}
+	publicQuestions := applyDisplayShuffle(questions, s.userExamShuffle(ctx, attempt.ID))
 	return &domain.ExamStartResponse{
 		UserExamID: attempt.ID, ExamID: exam.ID, Title: exam.Title, Status: attempt.Status,
 		ServerTime: now, StartedAt: attempt.StartedAt, EndsAt: expiresAt,
@@ -208,6 +199,7 @@ func (s *CBTService) SubmitExam(ctx context.Context, userID, userExamID string) 
 	for _, question := range questions {
 		questionByID[question.ID] = question
 	}
+	mapping := s.userExamShuffle(ctx, userExamID)
 	batch := make([]domain.UserAnswer, 0, len(answers))
 	normalizedAnswers := make(map[string]string, len(answers))
 	for questionID, selectedOption := range answers {
@@ -215,7 +207,11 @@ func (s *CBTService) SubmitExam(ctx context.Context, userID, userExamID string) 
 		if !exists {
 			continue
 		}
-		canonical, valid := canonicalAnswer(question.QuestionType, question.Options, question.CategoryLabels, selectedOption, false)
+		display := selectedOption
+		if translated, ok := translateDisplayFrame(mapping, question, display); ok {
+			display = translated
+		}
+		canonical, valid := canonicalAnswer(question.QuestionType, question.Options, question.CategoryLabels, display, false)
 		if !valid {
 			continue
 		}
@@ -274,6 +270,22 @@ func (s *CBTService) releaseSubmitLock(ctx context.Context, userExamID, userID s
 	if err := s.cache.ReleaseSubmitLock(releaseCtx, userExamID, userID); err != nil {
 		s.logger.WarnContext(releaseCtx, "failed to release Redis submit lock", "user_exam_id", userExamID, "error", err)
 	}
+}
+
+// userExamShuffle mengambil permutasi attempt yang di-persistenkan untuk
+// menyusun tampilan dan menerjemahkan jawaban peserta. Bila repository tidak
+// menyediakannya atau gagal, urutan kanonis digunakan (perilaku lama).
+func (s *CBTService) userExamShuffle(ctx context.Context, userExamID string) *domain.UserExamShuffle {
+	shuffler, ok := s.exams.(domain.ExamShuffleRepository)
+	if !ok {
+		return &domain.UserExamShuffle{}
+	}
+	mapping, err := shuffler.EnsureUserExamShuffle(ctx, userExamID)
+	if err != nil {
+		s.logger.WarnContext(ctx, "shuffle mapping unavailable; using canonical order", "user_exam_id", userExamID, "error", err)
+		return &domain.UserExamShuffle{}
+	}
+	return mapping
 }
 
 func validUUID(value string) bool { _, err := uuid.Parse(value); return err == nil }
