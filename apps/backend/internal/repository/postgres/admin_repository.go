@@ -675,6 +675,7 @@ func (r *AdminRepository) ListCBTPublishSettings(ctx context.Context) ([]domain.
 	rows, err := r.db.Query(ctx, `
 		SELECT e.id, e.package_id, p.title, COALESCE(p.kode,''), p.jenjang,
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
+		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
@@ -692,6 +693,7 @@ func (r *AdminRepository) ListCBTPublishSettings(ctx context.Context) ([]domain.
 		var item domain.CBTPublishSetting
 		if err := rows.Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 			&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
+			&item.ShuffleQuestions, &item.ShuffleOptions,
 			&item.PublishPembahasan, &item.Participated, &item.PublisherEmail); err != nil {
 			return nil, fmt.Errorf("scan cbt publish setting: %w", err)
 		}
@@ -718,10 +720,22 @@ func (r *AdminRepository) SetExamPublishPembahasan(ctx context.Context, examID s
 	return item, nil
 }
 
+func (r *AdminRepository) SetExamShuffle(ctx context.Context, examID string, shuffleQuestions, shuffleOptions bool) (*domain.CBTPublishSetting, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE exams SET shuffle_questions = $2, shuffle_options = $3 WHERE id = $1`, examID, shuffleQuestions, shuffleOptions)
+	if err != nil {
+		return nil, adminMutationError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, domain.ErrExamNotFound
+	}
+	return r.getCBTPublishSetting(ctx, examID)
+}
+
 func (r *AdminRepository) getCBTPublishSetting(ctx context.Context, examID string) (*domain.CBTPublishSetting, error) {
 	const query = `
 		SELECT e.id, e.package_id, p.title, COALESCE(p.kode,''), p.jenjang,
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
+		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
@@ -732,6 +746,7 @@ func (r *AdminRepository) getCBTPublishSetting(ctx context.Context, examID strin
 	var item domain.CBTPublishSetting
 	err := r.db.QueryRow(ctx, query, examID).Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 		&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
+		&item.ShuffleQuestions, &item.ShuffleOptions,
 		&item.PublishPembahasan, &item.Participated, &item.PublisherEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound
@@ -896,6 +911,43 @@ func (r *AdminRepository) RefundTransaction(ctx context.Context, transactionID, 
 		return nil, fmt.Errorf("commit refund transaction: %w", err)
 	}
 	return item, nil
+}
+
+func (r *AdminRepository) GetPaymentTransactionForRefund(ctx context.Context, transactionID string) (*domain.Transaction, error) {
+	const query = `SELECT id,user_id,package_id,invoice_number,amount,platform_commission,payment_status,payment_method,
+		payment_url,expires_at,paid_at,created_at,provider_session_id,provider_payment_request_id,provider_refund_id
+		FROM transactions WHERE id=$1`
+	var item domain.Transaction
+	err := r.db.QueryRow(ctx, query, transactionID).Scan(
+		&item.ID, &item.UserID, &item.PackageID, &item.InvoiceNumber, &item.Amount, &item.PlatformCommission, &item.PaymentStatus,
+		&item.PaymentMethod, &item.PaymentURL, &item.ExpiresAt, &item.PaidAt, &item.CreatedAt, &item.ProviderSessionID,
+		&item.ProviderPaymentRequestID, &item.ProviderRefundID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrTransactionNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get transaction for refund: %w", err)
+	}
+	if item.PaymentStatus != "paid" || item.ProviderPaymentRequestID == nil {
+		return nil, domain.ErrTransactionNotRefundable
+	}
+	return &item, nil
+}
+
+func (r *AdminRepository) MarkRefundPending(ctx context.Context, transactionID, providerRefundID string, now time.Time) (*domain.AdminTransaction, error) {
+	const query = `UPDATE transactions t SET payment_status='refund_pending',provider_refund_id=$2,updated_at=$3
+		FROM users u,packages p WHERE t.id=$1 AND t.payment_status='paid' AND u.id=t.user_id AND p.id=t.package_id
+		RETURNING t.id,t.invoice_number,u.email,p.title,t.amount,t.payment_status,t.created_at`
+	var item domain.AdminTransaction
+	err := r.db.QueryRow(ctx, query, transactionID, providerRefundID, now).Scan(
+		&item.ID, &item.InvoiceNumber, &item.UserEmail, &item.PackageTitle, &item.Amount, &item.Status, &item.CreatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrTransactionNotRefundable
+	}
+	if err != nil {
+		return nil, fmt.Errorf("mark refund pending: %w", err)
+	}
+	return &item, nil
 }
 
 func (r *AdminRepository) CountOwners(ctx context.Context) (int, error) {

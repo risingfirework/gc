@@ -466,6 +466,7 @@ func (r *TeacherRepository) ListCBTPublishSettings(ctx context.Context, publishe
 	rows, err := r.db.Query(ctx, `
 		SELECT e.id, e.package_id, p.title, COALESCE(p.kode,''), p.jenjang,
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
+		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
@@ -483,6 +484,7 @@ func (r *TeacherRepository) ListCBTPublishSettings(ctx context.Context, publishe
 		var item domain.CBTPublishSetting
 		if err := rows.Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 			&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
+			&item.ShuffleQuestions, &item.ShuffleOptions,
 			&item.PublishPembahasan, &item.Participated, &item.PublisherEmail); err != nil {
 			return nil, fmt.Errorf("scan cbt publish setting: %w", err)
 		}
@@ -492,6 +494,17 @@ func (r *TeacherRepository) ListCBTPublishSettings(ctx context.Context, publishe
 		return nil, fmt.Errorf("iterate teacher cbt publish settings: %w", err)
 	}
 	return items, nil
+}
+
+func (r *TeacherRepository) SetExamShuffle(ctx context.Context, publisherID, examID string, shuffleQuestions, shuffleOptions bool) (*domain.CBTPublishSetting, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE exams SET shuffle_questions = $3, shuffle_options = $4 WHERE id = $1 AND package_id IN (SELECT id FROM packages WHERE publisher_id = $2)`, examID, publisherID, shuffleQuestions, shuffleOptions)
+	if err != nil {
+		return nil, adminMutationError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, domain.ErrExamNotFound
+	}
+	return r.getCBTPublishSetting(ctx, publisherID, examID)
 }
 
 func (r *TeacherRepository) SetExamPublishPembahasan(ctx context.Context, publisherID, examID string, publish bool) (*domain.CBTPublishSetting, error) {
@@ -513,6 +526,7 @@ func (r *TeacherRepository) getCBTPublishSetting(ctx context.Context, publisherI
 	const query = `
 		SELECT e.id, e.package_id, p.title, COALESCE(p.kode,''), p.jenjang,
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
+		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
@@ -523,6 +537,7 @@ func (r *TeacherRepository) getCBTPublishSetting(ctx context.Context, publisherI
 	var item domain.CBTPublishSetting
 	err := r.db.QueryRow(ctx, query, publisherID, examID).Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 		&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
+		&item.ShuffleQuestions, &item.ShuffleOptions,
 		&item.PublishPembahasan, &item.Participated, &item.PublisherEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound

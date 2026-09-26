@@ -97,6 +97,8 @@ type CBTPublishSetting struct {
 	DurationMinutes   int     `json:"duration_minutes"`
 	TotalQuestions    int     `json:"total_questions"`
 	PassingScore      float64 `json:"passing_score"`
+	ShuffleQuestions  bool    `json:"shuffle_questions"`
+	ShuffleOptions    bool    `json:"shuffle_options"`
 	PublishPembahasan bool    `json:"publish_pembahasan"`
 	Participated      int     `json:"participated"`
 	PublisherEmail    string  `json:"publisher_email,omitempty"`

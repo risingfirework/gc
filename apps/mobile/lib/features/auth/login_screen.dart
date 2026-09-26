@@ -23,7 +23,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await ref.read(apiClientProvider).login(email.text, password.text);
       if (mounted) {
         Navigator.pushReplacement(
-            context, MaterialPageRoute(builder: (_) => const CatalogScreen()));
+          context,
+          MaterialPageRoute(builder: (_) => const CatalogScreen()),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -36,48 +38,60 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-      body: SafeArea(
-          child: Center(
-              child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Card(
-                      child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                const CircleAvatar(
-                                    radius: 26, child: Text('T')),
-                                const SizedBox(height: 20),
-                                Text('Selamat datang',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .headlineSmall,
-                                    textAlign: TextAlign.center),
-                                const SizedBox(height: 20),
-                                TextField(
-                                    controller: email,
-                                    decoration: const InputDecoration(
-                                        labelText: 'Email',
-                                        border: OutlineInputBorder())),
-                                const SizedBox(height: 12),
-                                TextField(
-                                    controller: password,
-                                    obscureText: true,
-                                    decoration: const InputDecoration(
-                                        labelText: 'Password',
-                                        border: OutlineInputBorder())),
-                                if (error != null)
-                                  Padding(
-                                      padding: const EdgeInsets.only(top: 12),
-                                      child: Text(error!,
-                                          style: const TextStyle(
-                                              color: Colors.red))),
-                                const SizedBox(height: 20),
-                                FilledButton(
-                                    onPressed: loading ? null : login,
-                                    child: Text(
-                                        loading ? 'Memproses...' : 'Masuk'))
-                              ])))))));
+    body: SafeArea(
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const CircleAvatar(radius: 26, child: Text('T')),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Selamat datang',
+                    style: Theme.of(context).textTheme.headlineSmall,
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: email,
+                    decoration: const InputDecoration(
+                      labelText: 'Email',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: password,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Password',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  if (error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        error!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: loading ? null : login,
+                    child: Text(loading ? 'Memproses...' : 'Masuk'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }

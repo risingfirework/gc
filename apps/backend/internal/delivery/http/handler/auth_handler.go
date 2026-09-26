@@ -14,6 +14,7 @@ import (
 
 const maxRequestBody = 1 << 20
 const maxQuestionRequestBody = 16 << 20
+const refreshCookieName = "tka_refresh"
 
 type AuthHandler struct {
 	auth   domain.AuthService
@@ -66,7 +67,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeLoginResponse(w, r, http.StatusOK, response)
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +75,11 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &input); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON request")
 		return
+	}
+	if strings.TrimSpace(input.RefreshToken) == "" {
+		if cookie, cookieErr := r.Cookie(refreshCookieName); cookieErr == nil {
+			input.RefreshToken = cookie.Value
+		}
 	}
 	response, err := h.auth.Refresh(r.Context(), input.RefreshToken)
 	if err != nil {
@@ -85,7 +91,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeLoginResponse(w, r, http.StatusOK, response)
 }
 
 func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
@@ -150,7 +156,7 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeLoginResponse(w, r, http.StatusOK, response)
 }
 
 func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +180,7 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	writeJSON(w, http.StatusOK, response)
+	writeLoginResponse(w, r, http.StatusOK, response)
 }
 
 func (h *AuthHandler) TwoFactorSetup(w http.ResponseWriter, r *http.Request) {
@@ -270,7 +276,31 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
+	clearRefreshCookie(w, r)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func writeLoginResponse(w http.ResponseWriter, r *http.Request, status int, response *domain.LoginResponse) {
+	if response != nil && response.RefreshToken != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name: refreshCookieName, Value: response.RefreshToken, Path: "/api/v1/auth",
+			MaxAge: int(response.RefreshExpiresIn), HttpOnly: true, Secure: requestIsHTTPS(r),
+			SameSite: http.SameSiteStrictMode,
+		})
+		response.RefreshToken = ""
+	}
+	writeJSON(w, status, response)
+}
+
+func clearRefreshCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name: refreshCookieName, Value: "", Path: "/api/v1/auth", MaxAge: -1,
+		HttpOnly: true, Secure: requestIsHTTPS(r), SameSite: http.SameSiteStrictMode,
+	})
+}
+
+func requestIsHTTPS(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https")
 }
 
 func (h *AuthHandler) CurrentUser(w http.ResponseWriter, r *http.Request) {

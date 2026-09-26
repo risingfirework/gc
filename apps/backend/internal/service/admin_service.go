@@ -22,6 +22,11 @@ import (
 type AdminService struct {
 	repository domain.AdminRepository
 	simpkb     *SIMPKBClient
+	payments   domain.PaymentRefundService
+}
+
+func (s *AdminService) ConfigurePaymentRefunds(payments domain.PaymentRefundService) {
+	s.payments = payments
 }
 
 func NewAdminService(repository domain.AdminRepository, simpkb ...*SIMPKBClient) *AdminService {
@@ -72,7 +77,7 @@ func (s *AdminService) UpdateSiteSettings(ctx context.Context, actorID, actorEma
 func (s *AdminService) ListTransactions(ctx context.Context, page, perPage int, status string) (domain.Page[domain.AdminTransaction], error) {
 	status = strings.ToLower(strings.TrimSpace(status))
 	switch status {
-	case "", "pending", "paid", "failed", "expired", "refunded":
+	case "", "pending", "paid", "failed", "expired", "refund_pending", "refunded":
 	default:
 		return domain.Page[domain.AdminTransaction]{}, domain.ErrInvalidInput
 	}
@@ -121,7 +126,18 @@ func (s *AdminService) RefundTransaction(ctx context.Context, actorID, actorEmai
 	if !validUUID(transactionID) || input.Reason == "" || len(input.Reason) > 500 {
 		return nil, domain.ErrInvalidInput
 	}
-	result, err := s.repository.RefundTransaction(ctx, transactionID, input.Reason, time.Now())
+	if s.payments == nil {
+		return nil, domain.ErrTransactionNotRefundable
+	}
+	transaction, err := s.repository.GetPaymentTransactionForRefund(ctx, transactionID)
+	if err != nil {
+		return nil, err
+	}
+	refund, err := s.payments.CreateRefund(ctx, *transaction, input.Reason)
+	if err != nil {
+		return nil, err
+	}
+	result, err := s.repository.MarkRefundPending(ctx, transactionID, refund.ID, time.Now())
 	if err == nil {
 		s.audit(ctx, actorID, actorEmail, "refund_transaction", "transaction", transactionID, map[string]any{
 			"invoice_number": result.InvoiceNumber, "amount": result.Amount, "reason": input.Reason,
@@ -711,6 +727,17 @@ func (s *AdminService) SetExamPublishPembahasan(ctx context.Context, actorID, ac
 		return nil, err
 	}
 	s.audit(ctx, actorID, actorEmail, "cbt_publish_pembahasan", "exam", examID, map[string]any{"publish_pembahasan": publish})
+	return item, nil
+}
+func (s *AdminService) SetExamShuffle(ctx context.Context, actorID, actorEmail, examID string, shuffleQuestions, shuffleOptions bool) (*domain.CBTPublishSetting, error) {
+	if !validUUID(examID) {
+		return nil, domain.ErrInvalidInput
+	}
+	item, err := s.repository.SetExamShuffle(ctx, examID, shuffleQuestions, shuffleOptions)
+	if err != nil {
+		return nil, err
+	}
+	s.audit(ctx, actorID, actorEmail, "cbt_shuffle", "exam", examID, map[string]any{"shuffle_questions": shuffleQuestions, "shuffle_options": shuffleOptions})
 	return item, nil
 }
 func (s *AdminService) ListCBTParticipants(ctx context.Context, examID string) ([]domain.CBTParticipant, error) {

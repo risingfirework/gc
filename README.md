@@ -102,12 +102,26 @@ kurang dari 0,1%. Hasil hanya representatif jika dijalankan pada staging yang se
 2. Buat semua file pada `secrets/README.md` (termasuk `smtp_password.txt` bila
    email reset kata sandi ingin aktif), lalu pasang sertifikat TLS pada path yang
    dikonfigurasi. Jangan commit nilai rahasia.
-3. Validasi dan jalankan stack:
+3. Jalankan preflight fail-closed sebelum stack dibuat. Pemeriksaan ini menolak domain
+   placeholder, release tag kosong, secret lemah/hilang, konfigurasi SSL database yang
+   tidak aman, sertifikat yang hampir kedaluwarsa, serta pasangan sertifikat/key yang salah:
+
+```bash
+sh scripts/preflight-production.sh
+```
+
+4. Jalankan stack hanya setelah preflight lulus:
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.prod.yml config
 docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
+```
+
+Setelah deployment staging, ulangi preflight dengan smoke check publik:
+
+```bash
+LIVE_CHECK=1 sh scripts/preflight-production.sh
 ```
 
 Migration dijalankan oleh service one-shot `migrate`. Database produksi baru tidak
@@ -128,6 +142,17 @@ teruji, dan monitoring.
 
 Panduan backup, disaster recovery, monitoring, alerting, cleanup, dan blue/green deployment
 tersedia di `docs/post-launch-operations.md`.
+Hasil pemeriksaan dan gerbang keputusan GO/NO-GO tersedia di
+`docs/release-readiness.md`.
+Langkah pembuktian pembayaran, load test, restore drill, smoke test, dan Android signed release
+tersedia di `docs/pre-launch-validation.md`.
+
+### Penandatanganan Android
+
+Build Android tidak lagi memakai debug key untuk varian release. Salin
+`apps/mobile/android/key.properties.example` menjadi `key.properties`, isi kredensial
+upload keystore, dan letakkan keystore di luar version control. Tanpa konfigurasi tersebut,
+Gradle menghasilkan artefak release tanpa tanda tangan yang tidak boleh didistribusikan.
 
 ## Struktur
 

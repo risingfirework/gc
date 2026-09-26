@@ -207,7 +207,7 @@ func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, err.Error())
 		case errors.Is(err, domain.ErrPackageAlreadyOwned):
 			writeError(w, http.StatusConflict, "Paket ini sudah kamu miliki dan tidak dapat dipesan kembali.")
-		case errors.Is(err, domain.ErrPendingPaymentExists):
+		case errors.Is(err, domain.ErrPendingPaymentExists), errors.Is(err, domain.ErrPaymentInitializing):
 			writeError(w, http.StatusConflict, "Masih ada pembayaran yang belum selesai untuk paket ini. Lanjutkan pembayaran yang tertunda.")
 		case errors.Is(err, domain.ErrNotFreePackage):
 			writeError(w, http.StatusUnprocessableEntity, "Paket ini gratis, silakan gunakan tombol \"Ambil Gratis\".")
@@ -224,6 +224,38 @@ func (h *PaymentHandler) Checkout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, response)
 }
 
+func (h *PaymentHandler) PaymentSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.service.GetPaymentSettings(r.Context())
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "get payment settings", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+}
+
+func (h *PaymentHandler) UpdatePaymentSettings(w http.ResponseWriter, r *http.Request) {
+	var input domain.PaymentSettingsInput
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	settings, err := h.service.UpdatePaymentSettings(r.Context(), input)
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrInvalidPayment):
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+		default:
+			// Pesan validasi (mis. URL tidak valid, webhook token terlalu
+			// pendek) sudah berbahasa Indonesia; kesalahan tak terduga juga
+			// ditampilkan agar admin bisa memperbaiki input.
+			writeError(w, http.StatusUnprocessableEntity, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"settings": settings})
+}
+
 func (h *PaymentHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
 	rawBody, err := io.ReadAll(r.Body)
@@ -231,7 +263,11 @@ func (h *PaymentHandler) Webhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	processed, err := h.service.HandleWebhook(r.Context(), rawBody, r.Header.Get("X-Payment-Timestamp"), r.Header.Get("X-Payment-Signature"))
+	processed, err := h.service.HandleWebhook(r.Context(), rawBody, domain.WebhookAuth{
+		Token:     r.Header.Get("X-Callback-Token"),
+		Timestamp: r.Header.Get("X-Payment-Timestamp"),
+		Signature: r.Header.Get("X-Payment-Signature"),
+	})
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrInvalidWebhookSignature):

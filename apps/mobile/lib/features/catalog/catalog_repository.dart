@@ -17,8 +17,9 @@ class CatalogRepository {
 
   Future<CheckoutResult> checkout(String packageId, String method) async {
     final random = Random.secure();
-    final key =
-        base64Url.encode(List<int>.generate(24, (_) => random.nextInt(256)));
+    final key = base64Url.encode(
+      List<int>.generate(24, (_) => random.nextInt(256)),
+    );
     final response = await _api.post(
       '/transactions/checkout',
       {'package_id': packageId, 'payment_method': method},

@@ -1,10 +1,11 @@
 class TryoutPackage {
-  const TryoutPackage(
-      {required this.id,
-      required this.title,
-      required this.description,
-      required this.price,
-      required this.validityDays});
+  const TryoutPackage({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.price,
+    required this.validityDays,
+  });
   final String id;
   final String title;
   final String description;
@@ -12,12 +13,12 @@ class TryoutPackage {
   final int validityDays;
 
   factory TryoutPackage.fromJson(Map<String, dynamic> json) => TryoutPackage(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        description: json['description'] as String,
-        price: (json['price'] as num).toDouble(),
-        validityDays: (json['validity_days'] as num).toInt(),
-      );
+    id: json['id'] as String,
+    title: json['title'] as String,
+    description: json['description'] as String,
+    price: (json['price'] as num).toDouble(),
+    validityDays: (json['validity_days'] as num).toInt(),
+  );
 }
 
 class CheckoutResult {
@@ -26,8 +27,9 @@ class CheckoutResult {
   final String invoiceNumber;
 
   factory CheckoutResult.fromJson(Map<String, dynamic> json) => CheckoutResult(
-        paymentUrl: json['payment_url'] as String,
-        invoiceNumber: (json['transaction']
-            as Map<String, dynamic>)['invoice_number'] as String,
-      );
+    paymentUrl: json['payment_url'] as String,
+    invoiceNumber:
+        (json['transaction'] as Map<String, dynamic>)['invoice_number']
+            as String,
+  );
 }

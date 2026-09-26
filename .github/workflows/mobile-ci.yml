@@ -34,8 +34,8 @@ jobs:
         run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test --coverage
-      - name: Build Android APK
+      - name: Compile unsigned Android release APK
         run: >-
-          flutter build apk --debug
+          flutter build apk --release
           --dart-define=API_BASE_URL=https://example.com/api/v1
           --dart-define=DEMO_EXAM_ID=30000000-0000-0000-0000-000000000001

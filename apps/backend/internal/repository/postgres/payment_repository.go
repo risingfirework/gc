@@ -201,32 +201,32 @@ func (r *PaymentRepository) HasEverOwnedPackage(ctx context.Context, userID, pac
 	return owned, nil
 }
 
-func (r *PaymentRepository) CreateOrGetTransaction(ctx context.Context, item domain.Transaction, idempotencyKey string) (*domain.Transaction, error) {
+func (r *PaymentRepository) ReserveTransaction(ctx context.Context, item domain.Transaction, idempotencyKey string) (*domain.Transaction, bool, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("begin checkout transaction: %w", err)
+		return nil, false, fmt.Errorf("begin checkout transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	const insertQuery = `
 		INSERT INTO transactions (id, user_id, package_id, invoice_number, amount, payment_status, payment_method, payment_url, expires_at, idempotency_key)
-		VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, 'pending', $6, NULL, $7, $8)
 		ON CONFLICT (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL
 		DO NOTHING
 		RETURNING id, user_id, package_id, invoice_number, amount, platform_commission, payment_status, payment_method, payment_url, expires_at, paid_at, created_at`
 	var created domain.Transaction
-	err = tx.QueryRow(ctx, insertQuery, item.ID, item.UserID, item.PackageID, item.InvoiceNumber, item.Amount, item.PaymentMethod, item.PaymentURL, item.ExpiresAt, idempotencyKey).Scan(
+	err = tx.QueryRow(ctx, insertQuery, item.ID, item.UserID, item.PackageID, item.InvoiceNumber, item.Amount, item.PaymentMethod, item.ExpiresAt, idempotencyKey).Scan(
 		&created.ID, &created.UserID, &created.PackageID, &created.InvoiceNumber, &created.Amount, &created.PlatformCommission, &created.PaymentStatus,
 		&created.PaymentMethod, &created.PaymentURL, &created.ExpiresAt, &created.PaidAt, &created.CreatedAt,
 	)
 	if err == nil {
 		if err := tx.Commit(ctx); err != nil {
-			return nil, fmt.Errorf("commit checkout transaction: %w", err)
+			return nil, false, fmt.Errorf("commit checkout transaction: %w", err)
 		}
-		return &created, nil
+		return &created, true, nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		return nil, fmt.Errorf("create checkout transaction: %w", err)
+		return nil, false, fmt.Errorf("create checkout transaction: %w", err)
 	}
 
 	// Idempotensi: kunci yang sama mengembalikan transaksi yang sama.
@@ -238,40 +238,67 @@ func (r *PaymentRepository) CreateOrGetTransaction(ctx context.Context, item dom
 		&existing.ID, &existing.UserID, &existing.PackageID, &existing.InvoiceNumber, &existing.Amount, &existing.PlatformCommission, &existing.PaymentStatus,
 		&existing.PaymentMethod, &existing.PaymentURL, &existing.ExpiresAt, &existing.PaidAt, &existing.CreatedAt,
 	); err != nil {
-		return nil, fmt.Errorf("read existing checkout: %w", err)
+		return nil, false, fmt.Errorf("read existing checkout: %w", err)
 	}
 	if existing.PackageID != item.PackageID {
 		if err := tx.Commit(ctx); err != nil {
-			return nil, fmt.Errorf("commit existing checkout: %w", err)
+			return nil, false, fmt.Errorf("commit existing checkout: %w", err)
 		}
-		return &existing, nil
+		return &existing, false, nil
 	}
 	now := time.Now().UTC()
 	stillOpen := existing.PaymentStatus == "pending" && (existing.ExpiresAt == nil || now.Before(*existing.ExpiresAt))
 	if existing.PaymentStatus == "paid" || existing.PaymentStatus == "refunded" || stillOpen {
 		if err := tx.Commit(ctx); err != nil {
-			return nil, fmt.Errorf("commit existing checkout: %w", err)
+			return nil, false, fmt.Errorf("commit existing checkout: %w", err)
 		}
-		return &existing, nil
+		return &existing, false, nil
 	}
 
 	// Invoice pending yang sudah kedaluwarsa (atau gagal) disegarkan ulang
 	// agar bisa dibayar kembali tanpa harus menunggu job kedaluwarsa.
 	const renewQuery = `
 		UPDATE transactions
-		SET payment_status = 'pending', amount = $3, payment_method = $4, payment_url = $5, expires_at = $6, paid_at = NULL, invoice_number = $7
+		SET payment_status = 'pending', amount = $3, payment_method = $4, payment_url = NULL, expires_at = $5, paid_at = NULL,
+		    invoice_number = $6, provider_session_id = NULL, provider_payment_request_id = NULL, provider_refund_id = NULL
 		WHERE id = $1 AND user_id = $2
 		RETURNING id, user_id, package_id, invoice_number, amount, platform_commission, payment_status, payment_method, payment_url, expires_at, paid_at, created_at`
-	if err := tx.QueryRow(ctx, renewQuery, existing.ID, existing.UserID, item.Amount, item.PaymentMethod, item.PaymentURL, item.ExpiresAt, item.InvoiceNumber).Scan(
+	if err := tx.QueryRow(ctx, renewQuery, existing.ID, existing.UserID, item.Amount, item.PaymentMethod, item.ExpiresAt, item.InvoiceNumber).Scan(
 		&created.ID, &created.UserID, &created.PackageID, &created.InvoiceNumber, &created.Amount, &created.PlatformCommission, &created.PaymentStatus,
 		&created.PaymentMethod, &created.PaymentURL, &created.ExpiresAt, &created.PaidAt, &created.CreatedAt,
 	); err != nil {
-		return nil, fmt.Errorf("renew checkout transaction: %w", err)
+		return nil, false, fmt.Errorf("renew checkout transaction: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit renewed checkout: %w", err)
+		return nil, false, fmt.Errorf("commit renewed checkout: %w", err)
 	}
-	return &created, nil
+	return &created, true, nil
+}
+
+func (r *PaymentRepository) AttachPaymentSession(ctx context.Context, transactionID string, session domain.PaymentSession) (*domain.Transaction, error) {
+	const query = `UPDATE transactions SET payment_url=$2, provider_session_id=$3,
+		provider_payment_request_id=NULLIF($4,''), updated_at=NOW()
+		WHERE id=$1 AND payment_status='pending'
+		RETURNING id,user_id,package_id,invoice_number,amount,platform_commission,payment_status,payment_method,payment_url,
+			expires_at,paid_at,created_at,provider_session_id,provider_payment_request_id,provider_refund_id`
+	var item domain.Transaction
+	if err := r.db.QueryRow(ctx, query, transactionID, session.URL, session.ID, session.PaymentRequestID).Scan(
+		&item.ID, &item.UserID, &item.PackageID, &item.InvoiceNumber, &item.Amount, &item.PlatformCommission, &item.PaymentStatus,
+		&item.PaymentMethod, &item.PaymentURL, &item.ExpiresAt, &item.PaidAt, &item.CreatedAt, &item.ProviderSessionID,
+		&item.ProviderPaymentRequestID, &item.ProviderRefundID); errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrTransactionNotFound
+	} else if err != nil {
+		return nil, fmt.Errorf("attach payment session: %w", err)
+	}
+	return &item, nil
+}
+
+func (r *PaymentRepository) FailPaymentInitialization(ctx context.Context, transactionID string) error {
+	_, err := r.db.Exec(ctx, `UPDATE transactions SET payment_status='failed',updated_at=NOW() WHERE id=$1 AND payment_status='pending' AND payment_url IS NULL`, transactionID)
+	if err != nil {
+		return fmt.Errorf("fail payment initialization: %w", err)
+	}
+	return nil
 }
 
 // HasPendingCheckout menyatakan apakah user masih memiliki invoice pending
@@ -360,9 +387,9 @@ func (r *PaymentRepository) ProcessWebhook(ctx context.Context, event domain.Pay
 	if math.Abs(amount-event.Amount) > 0.005 {
 		return false, domain.ErrInvalidPayment
 	}
-	// Pembayaran yang dilaporkan lunas setelah batas waktu ditolak;
-	// invoice hanya boleh dibayar selama jendela pembayaran masih terbuka.
-	if event.PaymentStatus == "paid" && expiresAt != nil && now.After(*expiresAt) {
+	// Keterlambatan pengiriman webhook tidak boleh membatalkan pembayaran sah.
+	// Hanya waktu pembayaran dari provider yang dibandingkan dengan kedaluwarsa.
+	if event.PaymentStatus == "paid" && event.PaidAt != nil && expiresAt != nil && event.PaidAt.After(*expiresAt) {
 		return false, domain.ErrPaymentExpired
 	}
 	if !validPaymentTransition(currentStatus, event.PaymentStatus) {
@@ -392,12 +419,17 @@ func (r *PaymentRepository) ProcessWebhook(ctx context.Context, event domain.Pay
 	if event.PaymentStatus == "paid" && paidAt == nil {
 		paidAt = &now
 	}
-	const updateQuery = `UPDATE transactions SET payment_status = $2, payment_method = COALESCE(NULLIF($3, ''), payment_method), paid_at = COALESCE($4, paid_at) WHERE id = $1`
-	if _, err := tx.Exec(ctx, updateQuery, transactionID, event.PaymentStatus, event.PaymentMethod, paidAt); err != nil {
+	const updateQuery = `UPDATE transactions SET payment_status=$2,
+		payment_method=COALESCE(NULLIF($3,''),payment_method),paid_at=COALESCE($4,paid_at),
+		provider_session_id=COALESCE(NULLIF($5,''),provider_session_id),
+		provider_payment_request_id=COALESCE(NULLIF($6,''),provider_payment_request_id),
+		provider_refund_id=COALESCE(NULLIF($7,''),provider_refund_id) WHERE id=$1`
+	if _, err := tx.Exec(ctx, updateQuery, transactionID, event.PaymentStatus, event.PaymentMethod, paidAt,
+		event.ProviderSessionID, event.ProviderPaymentRequestID, event.ProviderRefundID); err != nil {
 		return false, fmt.Errorf("update transaction: %w", err)
 	}
 
-	if event.PaymentStatus == "paid" && currentStatus != "paid" {
+	if event.PaymentStatus == "paid" && currentStatus != "paid" && event.ProviderRefundID == "" {
 		// Satu lisensi per (user, paket): pembelian baru memperpanjang lisensi
 		// yang masih aktif, atau menghidupkan kembali lisensi yang kedaluwarsa.
 		const licenseQuery = `
@@ -456,7 +488,7 @@ func (r *PaymentRepository) ProcessWebhook(ctx context.Context, event domain.Pay
 			}
 		}
 	}
-	if event.PaymentStatus == "refunded" && currentStatus == "paid" {
+	if event.PaymentStatus == "refunded" && (currentStatus == "paid" || currentStatus == "refund_pending") {
 		// Refund mencabut lisensi pengguna atas paket tersebut.
 		if _, err := tx.Exec(ctx, `UPDATE user_packages SET status='expired' WHERE user_id=$1 AND package_id=$2 AND status='active'`, userID, packageID); err != nil {
 			return false, fmt.Errorf("expire refunded package license: %w", err)
@@ -554,7 +586,9 @@ func validPaymentTransition(from, to string) bool {
 		// Koreksi gateway yang tetap memproses pembayaran sebelum batas waktu.
 		return to == "paid"
 	case "paid":
-		return to == "refunded"
+		return to == "refund_pending" || to == "refunded"
+	case "refund_pending":
+		return to == "refunded" || to == "paid"
 	default:
 		return false
 	}

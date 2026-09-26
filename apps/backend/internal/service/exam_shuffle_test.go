@@ -43,6 +43,19 @@ func TestApplyDisplayShuffleReordersAndRelabels(t *testing.T) {
 	}
 }
 
+func TestApplyDisplayShuffleFallsBackOnPartialQuestionOrder(t *testing.T) {
+	questions := []domain.Question{
+		{ID: testQuestionOne},
+		{ID: testQuestionTwo},
+	}
+	response := applyDisplayShuffle(questions, &domain.UserExamShuffle{
+		QuestionOrder: []string{testQuestionTwo},
+	})
+	if len(response) != 2 || response[0].ID != testQuestionOne || response[1].ID != testQuestionTwo {
+		t.Fatalf("partial question order must use canonical order: %+v", response)
+	}
+}
+
 func TestDisplayQuestionKeepsAllOptionsOnPartialOrder(t *testing.T) {
 	question := domain.Question{
 		ID: testQuestionOne, CorrectAnswer: "C",

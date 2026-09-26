@@ -14,11 +14,13 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 
 	"tka/apps/backend/internal/domain"
+	"tka/apps/backend/internal/security"
 )
 
 const webhookTolerance = 5 * time.Minute
@@ -35,14 +37,14 @@ func NewHMACPaymentGateway(secret, checkoutURL string) *HMACPaymentGateway {
 	return &HMACPaymentGateway{secret: []byte(secret), checkoutURL: strings.TrimRight(checkoutURL, "/")}
 }
 
-func (g *HMACPaymentGateway) CreatePaymentURL(transaction domain.Transaction) (string, error) {
+func (g *HMACPaymentGateway) CreatePaymentSession(_ context.Context, transaction domain.Transaction) (*domain.PaymentSession, error) {
 	base, err := url.Parse(g.checkoutURL)
 	if err != nil {
-		return "", fmt.Errorf("parse payment checkout URL: %w", err)
+		return nil, fmt.Errorf("parse payment checkout URL: %w", err)
 	}
 	localHTTP := base.Scheme == "http" && (base.Hostname() == "localhost" || base.Hostname() == "127.0.0.1")
 	if base.Scheme != "https" && !localHTTP {
-		return "", fmt.Errorf("payment checkout URL must use https outside localhost")
+		return nil, fmt.Errorf("payment checkout URL must use https outside localhost")
 	}
 	amount := strconv.FormatFloat(transaction.Amount, 'f', 2, 64)
 	mac := hmac.New(sha256.New, g.secret)
@@ -52,10 +54,16 @@ func (g *HMACPaymentGateway) CreatePaymentURL(transaction domain.Transaction) (s
 	query.Set("amount", amount)
 	query.Set("signature", hex.EncodeToString(mac.Sum(nil)))
 	base.RawQuery = query.Encode()
-	return base.String(), nil
+	return &domain.PaymentSession{ID: transaction.InvoiceNumber, URL: base.String()}, nil
 }
 
-func (g *HMACPaymentGateway) VerifyWebhook(rawBody []byte, timestamp, signature string, now time.Time) error {
+func (g *HMACPaymentGateway) CreateRefund(context.Context, domain.Transaction, string) (*domain.PaymentRefund, error) {
+	return nil, domain.ErrTransactionNotRefundable
+}
+
+func (g *HMACPaymentGateway) VerifyWebhook(rawBody []byte, auth domain.WebhookAuth, now time.Time) error {
+	timestamp := auth.Timestamp
+	signature := auth.Signature
 	unix, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
 		return domain.ErrInvalidWebhookSignature
@@ -78,14 +86,82 @@ func (g *HMACPaymentGateway) VerifyWebhook(rawBody []byte, timestamp, signature 
 	return nil
 }
 
+// ParseWebhook mendecode payload webhook kanonis (event_id, invoice_number,
+// payment_status, amount) dengan validasi ketat.
+func (g *HMACPaymentGateway) ParseWebhook(rawBody []byte) (*domain.PaymentWebhookRequest, error) {
+	var event domain.PaymentWebhookRequest
+	decoder := json.NewDecoder(bytes.NewReader(rawBody))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&event); err != nil {
+		return nil, domain.ErrInvalidPayment
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return nil, domain.ErrInvalidPayment
+	}
+	return &event, nil
+}
+
+// PaymentSettingsEnv adalah nilai konfigurasi dari environment yang menjadi
+// fallback/label saat admin belum menyimpan pengaturan via panel.
+type PaymentSettingsEnv struct {
+	SecretKey          string
+	WebhookToken       string
+	BaseURL            string
+	SuccessRedirectURL string
+	FailureRedirectURL string
+}
+
+// gatewayRef membungkus gateway aktif dengan tipe konkret yang konsisten
+// agar aman disimpan ke sync/atomic.Value (value atomic menolak perubahan
+// tipe dinamis antar Store).
+type gatewayRef struct {
+	gateway domain.PaymentGateway
+}
+
+// paymentGatewayGate menyimpan gateway aktif secara atomik sehingga
+// konfigurasi pembayaran dapat digunakan ulang tanpa restart server.
+type paymentGatewayGate struct {
+	value atomic.Value
+}
+
+func newPaymentGatewayGate(g domain.PaymentGateway) *paymentGatewayGate {
+	gate := &paymentGatewayGate{}
+	if g == nil {
+		g = NewXenditGateway("", "", "", "", "")
+	}
+	gate.value.Store(&gatewayRef{gateway: g})
+	return gate
+}
+
+func (gate *paymentGatewayGate) Get() domain.PaymentGateway {
+	return gate.value.Load().(*gatewayRef).gateway
+}
+
+func (gate *paymentGatewayGate) Set(g domain.PaymentGateway) {
+	gate.value.Store(&gatewayRef{gateway: g})
+}
+
 type PaymentService struct {
-	repository domain.PaymentRepository
-	gateway    domain.PaymentGateway
-	now        func() time.Time
+	repository    domain.PaymentRepository
+	gateway       *paymentGatewayGate
+	now           func() time.Time
+	settingsStore domain.PaymentSettingsStore
+	cipher        *security.PaymentCipher
+	envDefaults   PaymentSettingsEnv
+	environment   string
 }
 
 func NewPaymentService(repository domain.PaymentRepository, gateway domain.PaymentGateway) *PaymentService {
-	return &PaymentService{repository: repository, gateway: gateway, now: time.Now}
+	return &PaymentService{repository: repository, gateway: newPaymentGatewayGate(gateway), now: time.Now}
+}
+
+// ConfigurePaymentSettings mengaktifkan kelola pengaturan pembayaran via
+// panel admin (penyimpanan terenkripsi + penggantian gateway hot-reload).
+func (s *PaymentService) ConfigurePaymentSettings(store domain.PaymentSettingsStore, cipher *security.PaymentCipher, envDefaults PaymentSettingsEnv, environment string) {
+	s.settingsStore = store
+	s.cipher = cipher
+	s.envDefaults = envDefaults
+	s.environment = environment
 }
 
 func (s *PaymentService) ListPackages(ctx context.Context, page, perPage int) ([]domain.Package, error) {
@@ -230,17 +306,23 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, idempotencyKey st
 		InvoiceNumber: "TKA-" + now.Format("20060102-150405") + "-" + strings.ToUpper(uuid.NewString()[:8]),
 		Amount:        discountedAmount, PaymentStatus: "pending", PaymentMethod: &method, ExpiresAt: &expiresAt, CreatedAt: now,
 	}
-	paymentURL, err := s.gateway.CreatePaymentURL(transaction)
+	created, ownsInitialization, err := s.repository.ReserveTransaction(ctx, transaction, idempotencyKey)
 	if err != nil {
 		return nil, err
 	}
-	transaction.PaymentURL = &paymentURL
-	created, err := s.repository.CreateOrGetTransaction(ctx, transaction, idempotencyKey)
-	if err != nil {
-		return nil, err
+	if ownsInitialization {
+		session, createErr := s.gateway.Get().CreatePaymentSession(ctx, *created)
+		if createErr != nil {
+			_ = s.repository.FailPaymentInitialization(ctx, created.ID)
+			return nil, createErr
+		}
+		created, err = s.repository.AttachPaymentSession(ctx, created.ID, *session)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if created.PaymentURL == nil || created.ExpiresAt == nil {
-		return nil, fmt.Errorf("stored checkout is incomplete")
+		return nil, domain.ErrPaymentInitializing
 	}
 	if created.PackageID != input.PackageID || created.PaymentMethod == nil || *created.PaymentMethod != input.PaymentMethod {
 		return nil, domain.ErrInvalidPayment
@@ -251,6 +333,10 @@ func (s *PaymentService) Checkout(ctx context.Context, userID, idempotencyKey st
 		}
 	}
 	return &domain.CheckoutResponse{Transaction: *created, PaymentURL: *created.PaymentURL, ExpiresAt: *created.ExpiresAt}, nil
+}
+
+func (s *PaymentService) CreateRefund(ctx context.Context, transaction domain.Transaction, reason string) (*domain.PaymentRefund, error) {
+	return s.gateway.Get().CreateRefund(ctx, transaction, reason)
 }
 
 func (s *PaymentService) ensurePackageNotOwned(ctx context.Context, userID, packageID string) error {
@@ -294,18 +380,14 @@ func (s *PaymentService) validateCheckoutReferral(ctx context.Context, userID, c
 	return affiliateID, nil
 }
 
-func (s *PaymentService) HandleWebhook(ctx context.Context, rawBody []byte, timestamp, signature string) (bool, error) {
+func (s *PaymentService) HandleWebhook(ctx context.Context, rawBody []byte, auth domain.WebhookAuth) (bool, error) {
 	now := s.now().UTC()
-	if err := s.gateway.VerifyWebhook(rawBody, timestamp, signature, now); err != nil {
+	gateway := s.gateway.Get()
+	if err := gateway.VerifyWebhook(rawBody, auth, now); err != nil {
 		return false, err
 	}
-	var event domain.PaymentWebhookRequest
-	decoder := json.NewDecoder(bytes.NewReader(rawBody))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&event); err != nil {
-		return false, domain.ErrInvalidPayment
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+	event, err := gateway.ParseWebhook(rawBody)
+	if err != nil {
 		return false, domain.ErrInvalidPayment
 	}
 	event.EventID = strings.TrimSpace(event.EventID)
@@ -315,15 +397,21 @@ func (s *PaymentService) HandleWebhook(ctx context.Context, rawBody []byte, time
 	if event.EventID == "" || len(event.EventID) > 200 || event.InvoiceNumber == "" || event.Amount < 0 || !validPaymentStatus(event.PaymentStatus) {
 		return false, domain.ErrInvalidPayment
 	}
-	digest := sha256.Sum256(rawBody)
-	return s.repository.ProcessWebhook(ctx, event, hex.EncodeToString(digest[:]), now)
+	// Hash representasi kanonis, bukan envelope mentah. Xendit dapat mengubah
+	// timestamp percobaan pengiriman saat me-retry webhook yang sama.
+	canonical, err := json.Marshal(event)
+	if err != nil {
+		return false, domain.ErrInvalidPayment
+	}
+	digest := sha256.Sum256(canonical)
+	return s.repository.ProcessWebhook(ctx, *event, hex.EncodeToString(digest[:]), now)
 }
 
 func validPaymentMethod(value string) bool {
 	return value == "qris" || value == "virtual_account" || value == "e_wallet"
 }
 func validPaymentStatus(value string) bool {
-	return value == "paid" || value == "failed" || value == "expired" || value == "refunded"
+	return value == "paid" || value == "failed" || value == "expired" || value == "refund_pending" || value == "refunded"
 }
 
 var _ domain.PaymentGateway = (*HMACPaymentGateway)(nil)

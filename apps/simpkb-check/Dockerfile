@@ -1,15 +1,16 @@
-# Image resmi Playwright sudah berisi Chromium yang kompatibel dengan
-# versi library playwright di package.json (1.48.2); heredity browser di
-# /ms-playwright agar tidak mengunduh yang baru saat npm install.
-FROM mcr.microsoft.com/playwright:v1.48.2-jammy
+# Hanya Chromium yang diperlukan. Memasang browser dari lockfile Playwright
+# menghindari image full-browser yang jauh lebih besar (Chromium/Firefox/WebKit).
+FROM node:22-bookworm-slim
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 WORKDIR /app
 
-COPY package.json ./
-RUN npm install --omit=dev --ignore-scripts && \
-    npx playwright install-deps chromium
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+RUN npx playwright install --with-deps --only-shell chromium
 
 COPY server.js ./
 
 EXPOSE 8080
+USER node
 CMD ["node", "server.js"]

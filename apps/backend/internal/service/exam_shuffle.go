@@ -53,11 +53,18 @@ func applyDisplayShuffle(questions []domain.Question, mapping *domain.UserExamSh
 	for _, response := range responses {
 		byID[response.ID] = response
 	}
+	if len(mapping.QuestionOrder) != len(byID) {
+		return responses
+	}
 	ordered := make([]domain.QuestionResponse, 0, len(mapping.QuestionOrder))
+	seen := make(map[string]bool, len(mapping.QuestionOrder))
 	for _, id := range mapping.QuestionOrder {
-		if response, ok := byID[id]; ok {
-			ordered = append(ordered, response)
+		response, ok := byID[id]
+		if !ok || seen[id] {
+			return responses
 		}
+		seen[id] = true
+		ordered = append(ordered, response)
 	}
 	return ordered
 }

@@ -72,7 +72,10 @@ services:
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       ALLOWED_ORIGIN: http://localhost:3000
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-development-payment-secret-change-now}
-      PAYMENT_CHECKOUT_URL: ${PAYMENT_CHECKOUT_URL:-https://payment-gateway.example/checkout}
+      XENDIT_SECRET_KEY: ${XENDIT_SECRET_KEY:-}
+      XENDIT_BASE_URL: ${XENDIT_BASE_URL:-https://api.xendit.co}
+      XENDIT_SUCCESS_REDIRECT_URL: ${XENDIT_SUCCESS_REDIRECT_URL:-}
+      XENDIT_FAILURE_REDIRECT_URL: ${XENDIT_FAILURE_REDIRECT_URL:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
       APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
@@ -87,7 +90,7 @@ services:
     depends_on:
       seed: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
-      simpkb-check: { condition: service_started }
+      simpkb-check: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "/tka-api", "healthcheck"]
       interval: 5s
@@ -97,6 +100,9 @@ services:
 
   simpkb-check:
     build: ./apps/simpkb-check
+    init: true
+    shm_size: 1gb
+    pids_limit: 256
     expose: ["8080"]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

@@ -119,7 +119,10 @@ services:
       JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
       ALLOWED_ORIGIN: https://${APP_DOMAIN:?set APP_DOMAIN in .env.production}
       PAYMENT_WEBHOOK_SECRET_FILE: /run/secrets/payment_webhook_secret
-      PAYMENT_CHECKOUT_URL: ${PAYMENT_CHECKOUT_URL:?set PAYMENT_CHECKOUT_URL in .env.production}
+      XENDIT_SECRET_KEY_FILE: /run/secrets/xendit_secret_key
+      XENDIT_BASE_URL: ${XENDIT_BASE_URL:-https://api.xendit.co}
+      XENDIT_SUCCESS_REDIRECT_URL: ${XENDIT_SUCCESS_REDIRECT_URL:-}
+      XENDIT_FAILURE_REDIRECT_URL: ${XENDIT_FAILURE_REDIRECT_URL:-}
       APP_ENVIRONMENT: production
       APP_RELEASE: ${APP_RELEASE:-unknown}
       SENTRY_DSN_FILE: /run/secrets/sentry_dsn
@@ -135,13 +138,13 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       SIMPKB_CHECK_URL: ${SIMPKB_CHECK_URL:-http://simpkb-check:8080}
       SIMPKB_CHECK_INTERVAL: ${SIMPKB_CHECK_INTERVAL:-5m}
-    secrets: [database_url, redis_password, jwt_secret, payment_webhook_secret, sentry_dsn, smtp_password]
+    secrets: [database_url, redis_password, jwt_secret, payment_webhook_secret, xendit_secret_key, sentry_dsn, smtp_password]
     expose: ["8080"]
     networks: [edge, data]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis-cluster-init: { condition: service_completed_successfully }
-      simpkb-check: { condition: service_started }
+      simpkb-check: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "/tka-api", "healthcheck"]
       interval: 15s
@@ -157,6 +160,9 @@ services:
     build: { context: ./apps/simpkb-check }
     image: ${SIMPKB_CHECK_IMAGE:-tka/simpkb-check:local}
     restart: unless-stopped
+    init: true
+    shm_size: 1gb
+    pids_limit: 256
     expose: ["8080"]
     networks: [edge]
     healthcheck:
@@ -165,6 +171,8 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
+    read_only: true
+    tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
     logging: *default-logging
 
@@ -230,6 +238,8 @@ secrets:
     file: "${JWT_SECRET_FILE:-./secrets/jwt_secret.txt}"
   payment_webhook_secret:
     file: "${PAYMENT_WEBHOOK_SECRET_FILE:-./secrets/payment_webhook_secret.txt}"
+  xendit_secret_key:
+    file: "${XENDIT_SECRET_KEY_FILE:-./secrets/xendit_secret_key.txt}"
   sentry_dsn:
     file: "${SENTRY_DSN_FILE:-./secrets/sentry_dsn.txt}"
   smtp_password:

@@ -3,8 +3,8 @@ import axios, { AxiosError } from "axios";
 const TOKEN_KEY = "tka_access_token";
 const LEGACY_TOKEN_KEY = "tka_token";
 const USER_KEY = "tka_current_user";
-const REFRESH_KEY = "tka_refresh_token";
 export const SESSION_INVALID_EVENT = "tka:session-invalid";
+let accessToken: string | null = null;
 
 declare module "axios" {
   export interface InternalAxiosRequestConfig {
@@ -15,13 +15,10 @@ declare module "axios" {
 let refreshPromise: Promise<boolean> | null = null;
 
 async function tryRefreshSession(): Promise<boolean> {
-  const refreshToken = typeof window === "undefined" ? null : localStorage.getItem(REFRESH_KEY);
-  if (!refreshToken) return false;
   try {
-    const response = (await axios.post<LoginResponse>(`${http.defaults.baseURL}/auth/refresh`, { refresh_token: refreshToken }, { headers: { "Content-Type": "application/json", Accept: "application/json" }, timeout: 10_000 })).data;
+    const response = (await axios.post<LoginResponse>(`${http.defaults.baseURL}/auth/refresh`, {}, { headers: { "Content-Type": "application/json", Accept: "application/json" }, timeout: 10_000, withCredentials: true })).data;
     if (!response.access_token) return false;
     tokenStore.set(response.access_token, response.user);
-    if (response.refresh_token) tokenStore.setRefresh(response.refresh_token);
     return true;
   } catch {
     return false;
@@ -44,12 +41,13 @@ export class APIError extends Error {
 export const http = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080/api/v1",
   timeout: 10_000,
+  withCredentials: true,
   headers: { "Content-Type": "application/json", Accept: "application/json" },
 });
 
 http.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
-    const token = localStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(LEGACY_TOKEN_KEY);
+    const token = accessToken;
     if (token) config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
@@ -112,7 +110,7 @@ export type PackageExam = {
   total_score?: number;
   finished_at?: string;
 };
-export type Transaction = { id: string; user_id: string; package_id: string; invoice_number: string; amount: number; payment_status: "pending" | "paid" | "failed" | "expired" | "refunded"; payment_method?: string; payment_url?: string; expires_at?: string; paid_at?: string; created_at: string };
+export type Transaction = { id: string; user_id: string; package_id: string; invoice_number: string; amount: number; payment_status: "pending" | "paid" | "failed" | "expired" | "refund_pending" | "refunded"; payment_method?: string; payment_url?: string; expires_at?: string; paid_at?: string; created_at: string };
 export type AppNotification = { id: string; user_id: string; title: string; body: string; link?: string; read_at?: string; created_at: string };
 export type MyTransaction = { id: string; invoice_number: string; package_title: string; amount: number; status: string; created_at: string };
 export type PendingTransaction = { id: string; invoice_number: string; package_title: string; amount: number; payment_method?: string; payment_url: string; expires_at?: string };
@@ -147,7 +145,7 @@ export type AdminUsersPage = AdminPage<User> & { summary: UserRoleSummary };
 export type AdminPackagesPage = AdminPage<AdminPackage> & { counts: { active: number; inactive: number; active_teacher: number; inactive_teacher: number } };
 export type CBTLookupExam = { exam_id: string; title: string; duration_minutes: number; total_questions: number; passing_score: number; submitted: boolean; publish_pembahasan: boolean; user_exam_id?: string };
 export type CBTLookupPackage = { id: string; title: string; kode: string; jenjang: string; price: number; exams: CBTLookupExam[] };
-export type CBTPublishSetting = { exam_id: string; package_id: string; package_title: string; package_kode: string; jenjang: string; exam_title: string; duration_minutes: number; total_questions: number; passing_score: number; publish_pembahasan: boolean; participated: number; publisher_email: string };
+export type CBTPublishSetting = { exam_id: string; package_id: string; package_title: string; package_kode: string; jenjang: string; exam_title: string; duration_minutes: number; total_questions: number; passing_score: number; shuffle_questions: boolean; shuffle_options: boolean; publish_pembahasan: boolean; participated: number; publisher_email: string };
 export type CBTParticipant = { user_exam_id: string; user_id: string; name: string; email: string; school_level: string; status: "ongoing" | "submitted"; started_at?: string; finished_at?: string; total_questions: number; current_question?: number; total_score: number; passing_score: number; passed: boolean };
 export type AdminDashboardData = { overview: AdminOverview; levels: string[]; jenjangs: MasterItem[]; mapels: MasterItem[]; academic_years: MasterItem[]; kategoris: MasterItem[]; kelas: MasterItem[]; users: User[]; packages: AdminPackage[]; exams: AdminExam[]; transactions: AdminTransaction[]; questions: AdminQuestion[] };
 export type TeacherOverview = { total_packages: number; total_exams: number; total_questions: number; total_sales: number; total_revenue: number };
@@ -158,27 +156,28 @@ export type ExamEntry = { title: string; mapel_id: string; tahun_ajaran_id: stri
 export type QuestionEntry = { subject_name: string; content_text: string; options: QuestionOption[]; correct_answer: string; score_weight: number; explanation_text: string; status: Status } & TKAQuestionFields;
 export type PackageEntry = { title: string; kode: string; description: string; price: number; validity_days: number; status: Status; jenjang: string; exam_type: "sell" | "cbt"; cbt_token?: string; start_date?: string; end_date?: string; kategori_id: string; kelas_id: string };
 export type PackageBundleCreate = { package: PackageEntry; exam?: ExamEntry; questions?: QuestionEntry[] };
+export type PaymentSettingsInput = { provider?: string; secret_key?: string; webhook_token?: string; base_url?: string; success_redirect_url?: string; failure_redirect_url?: string };
+export type PaymentSettings = { provider: string; environment: string; secret_key_configured: boolean; secret_key_masked?: string; webhook_token_configured: boolean; webhook_token_masked?: string; base_url: string; success_redirect_url: string; failure_redirect_url: string; updated_at: string };
 
 export const tokenStore = {
   set(token: string, user?: User) {
-    localStorage.setItem(TOKEN_KEY, token);
+	accessToken = token;
+    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(LEGACY_TOKEN_KEY);
     if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
   },
-  setRefresh(refresh: string) { localStorage.setItem(REFRESH_KEY, refresh); },
-  getRefresh() { return typeof window === "undefined" ? null : localStorage.getItem(REFRESH_KEY); },
   getUser(): User | null {
     if (typeof window === "undefined") return null;
     try { return JSON.parse(localStorage.getItem(USER_KEY) ?? "null") as User | null; } catch { return null; }
   },
   setUser(user: User) { localStorage.setItem(USER_KEY, JSON.stringify(user)); },
   hasToken() {
-    return typeof window !== "undefined" && Boolean(localStorage.getItem(TOKEN_KEY) ?? localStorage.getItem(LEGACY_TOKEN_KEY));
+	return typeof window !== "undefined" && Boolean(accessToken || localStorage.getItem(USER_KEY));
   },
   clear() {
+	accessToken = null;
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(LEGACY_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_KEY);
     localStorage.removeItem(USER_KEY);
   },
 };
@@ -189,12 +188,12 @@ export const api = {
   },
   async login(email: string, password: string) {
     const response = (await http.post<LoginResponse>("/auth/login", { email, password })).data;
-    if (response.access_token) { tokenStore.set(response.access_token, response.user); if (response.refresh_token) tokenStore.setRefresh(response.refresh_token); }
+    if (response.access_token) tokenStore.set(response.access_token, response.user);
     return response;
   },
   async verify2FA(mfaToken: string, code: string) {
     const response = (await http.post<LoginResponse>("/auth/verify-2fa", { mfa_token: mfaToken, code })).data;
-    if (response.access_token) { tokenStore.set(response.access_token, response.user); if (response.refresh_token) tokenStore.setRefresh(response.refresh_token); }
+    if (response.access_token) tokenStore.set(response.access_token, response.user);
     return response;
   },
   async twoFactorSetup() { return (await http.get<{ secret: string; otpauth_url: string; qr_data_url: string; enabled: boolean }>("/auth/2fa/setup")).data; },
@@ -204,7 +203,7 @@ export const api = {
   async resetPassword(token:string,newPassword:string) { return (await http.post<{message:string}>("/auth/reset-password", {token,new_password:newPassword})).data; },
   async loginWithGoogle(idToken: string, schoolLevel?: User["school_level"]) {
     const response = (await http.post<LoginResponse>("/auth/google", { id_token: idToken, school_level: schoolLevel })).data;
-    if (response.access_token) { tokenStore.set(response.access_token, response.user); if (response.refresh_token) tokenStore.setRefresh(response.refresh_token); }
+    if (response.access_token) tokenStore.set(response.access_token, response.user);
     return response;
   },
   async logout() { try { await http.post("/auth/logout"); } finally { tokenStore.clear(); } },
@@ -239,9 +238,11 @@ export const api = {
   async cbtLookup(token: string) { return (await http.get<{ data: CBTLookupPackage[] }>("/cbt/lookup", { params: { token } })).data.data; },
   async adminCBTSettings() { return (await http.get<{ items: CBTPublishSetting[] }>("/admin/cbt-settings")).data.items; },
   async adminSetCBTPublish(examID: string, publishPembahasan: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/admin/cbt-settings/${examID}`, { publish_pembahasan: publishPembahasan })).data.item; },
+  async adminSetCBTShuffle(examID: string, shuffleQuestions: boolean, shuffleOptions: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/admin/cbt-settings/${examID}/shuffle`, { shuffle_questions: shuffleQuestions, shuffle_options: shuffleOptions })).data.item; },
   async adminCBTParticipants(examID: string) { return (await http.get<{ items: CBTParticipant[] }>(`/admin/cbt-settings/${examID}/participants`)).data.items; },
   async teacherCBTSettings() { return (await http.get<{ items: CBTPublishSetting[] }>("/teacher/cbt-settings")).data.items; },
   async teacherSetCBTPublish(examID: string, publishPembahasan: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}`, { publish_pembahasan: publishPembahasan })).data.item; },
+  async teacherSetCBTShuffle(examID: string, shuffleQuestions: boolean, shuffleOptions: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}/shuffle`, { shuffle_questions: shuffleQuestions, shuffle_options: shuffleOptions })).data.item; },
   async teacherCBTParticipants(examID: string) { return (await http.get<{ items: CBTParticipant[] }>(`/teacher/cbt-settings/${examID}/participants`)).data.items; },
   async syncAnswer(examID: string, questionID: string, selectedOption: string) {
     return (await http.post<SyncAnswerResponse>("/cbt/answers/sync", { exam_id: examID, question_id: questionID, selected_option: selectedOption })).data;
@@ -355,4 +356,6 @@ export const api = {
   async adminListTestimonials(status?: string) { return (await http.get<{testimonials: Testimonial[]}>(`/admin/testimonials${status ? `?status=${encodeURIComponent(status)}` : ""}`)).data.testimonials; },
   async adminUpdateTestimonialStatus(id: string, status: "pending" | "approved" | "rejected") { return (await http.patch<{testimonial: Testimonial}>(`/admin/testimonials/${id}`, { status })).data.testimonial; },
   async adminDeleteTestimonial(id: string) { await http.delete(`/admin/testimonials/${id}`); },
+  async paymentSettings() { return (await http.get<{ settings: PaymentSettings }>(`/admin/payment-settings`)).data.settings; },
+  async updatePaymentSettings(input: PaymentSettingsInput) { return (await http.put<{ settings: PaymentSettings }>(`/admin/payment-settings`, input)).data.settings; },
 };

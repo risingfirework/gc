@@ -250,16 +250,31 @@ func TestIntegrationExamLifecycleAndShuffle(t *testing.T) {
 		t.Fatalf("question_order_json must be NULL when shuffle is off")
 	}
 
-	// Aktifkan shuffle -> menghasilkan permutasi, stabil antar panggilan, dan
-	// mencakup seluruh soal beserta seluruh kunci opsi.
+	// Aktifkan shuffle. Attempt yang sudah berjalan mempertahankan snapshot
+	// nonaktif; attempt baru menghasilkan permutasi yang stabil.
 	if _, err := pool.Exec(ctx, `UPDATE exams SET shuffle_questions = TRUE, shuffle_options = TRUE WHERE id = $1`, examID); err != nil {
 		t.Fatalf("enable shuffle: %v", err)
 	}
-	first, err := repos.EnsureUserExamShuffle(ctx, attempt.ID)
+	unchanged, err := repos.EnsureUserExamShuffle(ctx, attempt.ID)
+	if err != nil {
+		t.Fatalf("ensure existing attempt remains unshuffled: %v", err)
+	}
+	if len(unchanged.QuestionOrder) != 0 || len(unchanged.OptionOrder) != 0 {
+		t.Fatalf("existing attempt must retain its shuffle snapshot: %+v", unchanged)
+	}
+	secondUser := &domain.User{Email: "siswa-shuffle@example.com", PasswordHash: "hash", Role: "student", SchoolLevel: "SMA"}
+	if err := userRepo.Create(ctx, secondUser); err != nil {
+		t.Fatalf("create shuffled user: %v", err)
+	}
+	shuffledAttempt, err := repos.StartOrGetUserExam(ctx, secondUser.ID, examID, now)
+	if err != nil {
+		t.Fatalf("start shuffled exam: %v", err)
+	}
+	first, err := repos.EnsureUserExamShuffle(ctx, shuffledAttempt.ID)
 	if err != nil {
 		t.Fatalf("ensure shuffle on: %v", err)
 	}
-	second, err := repos.EnsureUserExamShuffle(ctx, attempt.ID)
+	second, err := repos.EnsureUserExamShuffle(ctx, shuffledAttempt.ID)
 	if err != nil {
 		t.Fatalf("ensure shuffle repeated: %v", err)
 	}
@@ -285,7 +300,7 @@ func TestIntegrationExamLifecycleAndShuffle(t *testing.T) {
 			t.Fatalf("option order for %s missing key: %v", id, keys)
 		}
 	}
-	if err := pool.QueryRow(ctx, `SELECT question_order_json FROM user_exams WHERE id = $1`, attempt.ID).Scan(&storedJSON); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT question_order_json FROM user_exams WHERE id = $1`, shuffledAttempt.ID).Scan(&storedJSON); err != nil {
 		t.Fatalf("re-read question_order_json: %v", err)
 	}
 	if storedJSON == nil {

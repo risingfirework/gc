@@ -2,6 +2,7 @@
 package http
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -37,6 +38,7 @@ type RouterOptions struct {
 	Testimonial              domain.TestimonialService
 	Notification             domain.NotificationService
 	Affiliate                domain.AffiliateService
+	Readiness                func(context.Context) error
 }
 
 func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.PaymentService, analytics domain.ExamAnalyticsService, logger *slog.Logger, allowedOrigin string, options ...RouterOptions) http.Handler {
@@ -71,6 +73,20 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	router.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if opts.Readiness != nil {
+			ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+			defer cancel()
+			if err := opts.Readiness(ctx); err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				_, _ = w.Write([]byte(`{"status":"unavailable"}`))
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ready"}`))
 	})
 	router.Route("/api/v1/auth", func(router chi.Router) {
 		limiter := opts.RateLimiter != nil
@@ -142,6 +158,7 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 				router.Delete("/exams/{id}", adminHandler.DeleteExam)
 				router.Get("/cbt-settings", adminHandler.CBTSettings)
 				router.Patch("/cbt-settings/{id}", adminHandler.SetCBTPublish)
+				router.Patch("/cbt-settings/{id}/shuffle", adminHandler.SetCBTShuffle)
 				router.Get("/cbt-settings/{id}/participants", adminHandler.CBTParticipants)
 				router.Post("/questions", adminHandler.CreateQuestion)
 				router.Get("/questions", adminHandler.Questions)
@@ -185,6 +202,13 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 				router.Patch("/users/{id}", adminHandler.UpdateUser)
 				router.Delete("/users/{id}", adminHandler.DeleteUser)
 				router.Get("/audit", adminHandler.AuditLogList)
+				if payment != nil {
+					// Integrasi pembayaran: hanya owner yang boleh melihat/mengubah
+					// credential provider (tersimpan terenkripsi).
+					settingsHandler := handler.NewPaymentHandler(payment, logger)
+					router.Get("/payment-settings", settingsHandler.PaymentSettings)
+					router.Put("/payment-settings", settingsHandler.UpdatePaymentSettings)
+				}
 			})
 		})
 	}
@@ -218,6 +242,7 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 			router.Delete("/exams/{id}", teacherHandler.DeleteExam)
 			router.Get("/cbt-settings", teacherHandler.CBTSettings)
 			router.Patch("/cbt-settings/{id}", teacherHandler.SetCBTPublish)
+			router.Patch("/cbt-settings/{id}/shuffle", teacherHandler.SetCBTShuffle)
 			router.Get("/cbt-settings/{id}/participants", teacherHandler.CBTParticipants)
 			router.Post("/questions", teacherHandler.CreateQuestion)
 			router.Put("/questions/{id}", teacherHandler.UpdateQuestion)
@@ -299,6 +324,7 @@ func cors(allowedOrigins string) func(http.Handler) http.Handler {
 			origin := r.Header.Get("Origin")
 			if origin != "" && allowed[origin] {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Vary", "Origin")
 				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")

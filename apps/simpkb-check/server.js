@@ -115,11 +115,17 @@ async function runCheck(nik) {
 }
 
 let queue = Promise.resolve();
+let pendingChecks = 0;
+const MAX_PENDING_CHECKS = 50;
 
 // Satu browser dipakai semua request agar cold start tidak berulang; setiap
 // permintaan diproses bergiliran agar screenshot tidak saling menimpa.
 function enqueue(nik, callback) {
-  queue = queue.then(() => callback()).catch(() => {});
+  pendingChecks += 1;
+  queue = queue
+    .then(() => callback())
+    .catch(() => {})
+    .finally(() => { pendingChecks -= 1; });
   return queue;
 }
 
@@ -130,7 +136,8 @@ const server = http.createServer((req, res) => {
   };
 
   if (req.method === "GET" && req.url === "/health") {
-    respond(200, { ok: true });
+    const ready = Boolean(browser && browser.isConnected());
+    respond(ready ? 200 : 503, { ok: ready });
     return;
   }
 
@@ -139,9 +146,23 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (pendingChecks >= MAX_PENDING_CHECKS) {
+    respond(503, { error: "verification queue is full" });
+    return;
+  }
+
   let raw = "";
-  req.on("data", (chunk) => (raw += chunk));
+  let bodyTooLarge = false;
+  req.on("data", (chunk) => {
+    if (bodyTooLarge) return;
+    raw += chunk;
+    if (Buffer.byteLength(raw) > 1024) {
+      bodyTooLarge = true;
+      respond(413, { error: "request body is too large" });
+    }
+  });
   req.on("end", () => {
+    if (bodyTooLarge) return;
     let nik = "";
     try {
       nik = String((JSON.parse(raw) || {}).nik || "").trim();
@@ -163,6 +184,10 @@ const server = http.createServer((req, res) => {
     });
   });
 });
+
+server.requestTimeout = 30000;
+server.headersTimeout = 10000;
+server.keepAliveTimeout = 5000;
 
 server.listen(PORT, () => {
   console.log("simpkb-check listening on :" + PORT);

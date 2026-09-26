@@ -40,9 +40,16 @@ func (f *fakePaymentRepo) ListMyPackages(_ context.Context, _ string) ([]domain.
 func (f *fakePaymentRepo) ClaimFreePackage(_ context.Context, _, _ string) (*domain.OwnedPackage, error) {
 	return nil, nil
 }
-func (f *fakePaymentRepo) CreateOrGetTransaction(_ context.Context, tx domain.Transaction, _ string) (*domain.Transaction, error) {
-	return &tx, nil
+func (f *fakePaymentRepo) ReserveTransaction(_ context.Context, tx domain.Transaction, _ string) (*domain.Transaction, bool, error) {
+	return &tx, true, nil
 }
+func (f *fakePaymentRepo) AttachPaymentSession(_ context.Context, txID string, session domain.PaymentSession) (*domain.Transaction, error) {
+	url := session.URL
+	expires := time.Now().Add(time.Hour)
+	return &domain.Transaction{ID: txID, PackageID: "22222222-2222-2222-2222-222222222222", PaymentMethod: ptrString("qris"), PaymentURL: &url, ExpiresAt: &expires}, nil
+}
+func (f *fakePaymentRepo) FailPaymentInitialization(context.Context, string) error { return nil }
+func ptrString(v string) *string                                                   { return &v }
 func (f *fakePaymentRepo) ProcessWebhook(_ context.Context, _ domain.PaymentWebhookRequest, _ string, _ time.Time) (bool, error) {
 	return true, nil
 }
@@ -86,13 +93,23 @@ func (f *fakePaymentRepo) InsertReferral(_ context.Context, affiliateID, referre
 
 type fakePaymentGateway struct{}
 
-func (f *fakePaymentGateway) CreatePaymentURL(_ domain.Transaction) (string, error) {
-	return "https://pay.example.test/invoice", nil
+func (f *fakePaymentGateway) CreatePaymentSession(_ context.Context, _ domain.Transaction) (*domain.PaymentSession, error) {
+	return &domain.PaymentSession{ID: "ps-1", URL: "https://pay.example.test/invoice"}, nil
 }
-func (f *fakePaymentGateway) VerifyWebhook(_ []byte, _, _ string, _ time.Time) error { return nil }
+func (f *fakePaymentGateway) CreateRefund(context.Context, domain.Transaction, string) (*domain.PaymentRefund, error) {
+	return nil, domain.ErrTransactionNotRefundable
+}
+func (f *fakePaymentGateway) VerifyWebhook(_ []byte, _ domain.WebhookAuth, _ time.Time) error {
+	return nil
+}
+func (f *fakePaymentGateway) ParseWebhook(_ []byte) (*domain.PaymentWebhookRequest, error) {
+	return &domain.PaymentWebhookRequest{EventID: "evt-1", InvoiceNumber: "TKA-1", PaymentStatus: "paid", Amount: 1}, nil
+}
 
 func newCheckoutSvc(repo *fakePaymentRepo) *PaymentService {
-	return &PaymentService{repository: repo, gateway: &fakePaymentGateway{}, now: time.Now}
+	svc := &PaymentService{repository: repo, now: time.Now}
+	svc.gateway = newPaymentGatewayGate(&fakePaymentGateway{})
+	return svc
 }
 
 func TestCheckoutAppliesReferralCode(t *testing.T) {
@@ -168,10 +185,25 @@ func TestHMACPaymentGatewayVerifyWebhook(t *testing.T) {
 	_, _ = mac.Write([]byte(timestamp + "."))
 	_, _ = mac.Write(body)
 	signature := hex.EncodeToString(mac.Sum(nil))
-	if err := gateway.VerifyWebhook(body, timestamp, signature, now); err != nil {
+	auth := domain.WebhookAuth{Timestamp: timestamp, Signature: signature}
+	if err := gateway.VerifyWebhook(body, auth, now); err != nil {
 		t.Fatalf("expected valid signature: %v", err)
 	}
-	if err := gateway.VerifyWebhook([]byte(`{}`), timestamp, signature, now); err != domain.ErrInvalidWebhookSignature {
+	if err := gateway.VerifyWebhook([]byte(`{}`), auth, now); err != domain.ErrInvalidWebhookSignature {
 		t.Fatalf("expected invalid signature, got %v", err)
+	}
+}
+
+func TestHMACPaymentGatewayParseWebhookStrict(t *testing.T) {
+	gateway := NewHMACPaymentGateway("01234567890123456789012345678901", "https://pay.example.test/checkout")
+	event, err := gateway.ParseWebhook([]byte(`{"event_id":"evt-1","invoice_number":"TKA-1","payment_status":"paid","amount":5000}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if event.EventID != "evt-1" || event.InvoiceNumber != "TKA-1" || event.PaymentStatus != "paid" {
+		t.Fatalf("unexpected event: %+v", event)
+	}
+	if _, err := gateway.ParseWebhook([]byte(`{"event_id":"evt-1","invoice_number":"TKA-1","payment_status":"paid","amount":5000,"extra":"field"}`)); err != domain.ErrInvalidPayment {
+		t.Fatalf("expected reject unknown field, got %v", err)
 	}
 }

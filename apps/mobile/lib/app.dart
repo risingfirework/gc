@@ -18,15 +18,19 @@ class _TkaAppState extends ConsumerState<TkaApp> {
   @override
   void initState() {
     super.initState();
-    sessionSubscription =
-        ref.read(apiClientProvider).sessionExpired.listen((message) {
+    sessionSubscription = ref.read(apiClientProvider).sessionExpired.listen((
+      message,
+    ) {
       navigatorKey.currentState?.pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginScreen()), (_) => false);
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final context = navigatorKey.currentContext;
         if (context != null) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(message)));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(message)));
         }
       });
     });
@@ -40,15 +44,15 @@ class _TkaAppState extends ConsumerState<TkaApp> {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-        navigatorKey: navigatorKey,
-        title: 'Tryout TKA',
-        debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3157D5)),
-          useMaterial3: true,
-          scaffoldBackgroundColor: const Color(0xFFF4F7FB),
-          cardTheme: const CardThemeData(margin: EdgeInsets.zero),
-        ),
-        home: const LoginScreen(),
-      );
+    navigatorKey: navigatorKey,
+    title: 'Tryout TKA',
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3157D5)),
+      useMaterial3: true,
+      scaffoldBackgroundColor: const Color(0xFFF4F7FB),
+      cardTheme: const CardThemeData(margin: EdgeInsets.zero),
+    ),
+    home: const LoginScreen(),
+  );
 }

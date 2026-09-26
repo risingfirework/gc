@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version-file: apps/backend/go.mod
+          go-version: "1.26.6"
           cache-dependency-path: apps/backend/go.sum
       - name: Verify formatting
         shell: bash
@@ -35,6 +35,35 @@ jobs:
           working-directory: apps/backend
       - name: Unit tests
         run: go test -race -shuffle=on -coverprofile=coverage.out ./...
+      - name: Vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: tka
+          POSTGRES_PASSWORD: tka_local_password
+          POSTGRES_DB: postgres
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tka -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.6"
+          cache-dependency-path: apps/backend/go.sum
+      - name: Database migrations and repository integration tests
+        run: go test -count=1 -tags integration ./internal/repository/postgres/ -v
 
   image:
     runs-on: ubuntu-latest

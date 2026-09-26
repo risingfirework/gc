@@ -354,6 +354,22 @@ func (h *AdminHandler) SetCBTPublish(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"item": item})
 }
+func (h *AdminHandler) SetCBTShuffle(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ShuffleQuestions bool `json:"shuffle_questions"`
+		ShuffleOptions   bool `json:"shuffle_options"`
+	}
+	if decodeJSON(w, r, &input) != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	actorID, actorEmail := actorFromContext(r)
+	item, err := h.service.SetExamShuffle(r.Context(), actorID, actorEmail, chi.URLParam(r, "id"), input.ShuffleQuestions, input.ShuffleOptions)
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": item})
+}
 func (h *AdminHandler) CBTParticipants(w http.ResponseWriter, r *http.Request) {
 	items, err := h.service.ListCBTParticipants(r.Context(), chi.URLParam(r, "id"))
 	if writeAdminError(h.logger, w, r, err) {

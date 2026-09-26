@@ -1,0 +1,45 @@
+name: SIMPKB CI
+
+on:
+  push:
+    paths: ["apps/simpkb-check/**", ".github/workflows/simpkb-ci.yml"]
+  pull_request:
+    paths: ["apps/simpkb-check/**", ".github/workflows/simpkb-ci.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simpkb-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/simpkb-check
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/simpkb-check/package-lock.json
+      - run: npm ci --omit=dev --ignore-scripts
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: node --check server.js
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - name: Build production image
+        uses: docker/build-push-action@v7
+        with:
+          context: apps/simpkb-check
+          push: false
+          tags: tka/simpkb-check:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

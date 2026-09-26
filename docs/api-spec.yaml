@@ -18,6 +18,8 @@ tags:
     description: Public tryout package catalog.
   - name: Commerce
     description: Checkout transactions and payment gateway notifications.
+  - name: Administration
+    description: Owner-only platform configuration.
   - name: CBT
     description: Exam start, answer autosave, and submission.
   - name: Analytics
@@ -174,15 +176,25 @@ paths:
     post:
       tags: [Commerce]
       summary: Receive a payment gateway status notification
-      description: The implementation must verify the signature and process event_id idempotently.
+      description: |
+        The provider adapter verifies the callback (Xendit `x-callback-token`,
+        plus optional `X-Payment-Timestamp`/`X-Payment-Signature`) and translates
+        the provider payload into the canonical `PaymentWebhookRequest`. Events
+        are processed idempotently by `event_id`.
       operationId: paymentWebhook
       security:
-        - WebhookSignature: []
+        - WebhookToken: []
       parameters:
-        - name: X-Payment-Timestamp
+        - name: X-Callback-Token
           in: header
           required: true
-          description: Unix timestamp in seconds; requests older than five minutes are rejected.
+          description: Webhook callback token configured for the payment provider.
+          schema:
+            type: string
+        - name: X-Payment-Timestamp
+          in: header
+          required: false
+          description: Unix timestamp in seconds; when supplied, requests older than five minutes are rejected.
           schema:
             type: string
       requestBody:
@@ -208,6 +220,61 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '404':
           $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/v1/admin/payment-settings:
+    get:
+      tags: [Administration]
+      summary: Get the active payment-provider configuration
+      description: Owner-only. Secret values are never returned in plaintext.
+      operationId: getPaymentSettings
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Masked payment-provider configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSettingsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags: [Administration]
+      summary: Update the active payment-provider configuration
+      description: |
+        Owner-only. Omitted credentials and endpoint fields retain their
+        current values. An explicitly empty redirect URL removes that redirect.
+        Saved credentials are encrypted and activated without restarting the API.
+      operationId: updatePaymentSettings
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentSettingsInput'
+      responses:
+        '200':
+          description: Configuration saved and activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentSettingsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -400,7 +467,12 @@ components:
       type: apiKey
       in: header
       name: X-Payment-Signature
-      description: HMAC signature supplied by the configured payment gateway.
+      description: HMAC signature supplied by the payment provider (optional).
+    WebhookToken:
+      type: apiKey
+      in: header
+      name: X-Callback-Token
+      description: Webhook callback token that must match PAYMENT_WEBHOOK_SECRET.
 
   responses:
     BadRequest:
@@ -615,7 +687,7 @@ components:
           minimum: 0
         payment_status:
           type: string
-          enum: [pending, paid, failed, expired, refunded]
+          enum: [pending, paid, failed, expired, refund_pending, refunded]
         payment_method:
           type: string
           nullable: true
@@ -686,6 +758,69 @@ components:
         processed:
           type: boolean
           description: False when event_id was already processed.
+
+    PaymentSettingsInput:
+      type: object
+      additionalProperties: false
+      properties:
+        provider:
+          type: string
+          enum: [xendit]
+          default: xendit
+        secret_key:
+          type: string
+          format: password
+          writeOnly: true
+          description: Omit or send an empty string to retain the current secret key.
+        webhook_token:
+          type: string
+          format: password
+          writeOnly: true
+          description: Omit or send an empty string to retain the current callback token; a new value must contain at least 32 characters.
+        base_url:
+          type: string
+          description: Omit to retain the current URL; an empty string restores the environment/default URL.
+        success_redirect_url:
+          type: string
+          description: Omit to retain the current URL; send an empty string to remove it.
+        failure_redirect_url:
+          type: string
+          description: Omit to retain the current URL; send an empty string to remove it.
+
+    PaymentSettings:
+      type: object
+      required: [provider, environment, secret_key_configured, webhook_token_configured, base_url, success_redirect_url, failure_redirect_url, updated_at]
+      properties:
+        provider:
+          type: string
+          enum: [xendit]
+        environment:
+          type: string
+        secret_key_configured:
+          type: boolean
+        secret_key_masked:
+          type: string
+        webhook_token_configured:
+          type: boolean
+        webhook_token_masked:
+          type: string
+        base_url:
+          type: string
+          format: uri
+        success_redirect_url:
+          type: string
+        failure_redirect_url:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+
+    PaymentSettingsResponse:
+      type: object
+      required: [settings]
+      properties:
+        settings:
+          $ref: '#/components/schemas/PaymentSettings'
 
     ExamQuestion:
       type: object

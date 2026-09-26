@@ -1,0 +1,98 @@
+name: Mobile signed release
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: Production API URL ending in /api/v1
+        required: true
+        type: string
+      build_name:
+        description: Android version name (for example 1.0.0)
+        required: true
+        type: string
+      build_number:
+        description: Monotonically increasing Android version code
+        required: true
+        type: string
+      demo_exam_id:
+        description: Public demo exam UUID
+        required: true
+        default: 30000000-0000-0000-0000-000000000001
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  signed-appbundle:
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Require production signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          test -n "$STORE_PASSWORD"
+          test -n "$KEY_ALIAS"
+          test -n "$KEY_PASSWORD"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/upload-keystore.jks
+          chmod 0600 android/upload-keystore.jks
+          {
+            printf 'storePassword=%s\n' "$STORE_PASSWORD"
+            printf 'keyPassword=%s\n' "$KEY_PASSWORD"
+            printf 'keyAlias=%s\n' "$KEY_ALIAS"
+            printf 'storeFile=../upload-keystore.jks\n'
+          } > android/key.properties
+          chmod 0600 android/key.properties
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test
+      - name: Validate release inputs
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url }}
+          BUILD_NAME: ${{ inputs.build_name }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          DEMO_EXAM_ID: ${{ inputs.demo_exam_id }}
+        run: |
+          printf '%s' "$API_BASE_URL" | grep -Eq '^https://[^[:space:]]+/api/v1/?$'
+          printf '%s' "$BUILD_NAME" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([+-][0-9A-Za-z.-]+)?$'
+          printf '%s' "$BUILD_NUMBER" | grep -Eq '^[1-9][0-9]*$'
+          printf '%s' "$DEMO_EXAM_ID" | grep -Eq '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$'
+      - name: Build signed Android App Bundle
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url }}
+          BUILD_NAME: ${{ inputs.build_name }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          DEMO_EXAM_ID: ${{ inputs.demo_exam_id }}
+        run: |
+          flutter build appbundle --release \
+            --build-name="$BUILD_NAME" \
+            --build-number="$BUILD_NUMBER" \
+            --dart-define="API_BASE_URL=$API_BASE_URL" \
+            --dart-define="DEMO_EXAM_ID=$DEMO_EXAM_ID"
+      - name: Verify App Bundle exists
+        run: test -s build/app/outputs/bundle/release/app-release.aab
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tka-android-${{ inputs.build_name }}-${{ inputs.build_number }}
+          path: apps/mobile/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14

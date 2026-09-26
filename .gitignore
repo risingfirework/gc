@@ -24,6 +24,7 @@ apps/web/node_modules/
 apps/web/.next/
 apps/web/out/
 *.tsbuildinfo
+apps/simpkb-check/node_modules/
 
 # Flutter / Android
 apps/mobile/.dart_tool/
@@ -31,5 +32,8 @@ apps/mobile/build/
 apps/mobile/.flutter-plugins*
 apps/mobile/android/.gradle/
 apps/mobile/android/local.properties
+apps/mobile/android/key.properties
+apps/mobile/android/*.jks
+apps/mobile/android/*.keystore
 # Local development toolchains
 .tools/

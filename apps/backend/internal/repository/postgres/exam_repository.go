@@ -194,8 +194,9 @@ func (r *ExamRepository) ListExamsByPackage(ctx context.Context, userID, package
 
 func (r *ExamRepository) StartOrGetUserExam(ctx context.Context, userID, examID string, startedAt time.Time) (*domain.UserExam, error) {
 	const query = `
-		INSERT INTO user_exams (user_id, exam_id, status, started_at)
-		VALUES ($1, $2, 'ongoing', $3)
+		INSERT INTO user_exams (user_id, exam_id, status, started_at, shuffle_questions, shuffle_options)
+		SELECT $1, e.id, 'ongoing', $3, e.shuffle_questions, e.shuffle_options
+		FROM exams e WHERE e.id = $2
 		ON CONFLICT (user_id, exam_id) WHERE status = 'ongoing'
 		DO UPDATE SET user_id = EXCLUDED.user_id
 		RETURNING id, user_id, exam_id, status, started_at, finished_at, total_score`
@@ -413,7 +414,7 @@ func (r *ExamRepository) ListExpiredUserExams(ctx context.Context, limit int) ([
 // NULL) bila ujian tidak mengaktifkan fitur acak pada dimensi apa pun.
 func (r *ExamRepository) EnsureUserExamShuffle(ctx context.Context, userExamID string) (*domain.UserExamShuffle, error) {
 	const head = `
-		SELECT e.id, e.shuffle_questions, e.shuffle_options,
+		SELECT e.id, ue.shuffle_questions, ue.shuffle_options,
 		       ue.question_order_json, ue.option_order_json
 		FROM user_exams ue
 		JOIN exams e ON e.id = ue.exam_id
@@ -435,15 +436,7 @@ func (r *ExamRepository) EnsureUserExamShuffle(ctx context.Context, userExamID s
 		return &domain.UserExamShuffle{}, nil
 	}
 	if rawQuestionOrder != nil || rawOptionOrder != nil {
-		var questionOrder []string
-		var optionOrder map[string][]string
-		if err := json.Unmarshal(rawQuestionOrder, &questionOrder); err != nil {
-			return nil, fmt.Errorf("decode question order: %w", err)
-		}
-		if err := json.Unmarshal(rawOptionOrder, &optionOrder); err != nil {
-			return nil, fmt.Errorf("decode option order: %w", err)
-		}
-		return &domain.UserExamShuffle{QuestionOrder: questionOrder, OptionOrder: optionOrder}, nil
+		return decodeUserExamShuffle(rawQuestionOrder, rawOptionOrder)
 	}
 
 	var questionOrder []string
@@ -510,8 +503,31 @@ func (r *ExamRepository) EnsureUserExamShuffle(ctx context.Context, userExamID s
 			return nil, fmt.Errorf("encode option order: %w", err)
 		}
 	}
-	if _, err := r.db.Exec(ctx, `UPDATE user_exams SET question_order_json = $2, option_order_json = $3 WHERE id = $1`, userExamID, questionJSON, optionJSON); err != nil {
+	tag, err := r.db.Exec(ctx, `UPDATE user_exams SET question_order_json = $2, option_order_json = $3
+		WHERE id = $1 AND question_order_json IS NULL AND option_order_json IS NULL`, userExamID, questionJSON, optionJSON)
+	if err != nil {
 		return nil, fmt.Errorf("persist user exam shuffle: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		// Request start/resume lain sudah lebih dahulu menyimpan permutasi.
+		// Baca pemenangnya agar seluruh response untuk attempt ini identik.
+		return r.EnsureUserExamShuffle(ctx, userExamID)
+	}
+	return &domain.UserExamShuffle{QuestionOrder: questionOrder, OptionOrder: optionOrder}, nil
+}
+
+func decodeUserExamShuffle(rawQuestionOrder, rawOptionOrder []byte) (*domain.UserExamShuffle, error) {
+	var questionOrder []string
+	var optionOrder map[string][]string
+	if rawQuestionOrder != nil {
+		if err := json.Unmarshal(rawQuestionOrder, &questionOrder); err != nil {
+			return nil, fmt.Errorf("decode question order: %w", err)
+		}
+	}
+	if rawOptionOrder != nil {
+		if err := json.Unmarshal(rawOptionOrder, &optionOrder); err != nil {
+			return nil, fmt.Errorf("decode option order: %w", err)
+		}
 	}
 	return &domain.UserExamShuffle{QuestionOrder: questionOrder, OptionOrder: optionOrder}, nil
 }

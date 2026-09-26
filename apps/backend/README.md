@@ -49,12 +49,14 @@ Login baru menimpa JTI sebelumnya pada key Redis `tka:auth:session:<user-id>`. A
 
 Jawaban aktif disimpan pada Redis Hash `EXAM_ANSWERS:{<user_exam_id>}`, sedangkan deadline server berada di `EXAM_TIMER:{<user_exam_id>}`. Hash-tag yang sama menjaga kedua key berada pada slot Redis Cluster yang sama. Submit mengambil lock Redis, menggabungkan fallback answer PostgreSQL, lalu melakukan batch upsert dan perubahan status dalam satu transaksi database. Worker auto-submit berjalan setiap lima detik.
 
-## Kontrak signature webhook
+## Webhook dan gateway pembayaran
 
-Gateway mengirim `X-Payment-Timestamp` berupa Unix timestamp dan `X-Payment-Signature` berupa hex HMAC-SHA256 dari string:
+Backend memakai seam `domain.PaymentGateway` (`CreatePaymentSession`, `CreateRefund`, `VerifyWebhook`, `ParseWebhook`). Default sekarang adalah integrasi **Xendit Payment Sessions**:
 
-```text
-<timestamp>.<raw-json-body>
-```
+- `POST /api/v1/transactions/checkout` memanggil `/sessions` dalam mode `PAYMENT_LINK` dengan Basic Auth `XENDIT_SECRET_KEY`; `reference_id` = nomor invoice dan `expires_at` mengikuti jendela pembayaran transaksi.
+- Webhook Payment Session dan Refund diverifikasi lewat header `x-callback-token` yang harus sama dengan `PAYMENT_WEBHOOK_SECRET`. Konfigurasikan kedua jenis webhook Xendit ke endpoint aplikasi yang sama.
+- Refund admin memanggil `POST /refunds`; transaksi tetap `refund_pending` sampai webhook `refund.succeeded` diterima, sehingga lisensi dan komisi baru dibalik setelah provider mengonfirmasi hasil akhir.
+- Status di-map: `PAID`/`SETTLED` → `paid`, `EXPIRED` → `expired`, `FAILED` → `failed`. Channel di-map: `QR_CODE` → `qris`, `BANK_TRANSFER` → `virtual_account`, `EWALLET` → `e_wallet`.
+- Event diproses idempoten terhadap `payment_webhook_events.event_id`.
 
-Signature memakai `PAYMENT_WEBHOOK_SECRET` dan dibandingkan secara constant-time. Timestamp di luar toleransi lima menit ditolak. Payload harus membawa `event_id`, `invoice_number`, `payment_status`, dan `amount`; event diproses idempoten. Set `PAYMENT_CHECKOUT_URL` ke endpoint checkout adapter/provider yang kompatibel sebelum produksi.
+Karena belum ada credential provider, set `XENDIT_SECRET_KEY` kosong di lingkungan non-produksi; `Checkout` akan menolak invoice berbayar sampai secret key diisi. Untuk uji sandbox, isi `secrets/xendit_secret_key.txt` dan `secrets/payment_webhook_secret.txt` lalu arahkan webhook Xendit ke `https://<domain>/api/v1/webhooks/payment`.

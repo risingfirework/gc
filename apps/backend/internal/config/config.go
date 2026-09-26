@@ -24,7 +24,10 @@ type Config struct {
 	AccessTokenTTL           time.Duration
 	AllowedOrigin            string
 	PaymentWebhookSecret     string
-	PaymentCheckoutURL       string
+	XenditSecretKey          string
+	XenditBaseURL            string
+	XenditSuccessRedirectURL string
+	XenditFailureRedirectURL string
 	SentryDSN                string
 	Environment              string
 	Release                  string
@@ -82,6 +85,10 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	paymentWebhookSecret, err := secretValue("PAYMENT_WEBHOOK_SECRET")
+	if err != nil {
+		return Config{}, err
+	}
+	xenditSecretKey, err := secretValue("XENDIT_SECRET_KEY")
 	if err != nil {
 		return Config{}, err
 	}
@@ -170,7 +177,10 @@ func Load() (Config, error) {
 		JWTSecret: jwtSecret, JWTIssuer: value("JWT_ISSUER", "tka-api"),
 		AccessTokenTTL: ttl, AllowedOrigin: value("ALLOWED_ORIGIN", "http://localhost:3000"),
 		PaymentWebhookSecret:     paymentWebhookSecret,
-		PaymentCheckoutURL:       value("PAYMENT_CHECKOUT_URL", "https://payment-gateway.example/checkout"),
+		XenditSecretKey:          xenditSecretKey,
+		XenditBaseURL:            strings.TrimSpace(value("XENDIT_BASE_URL", "https://api.xendit.co")),
+		XenditSuccessRedirectURL: strings.TrimSpace(value("XENDIT_SUCCESS_REDIRECT_URL", "")),
+		XenditFailureRedirectURL: strings.TrimSpace(value("XENDIT_FAILURE_REDIRECT_URL", "")),
 		SentryDSN:                sentryDSN,
 		Environment:              value("APP_ENVIRONMENT", "development"),
 		Release:                  os.Getenv("APP_RELEASE"),

@@ -121,6 +121,12 @@ func (s *TeacherService) SetExamPublishPembahasan(ctx context.Context, publisher
 	}
 	return s.repository.SetExamPublishPembahasan(ctx, publisherID, examID, publish)
 }
+func (s *TeacherService) SetExamShuffle(ctx context.Context, publisherID, examID string, shuffleQuestions, shuffleOptions bool) (*domain.CBTPublishSetting, error) {
+	if !validUUID(publisherID) || !validUUID(examID) {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repository.SetExamShuffle(ctx, publisherID, examID, shuffleQuestions, shuffleOptions)
+}
 func (s *TeacherService) ListCBTParticipants(ctx context.Context, publisherID, examID string) ([]domain.CBTParticipant, error) {
 	if !validUUID(publisherID) || !validUUID(examID) {
 		return nil, domain.ErrInvalidInput

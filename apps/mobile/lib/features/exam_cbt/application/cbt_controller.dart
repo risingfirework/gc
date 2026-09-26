@@ -50,28 +50,28 @@ class CBTState {
     bool clearError = false,
     SubmitResult? result,
     List<String>? securityEvents,
-  }) =>
-      CBTState(
-        session: session ?? this.session,
-        currentIndex: currentIndex ?? this.currentIndex,
-        answers: answers ?? this.answers,
-        doubtful: doubtful ?? this.doubtful,
-        remainingSeconds: remainingSeconds ?? this.remainingSeconds,
-        online: online ?? this.online,
-        loading: loading ?? this.loading,
-        submitting: submitting ?? this.submitting,
-        saveStatus: saveStatus ?? this.saveStatus,
-        error: clearError ? null : error ?? this.error,
-        result: result ?? this.result,
-        securityEvents: securityEvents ?? this.securityEvents,
-      );
+  }) => CBTState(
+    session: session ?? this.session,
+    currentIndex: currentIndex ?? this.currentIndex,
+    answers: answers ?? this.answers,
+    doubtful: doubtful ?? this.doubtful,
+    remainingSeconds: remainingSeconds ?? this.remainingSeconds,
+    online: online ?? this.online,
+    loading: loading ?? this.loading,
+    submitting: submitting ?? this.submitting,
+    saveStatus: saveStatus ?? this.saveStatus,
+    error: clearError ? null : error ?? this.error,
+    result: result ?? this.result,
+    securityEvents: securityEvents ?? this.securityEvents,
+  );
 }
 
 class CBTController extends StateNotifier<CBTState> {
   CBTController(this._examId, this._repository, this._connectivity)
-      : super(const CBTState()) {
-    _connectivitySubscription =
-        _connectivity.onConnectivityChanged.listen(_connectivityChanged);
+    : super(const CBTState()) {
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen(
+      _connectivityChanged,
+    );
     unawaited(initialize());
   }
 
@@ -82,7 +82,7 @@ class CBTController extends StateNotifier<CBTState> {
   final Map<String, Timer> _debounces = {};
   final Map<String, Future<bool>> _inFlight = {};
   late final StreamSubscription<List<ConnectivityResult>>
-      _connectivitySubscription;
+  _connectivitySubscription;
   Timer? _clock;
   Duration _serverOffset = Duration.zero;
   bool _submitStarted = false;
@@ -97,8 +97,9 @@ class CBTController extends StateNotifier<CBTState> {
       final answers = <String, String>{};
       final doubtful = <String>{};
       for (final question in session.questions) {
-        final answer =
-            stored.getString(_answerKey(session.userExamId, question.id));
+        final answer = stored.getString(
+          _answerKey(session.userExamId, question.id),
+        );
         if (answer != null) answers[question.id] = answer;
         if (stored.getBool(_doubtKey(session.userExamId, question.id)) ??
             false) {
@@ -106,20 +107,25 @@ class CBTController extends StateNotifier<CBTState> {
         }
       }
       state = state.copyWith(
-          session: session,
-          answers: answers,
-          doubtful: doubtful,
-          online: !connectivity.contains(ConnectivityResult.none),
-          loading: false,
-          clearError: true);
+        session: session,
+        answers: answers,
+        doubtful: doubtful,
+        online: !connectivity.contains(ConnectivityResult.none),
+        loading: false,
+        clearError: true,
+      );
       _updateClock();
       _clock = Timer.periodic(
-          const Duration(milliseconds: 250), (_) => _updateClock());
+        const Duration(milliseconds: 250),
+        (_) => _updateClock(),
+      );
     } on ApiFailure catch (error) {
       state = state.copyWith(loading: false, error: error.message);
     } catch (_) {
-      state =
-          state.copyWith(loading: false, error: 'Ujian tidak dapat dimuat.');
+      state = state.copyWith(
+        loading: false,
+        error: 'Ujian tidak dapat dimuat.',
+      );
     }
   }
 
@@ -131,15 +137,19 @@ class CBTController extends StateNotifier<CBTState> {
       return;
     }
     state = state.copyWith(
-        answers: {...state.answers, questionId: selectedOption},
-        saveStatus:
-            state.online ? AnswerSaveStatus.pending : AnswerSaveStatus.offline,
-        clearError: true);
+      answers: {...state.answers, questionId: selectedOption},
+      saveStatus: state.online
+          ? AnswerSaveStatus.pending
+          : AnswerSaveStatus.offline,
+      clearError: true,
+    );
     _pending[questionId] = selectedOption;
     unawaited(_persistAnswer(session.userExamId, questionId, selectedOption));
     _debounces.remove(questionId)?.cancel();
     _debounces[questionId] = Timer(
-        const Duration(milliseconds: 350), () => unawaited(_sync(questionId)));
+      const Duration(milliseconds: 350),
+      () => unawaited(_sync(questionId)),
+    );
   }
 
   Future<bool> _sync(String questionId) {
@@ -148,45 +158,56 @@ class CBTController extends StateNotifier<CBTState> {
     final session = state.session;
     final option = _pending.remove(questionId);
     if (session == null || option == null) return Future.value(true);
-    final operation =
-        _performSync(session, questionId, option).whenComplete(() {
-      _inFlight.remove(questionId);
-      if (_pending.containsKey(questionId)) {
-        _debounces[questionId] =
-            Timer(Duration.zero, () => unawaited(_sync(questionId)));
-      }
-    });
+    final operation = _performSync(session, questionId, option).whenComplete(
+      () {
+        _inFlight.remove(questionId);
+        if (_pending.containsKey(questionId)) {
+          _debounces[questionId] = Timer(
+            Duration.zero,
+            () => unawaited(_sync(questionId)),
+          );
+        }
+      },
+    );
     _inFlight[questionId] = operation;
     return operation;
   }
 
   Future<bool> _performSync(
-      ExamSession session, String questionId, String option) async {
+    ExamSession session,
+    String questionId,
+    String option,
+  ) async {
     if (!state.online) {
       _pending.putIfAbsent(questionId, () => option);
       return false;
     }
     state = state.copyWith(saveStatus: AnswerSaveStatus.saving);
     try {
-      final result =
-          await _repository.syncAnswer(session.userExamId, questionId, option);
+      final result = await _repository.syncAnswer(
+        session.userExamId,
+        questionId,
+        option,
+      );
       if (!_pending.containsKey(questionId)) {
         state = state.copyWith(
-            saveStatus: AnswerSaveStatus.saved,
-            remainingSeconds: result.remainingSeconds,
-            clearError: true);
+          saveStatus: AnswerSaveStatus.saved,
+          remainingSeconds: result.remainingSeconds,
+          clearError: true,
+        );
       }
       return true;
     } on ApiFailure catch (error) {
       _pending.putIfAbsent(questionId, () => option);
       state = state.copyWith(
-          saveStatus: error.networkError
-              ? AnswerSaveStatus.offline
-              : AnswerSaveStatus.error,
-          online: error.networkError ? false : state.online,
-          error: error.networkError
-              ? 'Jawaban ditahan di perangkat sampai koneksi kembali.'
-              : error.message);
+        saveStatus: error.networkError
+            ? AnswerSaveStatus.offline
+            : AnswerSaveStatus.error,
+        online: error.networkError ? false : state.online,
+        error: error.networkError
+            ? 'Jawaban ditahan di perangkat sampai koneksi kembali.'
+            : error.message,
+      );
       return false;
     }
   }
@@ -204,29 +225,35 @@ class CBTController extends StateNotifier<CBTState> {
     if (!state.online) {
       _submitStarted = false;
       state = state.copyWith(
-          submitting: false,
-          error:
-              'Perangkat offline. Jawaban tetap tersimpan lokal; sambungkan internet untuk submit.');
+        submitting: false,
+        error:
+            'Perangkat offline. Jawaban tetap tersimpan lokal; sambungkan internet untuk submit.',
+      );
       return;
     }
     await Future.wait(_pending.keys.toList().map(_sync));
     if (_pending.isNotEmpty) {
       _submitStarted = false;
       state = state.copyWith(
-          submitting: false,
-          error: 'Sebagian jawaban belum tersinkron. Coba submit kembali.');
+        submitting: false,
+        error: 'Sebagian jawaban belum tersinkron. Coba submit kembali.',
+      );
       return;
     }
     try {
       final result = await _repository.submitExam(session.userExamId);
       await _clearStoredExam(session);
-      state =
-          state.copyWith(result: result, submitting: false, clearError: true);
+      state = state.copyWith(
+        result: result,
+        submitting: false,
+        clearError: true,
+      );
     } on ApiFailure catch (error) {
       _submitStarted = false;
       state = state.copyWith(
-          submitting: false,
-          error: automatic ? 'Waktu habis. ${error.message}' : error.message);
+        submitting: false,
+        error: automatic ? 'Waktu habis. ${error.message}' : error.message,
+      );
     }
   }
 
@@ -255,17 +282,22 @@ class CBTController extends StateNotifier<CBTState> {
     final next = {...state.doubtful};
     if (!next.remove(questionId)) next.add(questionId);
     state = state.copyWith(doubtful: next);
-    unawaited(_persistDoubt(
-        session.userExamId, questionId, next.contains(questionId)));
+    unawaited(
+      _persistDoubt(session.userExamId, questionId, next.contains(questionId)),
+    );
   }
 
   void recordSecurityEvent(String event) {
-    state = state.copyWith(securityEvents: [
-      ...state.securityEvents.skip(state.securityEvents.length > 49
-          ? state.securityEvents.length - 49
-          : 0),
-      event
-    ]);
+    state = state.copyWith(
+      securityEvents: [
+        ...state.securityEvents.skip(
+          state.securityEvents.length > 49
+              ? state.securityEvents.length - 49
+              : 0,
+        ),
+        event,
+      ],
+    );
   }
 
   void _updateClock() {
@@ -286,8 +318,9 @@ class CBTController extends StateNotifier<CBTState> {
   void _connectivityChanged(List<ConnectivityResult> results) {
     final online = !results.contains(ConnectivityResult.none);
     state = state.copyWith(
-        online: online,
-        saveStatus: online ? state.saveStatus : AnswerSaveStatus.offline);
+      online: online,
+      saveStatus: online ? state.saveStatus : AnswerSaveStatus.offline,
+    );
     if (online) {
       for (final questionId in _pending.keys.toList()) {
         unawaited(_sync(questionId));
@@ -299,12 +332,18 @@ class CBTController extends StateNotifier<CBTState> {
   }
 
   Future<void> _persistAnswer(
-          String exam, String question, String answer) async =>
-      (await SharedPreferences.getInstance())
-          .setString(_answerKey(exam, question), answer);
+    String exam,
+    String question,
+    String answer,
+  ) async => (await SharedPreferences.getInstance()).setString(
+    _answerKey(exam, question),
+    answer,
+  );
   Future<void> _persistDoubt(String exam, String question, bool value) async =>
-      (await SharedPreferences.getInstance())
-          .setBool(_doubtKey(exam, question), value);
+      (await SharedPreferences.getInstance()).setBool(
+        _doubtKey(exam, question),
+        value,
+      );
   String _answerKey(String exam, String question) =>
       'cbt:$exam:answer:$question';
   String _doubtKey(String exam, String question) => 'cbt:$exam:doubt:$question';
@@ -328,9 +367,13 @@ class CBTController extends StateNotifier<CBTState> {
 }
 
 final cbtRepositoryProvider = Provider<CBTRepository>(
-    (ref) => CBTRepository(ref.watch(apiClientProvider)));
+  (ref) => CBTRepository(ref.watch(apiClientProvider)),
+);
 final cbtControllerProvider = StateNotifierProvider.autoDispose
     .family<CBTController, CBTState, String>((ref, examId) {
-  return CBTController(
-      examId, ref.watch(cbtRepositoryProvider), Connectivity());
-});
+      return CBTController(
+        examId,
+        ref.watch(cbtRepositoryProvider),
+        Connectivity(),
+      );
+    });

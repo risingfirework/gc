@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CBTParticipant, CBTPublishSetting } from "@/services/api";
 import ConfirmModal from "./ConfirmModal";
 
-export default function CBTSettingsPanel({ items, saving, onToggle, loadParticipants }: { items: CBTPublishSetting[]; saving: boolean; onToggle: (item: CBTPublishSetting, publish: boolean) => Promise<void> | void; loadParticipants: (examID: string) => Promise<CBTParticipant[]> }) {
+export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, loadParticipants }: { items: CBTPublishSetting[]; saving: boolean; onToggle: (item: CBTPublishSetting, publish: boolean) => Promise<void> | void; onShuffle: (item: CBTPublishSetting, shuffleQuestions: boolean, shuffleOptions: boolean) => Promise<void> | void; loadParticipants: (examID: string) => Promise<CBTParticipant[]> }) {
   const [confirmItem, setConfirmItem] = useState<{ item: CBTPublishSetting; publish: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedExam, setSelectedExam] = useState<CBTPublishSetting | null>(null);
@@ -48,11 +48,12 @@ export default function CBTSettingsPanel({ items, saving, onToggle, loadParticip
       <div className="card cbt-settings-card">
         {items.length === 0
           ? <p className="empty-state">Belum ada paket ujian CBT.</p>
-          : <div className="cbt-settings-table-wrap"><table className="transactions-table cbt-settings-table"><thead><tr><th>Ujian</th><th>Pembuat</th><th>Peserta</th><th>Pembahasan</th><th></th></tr></thead><tbody>
+          : <div className="cbt-settings-table-wrap"><table className="transactions-table cbt-settings-table"><thead><tr><th>Ujian</th><th>Pembuat</th><th>Peserta</th><th>Pengacakan</th><th>Pembahasan</th><th></th></tr></thead><tbody>
             {items.map((item) => <tr key={item.exam_id} className={selectedExam?.exam_id === item.exam_id ? "active-row" : ""}>
               <td><button type="button" className="cbt-settings-exam-link" onClick={() => void openParticipants(item)}>{item.exam_title}</button><small>{item.package_title} · {item.package_kode} · {item.jenjang} · {item.total_questions} soal · {item.duration_minutes} menit · Syarat lulus {item.passing_score.toFixed(0)}</small></td>
               <td>{item.publisher_email || "Platform"}</td>
               <td>{item.participated} siswa</td>
+              <td><ShuffleSettingsEditor item={item} saving={saving} onShuffle={onShuffle}/></td>
               <td><span className={`status-pill ${item.publish_pembahasan ? "paid" : "pending"}`}>{item.publish_pembahasan ? "Dipublish" : "Tidak dipublish"}</span></td>
               <td><div className="user-row-actions"><button type="button" className="table-action" onClick={() => void openParticipants(item)}>{selectedExam?.exam_id === item.exam_id ? "Tutup peserta" : "Lihat peserta"}</button>{(item.participated > 0) && <button type="button" className="button small-btn" disabled={saving} onClick={() => setConfirmItem({ item, publish: !item.publish_pembahasan })}>{item.publish_pembahasan ? "Tarik pembahasan" : "Publish pembahasan"}</button>}</div></td>
             </tr>)}
@@ -71,4 +72,25 @@ export default function CBTSettingsPanel({ items, saving, onToggle, loadParticip
       {confirmItem && <ConfirmModal title={confirmItem.publish ? "Publish pembahasan?" : "Tarik pembahasan?"} message={confirmItem.publish ? `Siswa yang sudah mengerjakan "${confirmItem.item.exam_title}" akan dapat melihat analitik dan pembahasan hasilnya.` : `Siswa yang sudah mengerjakan "${confirmItem.item.exam_title}" tidak akan bisa melihat analitik hasilnya lagi.`} busy={busy} confirmLabel={confirmItem.publish ? "Ya, publish" : "Ya, tarik"} onClose={() => !busy && setConfirmItem(null)} onConfirm={() => void runToggle()} />}
     </>
   );
+}
+
+function ShuffleSettingsEditor({ item, saving, onShuffle }: { item: CBTPublishSetting; saving: boolean; onShuffle: (item: CBTPublishSetting, shuffleQuestions: boolean, shuffleOptions: boolean) => Promise<void> | void }) {
+  const [shuffleQuestions, setShuffleQuestions] = useState(item.shuffle_questions);
+  const [shuffleOptions, setShuffleOptions] = useState(item.shuffle_options);
+  const [localBusy, setLocalBusy] = useState(false);
+  const changed = shuffleQuestions !== item.shuffle_questions || shuffleOptions !== item.shuffle_options;
+  const busy = saving || localBusy;
+  const save = async () => {
+    setLocalBusy(true);
+    try {
+      await onShuffle(item, shuffleQuestions, shuffleOptions);
+    } finally {
+      setLocalBusy(false);
+    }
+  };
+  return <div className="cbt-shuffle-cell">
+    <label className="checkbox-label"><input type="checkbox" disabled={busy} checked={shuffleQuestions} onChange={(event) => setShuffleQuestions(event.target.checked)} /> <span>Acak soal</span></label>
+    <label className="checkbox-label"><input type="checkbox" disabled={busy} checked={shuffleOptions} onChange={(event) => setShuffleOptions(event.target.checked)} /> <span>Acak opsi</span></label>
+    <button type="button" className="button small-btn" disabled={busy || !changed} onClick={() => void save()}>{busy ? "Menyimpan..." : "Simpan acak"}</button>
+  </div>;
 }

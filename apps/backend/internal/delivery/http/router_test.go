@@ -21,6 +21,7 @@ type authStub struct {
 	validate func(context.Context, string) (*domain.AuthClaims, error)
 	forgot   func(context.Context, domain.ForgotPasswordRequest) (*domain.ForgotPasswordResponse, error)
 	reset    func(context.Context, domain.ResetPasswordRequest) error
+	refresh  func(context.Context, string) (*domain.LoginResponse, error)
 }
 
 type cbtStub struct {
@@ -95,7 +96,10 @@ func (s authStub) Enable2FA(context.Context, domain.AuthClaims, string) error {
 func (s authStub) Disable2FA(context.Context, domain.AuthClaims, string) error {
 	return domain.Err2FAUnsupportedRole
 }
-func (s authStub) Refresh(context.Context, string) (*domain.LoginResponse, error) {
+func (s authStub) Refresh(ctx context.Context, token string) (*domain.LoginResponse, error) {
+	if s.refresh != nil {
+		return s.refresh(ctx, token)
+	}
 	return nil, domain.ErrSessionInvalid
 }
 
@@ -138,6 +142,71 @@ func TestAuthRoutes(t *testing.T) {
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusNoContent || !loggedOut {
 		t.Fatalf("logout status = %d, called = %v", response.Code, loggedOut)
+	}
+}
+
+func TestLoginUsesSecureHTTPOnlyRefreshCookie(t *testing.T) {
+	stub := authStub{
+		login: func(context.Context, domain.LoginRequest) (*domain.LoginResponse, error) {
+			return &domain.LoginResponse{AccessToken: "access", RefreshToken: "refresh-secret", RefreshExpiresIn: 3600, User: domain.UserResponse{ID: "user-1"}}, nil
+		},
+	}
+	router := NewRouter(stub, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "https://app.example.test")
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"student@example.com","password":"strong-password"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "refresh-secret") {
+		t.Fatal("refresh token leaked in JSON response")
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("expected one refresh cookie, got %d", len(cookies))
+	}
+	cookie := cookies[0]
+	if cookie.Name != "tka_refresh" || cookie.Value != "refresh-secret" || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode {
+		t.Fatalf("insecure refresh cookie: %+v", cookie)
+	}
+}
+
+func TestRefreshReadsAndRotatesCookie(t *testing.T) {
+	seen := ""
+	stub := authStub{refresh: func(_ context.Context, token string) (*domain.LoginResponse, error) {
+		seen = token
+		return &domain.LoginResponse{AccessToken: "next-access", RefreshToken: "next-refresh", RefreshExpiresIn: 7200, User: domain.UserResponse{ID: "user-1"}}, nil
+	}}
+	router := NewRouter(stub, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "https://app.example.test")
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", strings.NewReader(`{}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.AddCookie(&http.Cookie{Name: "tka_refresh", Value: "old-refresh"})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || seen != "old-refresh" {
+		t.Fatalf("status=%d seen=%q body=%s", response.Code, seen, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "next-refresh") {
+		t.Fatal("rotated refresh token leaked in JSON response")
+	}
+}
+
+func TestReadinessReflectsDependencies(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	router := NewRouter(authStub{}, nil, nil, nil, logger, "", RouterOptions{Readiness: func(context.Context) error { return context.DeadlineExceeded }})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("unready status=%d", response.Code)
+	}
+
+	router = NewRouter(authStub{}, nil, nil, nil, logger, "", RouterOptions{Readiness: func(context.Context) error { return nil }})
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("ready status=%d", response.Code)
 	}
 }
 

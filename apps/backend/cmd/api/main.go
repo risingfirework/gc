@@ -26,6 +26,7 @@ import (
 	postgresrepo "tka/apps/backend/internal/repository/postgres"
 	redisrepo "tka/apps/backend/internal/repository/redis"
 	"tka/apps/backend/internal/scheduler"
+	"tka/apps/backend/internal/security"
 	"tka/apps/backend/internal/service"
 )
 
@@ -111,11 +112,33 @@ func main() {
 	cbtRepository := redisrepo.NewCBTRepository(redisClient)
 	cbtService := service.NewCBTService(examRepository, cbtRepository, logger, examRepository)
 	paymentRepository := postgresrepo.NewPaymentRepository(db)
-	paymentGateway := service.NewHMACPaymentGateway(cfg.PaymentWebhookSecret, cfg.PaymentCheckoutURL)
+	paymentGateway := service.NewXenditGateway(cfg.XenditSecretKey, cfg.PaymentWebhookSecret, cfg.XenditBaseURL, cfg.XenditSuccessRedirectURL, cfg.XenditFailureRedirectURL)
 	paymentService := service.NewPaymentService(paymentRepository, paymentGateway)
+	paymentCipher, err := security.NewPaymentCipher(cfg.JWTSecret)
+	if err != nil {
+		logger.Error("memuat payment cipher", "error", err)
+		os.Exit(1)
+	}
+	paymentService.ConfigurePaymentSettings(
+		postgresrepo.NewPaymentSettingsRepository(db),
+		paymentCipher,
+		service.PaymentSettingsEnv{
+			SecretKey:          cfg.XenditSecretKey,
+			WebhookToken:       cfg.PaymentWebhookSecret,
+			BaseURL:            cfg.XenditBaseURL,
+			SuccessRedirectURL: cfg.XenditSuccessRedirectURL,
+			FailureRedirectURL: cfg.XenditFailureRedirectURL,
+		},
+		cfg.Environment,
+	)
+	if err := paymentService.LoadPaymentSettings(context.Background()); err != nil {
+		logger.Error("memuat konfigurasi pembayaran", "error", err)
+		os.Exit(1)
+	}
 	analyticsRepository := postgresrepo.NewAnalyticsRepository(db)
 	examService := service.NewExamService(analyticsRepository)
 	adminService := service.NewAdminService(postgresrepo.NewAdminRepository(db), service.NewSIMPKBClient(cfg.SIMPKBCheckURL))
+	adminService.ConfigurePaymentRefunds(paymentService)
 	teacherService := service.NewTeacherService(postgresrepo.NewTeacherRepository(db))
 	affiliateService := service.NewAffiliateService(postgresrepo.NewAffiliateRepository(db), postgresrepo.NewTeacherRepository(db), cfg.PublicWebURL)
 	testimonialService := service.NewTestimonialService(postgresrepo.NewTestimonialRepository(db))
@@ -180,6 +203,15 @@ func main() {
 				ViewRateLimit:            cfg.PaymentViewRateLimit,
 				ViewRateWindow:           cfg.PaymentViewRateWindow,
 				Admin:                    adminService, Teacher: teacherService, Testimonial: testimonialService, Notification: notificationService, Affiliate: affiliateService,
+				Readiness: func(ctx context.Context) error {
+					if err := db.Ping(ctx); err != nil {
+						return fmt.Errorf("postgres: %w", err)
+					}
+					if err := redisClient.Ping(ctx).Err(); err != nil {
+						return fmt.Errorf("redis: %w", err)
+					}
+					return nil
+				},
 			}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
@@ -218,7 +250,7 @@ func runHealthcheck() {
 		port = "8080"
 	}
 	client := &http.Client{Timeout: 2 * time.Second}
-	response, err := client.Get("http://127.0.0.1:" + port + "/healthz")
+	response, err := client.Get("http://127.0.0.1:" + port + "/readyz")
 	if err != nil {
 		os.Exit(1)
 	}

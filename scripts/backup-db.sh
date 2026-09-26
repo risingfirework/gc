@@ -64,8 +64,8 @@ echo "[$(date -u +%FT%TZ)] Starting PostgreSQL backup"
 case "$BACKUP_DB_MODE" in
   compose)
     command -v docker >/dev/null 2>&1 || { echo "Missing command: docker" >&2; exit 1; }
-    SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-    PROJECT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+    SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+    PROJECT_DIR=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
     PROD_ENV_FILE=${PROD_ENV_FILE:-$PROJECT_DIR/.env.production}
     docker compose --env-file "$PROD_ENV_FILE" -f "$PROJECT_DIR/docker-compose.prod.yml" \
       exec -T postgres pg_dump --username="${POSTGRES_USER:-tka}" \

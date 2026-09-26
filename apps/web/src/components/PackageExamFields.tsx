@@ -3,15 +3,15 @@
 import { forwardRef, useImperativeHandle, useState } from "react";
 import { ExamEntry, MasterItem, Status } from "@/services/api";
 
-export const PackageExamFields = forwardRef<{ getValues: () => ExamEntry }, { defaultExam?: Partial<ExamEntry>; mapels: MasterItem[]; academicYears: MasterItem[]; showHint?: boolean; defaults?:{duration_minutes:number;total_questions:number;passing_score:number} }>(
-  function PackageExamFields({ defaultExam, mapels, academicYears, showHint = true, defaults }, ref) {
+export const PackageExamFields = forwardRef<{ getValues: () => ExamEntry }, { defaultExam?: Partial<ExamEntry>; mapels: MasterItem[]; academicYears: MasterItem[]; showHint?: boolean; defaults?: { duration_minutes: number; total_questions: number; passing_score: number } }>(
+  function PackageExamFields({ defaultExam, mapels, academicYears, showHint = true }, ref) {
     const [exam, setExam] = useState<ExamEntry>({
       title: defaultExam?.title ?? "",
       mapel_id: defaultExam?.mapel_id && mapels.some((item) => item.id === defaultExam.mapel_id) ? defaultExam.mapel_id : mapels[0]?.id ?? "",
       tahun_ajaran_id: defaultExam?.tahun_ajaran_id && academicYears.some((item) => item.id === defaultExam.tahun_ajaran_id) ? defaultExam.tahun_ajaran_id : academicYears[0]?.id ?? "",
-      duration_minutes: defaultExam?.duration_minutes ?? defaults?.duration_minutes ?? 60,
-      total_questions: defaultExam?.total_questions ?? defaults?.total_questions ?? 1,
-      passing_score: defaultExam?.passing_score ?? defaults?.passing_score ?? 50,
+      duration_minutes: defaultExam?.duration_minutes ?? 60,
+      total_questions: defaultExam?.total_questions ?? 1,
+      passing_score: defaultExam?.passing_score ?? 50,
       status: defaultExam?.status ?? "active",
       shuffle_questions: defaultExam?.shuffle_questions ?? false,
       shuffle_options: defaultExam?.shuffle_options ?? false,
