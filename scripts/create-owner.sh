@@ -16,6 +16,12 @@ fi
 : "${CREATE_OWNER_PASSWORD:?set CREATE_OWNER_PASSWORD (8-72 karakter)}"
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
+PROD_ENV_FILE="${PROD_ENV_FILE:-$PROJECT_DIR/.env.production}"
 
-docker compose -f "$PROJECT_DIR/$COMPOSE_FILE" exec -T backend \
-  /tka-api create-owner --email "$EMAIL" --password "$CREATE_OWNER_PASSWORD"
+if [ -f "$PROD_ENV_FILE" ]; then
+  docker compose --env-file "$PROD_ENV_FILE" -f "$PROJECT_DIR/$COMPOSE_FILE" exec -T backend \
+    /tka-api create-owner --email "$EMAIL" --password "$CREATE_OWNER_PASSWORD"
+else
+  docker compose -f "$PROJECT_DIR/$COMPOSE_FILE" exec -T backend \
+    /tka-api create-owner --email "$EMAIL" --password "$CREATE_OWNER_PASSWORD"
+fi
