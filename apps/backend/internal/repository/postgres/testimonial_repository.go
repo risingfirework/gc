@@ -69,7 +69,7 @@ func (r *TestimonialRepository) ListAll(ctx context.Context, status string) ([]d
 		return nil, fmt.Errorf("list testimonials: %w", err)
 	}
 	defer rows.Close()
-	var result []domain.Testimonial
+	result := []domain.Testimonial{}
 	for rows.Next() {
 		var t domain.Testimonial
 		if err := rows.Scan(&t.ID, &t.UserID, &t.UserEmail, &t.UserName, &t.Quote, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {
@@ -90,7 +90,7 @@ func (r *TestimonialRepository) ListApproved(ctx context.Context) ([]domain.Test
 		return nil, fmt.Errorf("list approved testimonials: %w", err)
 	}
 	defer rows.Close()
-	var result []domain.Testimonial
+	result := []domain.Testimonial{}
 	for rows.Next() {
 		var t domain.Testimonial
 		if err := rows.Scan(&t.ID, &t.UserID, &t.UserEmail, &t.UserName, &t.Quote, &t.Status, &t.CreatedAt, &t.UpdatedAt); err != nil {

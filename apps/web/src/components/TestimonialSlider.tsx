@@ -10,7 +10,7 @@ export function SliderArrows({ onPrev, onNext }: { onPrev: () => void; onNext: (
 export default function TestimonialSlider({ platformName = "kami" }: { platformName?: string }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<Testimonial[]>([]);
-  useEffect(() => { api.getPublicTestimonials().then(setItems).catch(() => undefined); }, []);
+  useEffect(() => { api.getPublicTestimonials().then((list) => setItems(list ?? [])).catch(() => undefined); }, []);
   function scroll(direction: 1 | -1) { trackRef.current?.scrollBy({ left: direction * 300, behavior: "smooth" }); }
   if (items.length === 0) return null;
   return <section className="section" id="testimoni">
