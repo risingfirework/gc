@@ -312,7 +312,7 @@ func runCreateOwner(args []string) error {
 	err = pool.QueryRow(ctx, `
 		INSERT INTO users (email, password_hash, role, school_level, name)
 		VALUES ($1, $2, 'owner', 'SMA', '')
-		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = 'owner', updated_at = now()
+		ON CONFLICT ((LOWER(email))) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = 'owner', updated_at = now()
 		RETURNING id`, email, string(hash)).Scan(&userID)
 	if err != nil {
 		return fmt.Errorf("insert owner: %w", err)
