@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/getsentry/sentry-go"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	goredis "github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
@@ -313,14 +312,11 @@ func runCreateOwner(args []string) error {
 	err = pool.QueryRow(ctx, `
 		INSERT INTO users (email, password_hash, role, school_level, name)
 		VALUES ($1, $2, 'owner', 'SMA', '')
-		ON CONFLICT DO NOTHING
+		ON CONFLICT (email) DO UPDATE SET password_hash = EXCLUDED.password_hash, role = 'owner', updated_at = now()
 		RETURNING id`, email, string(hash)).Scan(&userID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("akun dengan email %s sudah terdaftar", email)
-	}
 	if err != nil {
 		return fmt.Errorf("insert owner: %w", err)
 	}
-	fmt.Printf("Owner berhasil dibuat: %s (%s)\n", email, userID)
+	fmt.Printf("Owner berhasil dibuat/di-update: %s (%s)\n", email, userID)
 	return nil
 }
