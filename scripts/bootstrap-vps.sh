@@ -58,13 +58,17 @@ if [ ! -f .env.production ]; then
 fi
 
 if [ ! -s deploy/nginx/certs/fullchain.pem ] || [ ! -s deploy/nginx/certs/privkey.pem ]; then
-  LE_ARGS="certonly --standalone -d $APP_DOMAIN --agree-tos -m ${EMAIL:-admin@$(printf '%s' "$APP_DOMAIN" | cut -d. -f2-)}"
+  LE_ARGS="certonly --standalone -d $APP_DOMAIN --agree-tos -m ${EMAIL:-admin@${APP_DOMAIN}}"
   # shellcheck disable=SC2086
   run $SUDO certbot $LE_ARGS
   run $SUDO cp "/etc/letsencrypt/live/$APP_DOMAIN/fullchain.pem" deploy/nginx/certs/fullchain.pem
   run $SUDO cp "/etc/letsencrypt/live/$APP_DOMAIN/privkey.pem" deploy/nginx/certs/privkey.pem
   run $SUDO chown "$(id -u):$(id -g)" deploy/nginx/certs/fullchain.pem deploy/nginx/certs/privkey.pem
 fi
+
+echo
+echo "Grup docker baru aktif setelah logout/login. Tanpa login ulang, perintah"
+echo "docker berikutnya harus diawali 'sudo'."
 
 echo
 echo "Sekarang ISI nilai nyata di:"
