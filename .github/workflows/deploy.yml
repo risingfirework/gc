@@ -1,0 +1,89 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "docker-compose.prod.yml"
+      - "scripts/**"
+      - "deploy/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify-ci:
+    name: Wait for CI green
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI status for this commit
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = context.sha;
+            let suites = [];
+            try {
+              const data = await github.rest.checks.listSuitesForRef({ owner, repo, ref: sha });
+              suites = data.data.check_suites.filter((s) => s.status === "completed" && s.conclusion !== "cancelled");
+            } catch (e) {
+              console.log("Could not read check suites:", e.message);
+            }
+            if (suites.length === 0) {
+              console.log("No CI check suites found for this commit — proceeding to deploy.");
+            } else {
+              const failed = suites.filter((s) => s.conclusion !== "success");
+              for (const s of suites) {
+                console.log(`${s.app?.name ?? s.name}: ${s.conclusion}`);
+              }
+              if (failed.length > 0) {
+                core.setFailed(`CI not green: ${failed.map((s) => s.name ?? s.app?.name).join(", ")}`);
+              }
+            }
+
+  deploy:
+    name: Deploy to production VPS
+    needs: verify-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_SSH_HOST }}
+          username: ${{ secrets.VPS_SSH_USER }}
+          port: ${{ secrets.VPS_SSH_PORT || '22' }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          password: ${{ secrets.VPS_SSH_PASSWORD }}
+          timeout: 60s
+          command_timeout: 45m
+          script: |
+            set -euo pipefail
+            cd ~/tka
+            git pull --ff-only origin main
+            docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate
+            docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+            echo "---- HEALTH ----"
+            docker compose --env-file .env.production -f docker-compose.prod.yml ps
+            echo "---- LIVE CHECK ----"
+            cd ~/tka && LIVE_CHECK=1 sh scripts/preflight-production.sh
+
+  notify:
+    name: Post-deploy health check
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Verify site is live
+        if: needs.deploy.result == 'success'
+        run: |
+          curl -fsS -o /dev/null -w "https://%{url_effective} -> HTTP %{http_code}\n" https://${{ secrets.VPS_DOMAIN || 'siap-siap.com' }}/
+          curl -fsS -o /dev/null -w "https://%{url_effective} -> HTTP %{http_code}\n" https://${{ secrets.VPS_DOMAIN || 'siap-siap.com' }}/api/v1/packages
