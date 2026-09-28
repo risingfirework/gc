@@ -57,9 +57,11 @@ func main() {
 			AttachStacktrace: true, SendDefaultPII: false,
 		}); err != nil {
 			logger.Error("initialize Sentry", "error", err)
-			os.Exit(1)
+			sentryEnabled = false
 		}
-		defer sentry.Flush(2 * time.Second)
+		if sentryEnabled {
+			defer sentry.Flush(2 * time.Second)
+		}
 	}
 	metrics := observability.NewMetrics()
 
