@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: deploy-vps-${{ github.ref }}
@@ -30,23 +31,45 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const sha = context.sha;
-            let suites = [];
-            try {
-              const data = await github.rest.checks.listSuitesForRef({ owner, repo, ref: sha });
-              suites = data.data.check_suites.filter((s) => s.status === "completed" && s.conclusion !== "cancelled");
-            } catch (e) {
-              console.log("Could not read check suites:", e.message);
-            }
-            if (suites.length === 0) {
-              console.log("No CI check suites found for this commit — proceeding to deploy.");
-            } else {
-              const failed = suites.filter((s) => s.conclusion !== "success");
-              for (const s of suites) {
-                console.log(`${s.app?.name ?? s.name}: ${s.conclusion}`);
+            const CI_WORKFLOWS = ["Backend CI", "Web CI"];
+            const POLL_INTERVAL_MS = 30_000;
+            const TIMEOUT_MS = 20 * 60 * 1000;
+            const started = Date.now();
+
+            const runsForSha = async () => {
+              const data = await github.rest.actions.listWorkflowRunsForRepo({
+                owner, repo, head_sha: sha, event: "push", per_page: 100,
+              });
+              return data.data.workflow_runs.filter((r) =>
+                CI_WORKFLOWS.includes(r.name) && r.run_number > 0
+              );
+            };
+
+            while (true) {
+              const runs = await runsForSha();
+              if (runs.length === 0) {
+                console.log("No CI workflow runs found for this commit — nothing blocking deploy.");
+                break;
+              }
+              const pending = runs.filter((r) => r.status === "queued" || r.status === "in_progress");
+              const failed = runs.filter((r) => r.status === "completed" && r.conclusion !== "success");
+              for (const r of runs) {
+                console.log(`${r.name} #${r.run_number}: ${r.status} (${r.conclusion ?? "-"})`);
               }
               if (failed.length > 0) {
-                core.setFailed(`CI not green: ${failed.map((s) => s.name ?? s.app?.name).join(", ")}`);
+                core.setFailed(`CI failed for ${sha}: ${failed.map((r) => `${r.name} #${r.run_number} ${r.conclusion}`).join(", ")}`);
+                break;
               }
+              if (pending.length === 0) {
+                console.log("All CI workflow runs for this commit are green.");
+                break;
+              }
+              if (Date.now() - started > TIMEOUT_MS) {
+                core.setFailed(`Timed out after 20m waiting on CI: ${pending.map((r) => `${r.name} #${r.run_number}`).join(", ")}`);
+                break;
+              }
+              console.log(`Waiting for CI: ${pending.map((r) => `${r.name} #${r.run_number}`).join(", ")}...`);
+              await new Promise((res) => setTimeout(res, POLL_INTERVAL_MS));
             }
 
   deploy:
@@ -68,6 +91,7 @@ jobs:
           script: |
             set -euo pipefail
             cd ~/tka
+            git fetch origin main
             git pull --ff-only origin main
             docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate
             docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
