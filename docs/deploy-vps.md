@@ -1,19 +1,19 @@
 # Deploy TKA ke VPS kosong (Ubuntu 24.04 LTS)
 
 Runbook langkah demi langkah untuk server yang benar-benar kosong.
-Contoh memakai: domain `siap-siap.com`, IP publik `43.173.33.115`, user `ubuntu`.
+Contoh memakai: domain `siap-siap.my.id`, IP publik `43.173.33.115`, user `ubuntu`.
 
-> Ganti `siap-siap.com` dan `43.173.33.115` dengan nilai Anda bila berbeda.
+> Ganti `siap-siap.my.id` dan `43.173.33.115` dengan nilai Anda bila berbeda.
 
 ## Sebelum mulai (di laptop / panel VPS)
 
 1. **DNS**: tambah/ubah record A di penyedia domain Anda.
    ```
-   siap-siap.com  A  43.173.33.115
+   siap-siap.my.id  A  43.173.33.115
    ```
    Tunggu propagasi, verifikasi dari laptop:
    ```
-   Resolve-DnsName siap-siap.com
+   Resolve-DnsName siap-siap.my.id
    ```
 2. **Firewall VPS**: pastikan port berikut terbuka dari internet:
    - `22/tcp` (SSH)
@@ -58,7 +58,7 @@ Jalankan sekali. Skrip akan:
 - ambil sertifikat TLS via certbot (gunakan port 80)
 
 ```
-APP_DOMAIN=siap-siap.com sh scripts/bootstrap-vps.sh
+APP_DOMAIN=siap-siap.my.id sh scripts/bootstrap-vps.sh
 ```
 
 Selama proses, certbot akan bertanya beberapa hal — ikuti prompt. Bila domain belum
@@ -140,7 +140,7 @@ cd ~/tka
 LIVE_CHECK=1 sh scripts/preflight-production.sh
 ```
 
-Memeriksa: `https://siap-siap.com/`, `/privacy`, `/terms`, `/api/v1/packages`,
+Memeriksa: `https://siap-siap.my.id/`, `/privacy`, `/terms`, `/api/v1/packages`,
 serta header keamanan HSTS/CSP.
 
 ## Langkah 9 — Buat akun owner pertama

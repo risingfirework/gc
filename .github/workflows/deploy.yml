@@ -109,5 +109,5 @@ jobs:
       - name: Verify site is live
         if: needs.deploy.result == 'success'
         run: |
-          curl -fsS -o /dev/null -w "https://%{url_effective} -> HTTP %{http_code}\n" https://${{ secrets.VPS_DOMAIN || 'siap-siap.com' }}/
-          curl -fsS -o /dev/null -w "https://%{url_effective} -> HTTP %{http_code}\n" https://${{ secrets.VPS_DOMAIN || 'siap-siap.com' }}/api/v1/packages
+          curl -fsS -o /dev/null -w "https://%{url_effective} -> HTTP %{http_code}\n" https://${{ secrets.VPS_DOMAIN || 'siap-siap.my.id' }}/
+          curl -fsS -o /dev/null -w "https://%{url_effective} -> HTTP %{http_code}\n" https://${{ secrets.VPS_DOMAIN || 'siap-siap.my.id' }}/api/v1/packages
