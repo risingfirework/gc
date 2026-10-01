@@ -135,7 +135,7 @@ func (g *XenditGateway) doJSON(ctx context.Context, method, path string, input, 
 	if err != nil {
 		return fmt.Errorf("call xendit: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, xenditResponseBodyLimit))
 	if err != nil {
 		return fmt.Errorf("read xendit response: %w", err)

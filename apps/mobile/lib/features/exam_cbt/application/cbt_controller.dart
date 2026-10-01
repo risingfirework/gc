@@ -423,7 +423,9 @@ class CBTController extends StateNotifier<CBTState> {
           if (until != null) {
             final remaining = until.difference(now).inMilliseconds;
             state = state.copyWith(
-              screenLockSecondsLeft: remaining <= 0 ? 1 : (remaining / 1000).ceil(),
+              screenLockSecondsLeft: remaining <= 0
+                  ? 1
+                  : (remaining / 1000).ceil(),
             );
           }
         }

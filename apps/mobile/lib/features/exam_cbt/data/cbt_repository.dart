@@ -35,5 +35,7 @@ class CBTRepository {
 
   /// Polling status kunci supaya blokir yang dibuka guru langsung terasa.
   Future<ScreenLockState> screenLock(String userExamId) async =>
-      ScreenLockState.fromJson(await _api.get('/exams/$userExamId/screen-lock'));
+      ScreenLockState.fromJson(
+        await _api.get('/exams/$userExamId/screen-lock'),
+      );
 }

@@ -2,10 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tka_mobile/features/exam_cbt/application/cbt_controller.dart';
 import 'package:tka_mobile/features/exam_cbt/domain/cbt_models.dart';
 
-ExamSession _session({
-  String examType = 'cbt',
-  bool screenLockEnabled = true,
-}) {
+ExamSession _session({String examType = 'cbt', bool screenLockEnabled = true}) {
   final now = DateTime.utc(2026, 1, 1, 10);
   return ExamSession(
     userExamId: 'attempt-1',
@@ -68,10 +65,7 @@ void main() {
         isFalse,
         reason: 'sesi belum termuat',
       );
-      expect(
-        CBTState(session: _session()).screenLockEligible,
-        isTrue,
-      );
+      expect(CBTState(session: _session()).screenLockEligible, isTrue);
     });
 
     test('mode sell tidak pernah eligible meski flag server aktif', () {

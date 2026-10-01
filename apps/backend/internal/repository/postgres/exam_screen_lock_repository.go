@@ -111,7 +111,8 @@ func (r *ExamScreenLockRepository) ReleaseParticipantScreenLockAdmin(ctx context
 	return lock, nil
 }
 
-// ReleaseParticipantScreenLock untuk guru; dibatasi pada paket miliknya sendiri.
+// ReleaseParticipantScreenLockTeacher membuka blokir layar seorang siswa untuk
+// guru; dibatasi pada paket miliknya sendiri.
 func (r *ExamScreenLockRepository) ReleaseParticipantScreenLockTeacher(ctx context.Context, publisherID, examID, userExamID string, now time.Time) (*domain.ExamScreenLock, error) {
 	const query = `
 		UPDATE user_exam_screen_locks AS l

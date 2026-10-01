@@ -98,93 +98,95 @@ class _ExamScreenState extends ConsumerState<ExamScreen> {
       child: Stack(
         children: [
           Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(session.title, overflow: TextOverflow.ellipsis),
-            Text(
-              'Soal ${state.currentIndex + 1} dari ${session.questions.length}',
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-          ],
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _Timer(seconds: state.remainingSeconds),
-          ),
-        ],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            _ConnectionStatus(
-              online: state.online,
-              saveStatus: state.saveStatus,
-            ),
-            if (state.error != null)
-              _ErrorBanner(
-                message: state.error!,
-                retry: state.remainingSeconds == 0
-                    ? () => controller.submit()
-                    : null,
+            appBar: AppBar(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(session.title, overflow: TextOverflow.ellipsis),
+                  Text(
+                    'Soal ${state.currentIndex + 1} dari ${session.questions.length}',
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                ],
               ),
-            Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final questionCard = _QuestionCard(
-                    question: question,
-                    selected: state.answers[question.id],
-                    doubtful: state.doubtful.contains(question.id),
-                    onSelect: (option) =>
-                        controller.selectAnswer(question.id, option),
-                    onDoubtful: () => controller.toggleDoubtful(question.id),
-                    previous: state.currentIndex > 0
-                        ? controller.previous
-                        : null,
-                    next: state.currentIndex + 1 < session.questions.length
-                        ? controller.next
-                        : null,
-                    submit: state.submitting
-                        ? null
-                        : () => _confirmSubmit(controller),
-                  );
-                  final navigator = _QuestionNavigator(
-                    session: session,
-                    state: state,
-                    onSelect: controller.goTo,
-                    onSubmit: state.submitting
-                        ? null
-                        : () => _confirmSubmit(controller),
-                  );
-                  if (constraints.maxWidth >= 820) {
-                    return Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: questionCard),
-                          const SizedBox(width: 16),
-                          SizedBox(width: 280, child: navigator),
-                        ],
-                      ),
-                    );
-                  }
-                  return ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      navigator,
-                      const SizedBox(height: 14),
-                      questionCard,
-                    ],
-                  );
-                },
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: _Timer(seconds: state.remainingSeconds),
+                ),
+              ],
+            ),
+            body: SafeArea(
+              child: Column(
+                children: [
+                  _ConnectionStatus(
+                    online: state.online,
+                    saveStatus: state.saveStatus,
+                  ),
+                  if (state.error != null)
+                    _ErrorBanner(
+                      message: state.error!,
+                      retry: state.remainingSeconds == 0
+                          ? () => controller.submit()
+                          : null,
+                    ),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final questionCard = _QuestionCard(
+                          question: question,
+                          selected: state.answers[question.id],
+                          doubtful: state.doubtful.contains(question.id),
+                          onSelect: (option) =>
+                              controller.selectAnswer(question.id, option),
+                          onDoubtful: () =>
+                              controller.toggleDoubtful(question.id),
+                          previous: state.currentIndex > 0
+                              ? controller.previous
+                              : null,
+                          next:
+                              state.currentIndex + 1 < session.questions.length
+                              ? controller.next
+                              : null,
+                          submit: state.submitting
+                              ? null
+                              : () => _confirmSubmit(controller),
+                        );
+                        final navigator = _QuestionNavigator(
+                          session: session,
+                          state: state,
+                          onSelect: controller.goTo,
+                          onSubmit: state.submitting
+                              ? null
+                              : () => _confirmSubmit(controller),
+                        );
+                        if (constraints.maxWidth >= 820) {
+                          return Padding(
+                            padding: const EdgeInsets.all(20),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(child: questionCard),
+                                const SizedBox(width: 16),
+                                SizedBox(width: 280, child: navigator),
+                              ],
+                            ),
+                          );
+                        }
+                        return ListView(
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            navigator,
+                            const SizedBox(height: 14),
+                            questionCard,
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
-      ),
           ),
           if (locked)
             _ScreenLockOverlay(
