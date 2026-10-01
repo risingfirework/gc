@@ -17,11 +17,19 @@ import (
 const autoSubmitBatchSize = 500
 const maxAnswerLength = 10000
 
+// ScreenLockSeconds adalah durasi layar kunci otomatis setiap siswa terdeteksi
+// keluar aplikasi atau berpindah tab di tengah ujian CBT.
+const ScreenLockSeconds = 5
+
+// maxLockEventLength membatasi panjang event lifecycle yang disimpan ke database.
+const maxLockEventLength = 64
+
 type CBTService struct {
 	exams  domain.ExamRepository
 	cache  domain.CBTRepository
 	logger *slog.Logger
 	access domain.ExamAccessRepository
+	locks  domain.ExamScreenLockRepository
 	now    func() time.Time
 }
 
@@ -31,6 +39,14 @@ func NewCBTService(exams domain.ExamRepository, cache domain.CBTRepository, logg
 		service.access = access[0]
 	}
 	return service
+}
+
+// WithScreenLockRepository mengaktifkan penguncian layar untuk mode CBT.
+// Tanpa repository ini ReportViolation selalu melaporkan Enforced false, sehingga
+// bank soal mode sell dan deployment lama tetap berperilaku seperti semula.
+func (s *CBTService) WithScreenLockRepository(locks domain.ExamScreenLockRepository) *CBTService {
+	s.locks = locks
+	return s
 }
 
 func (s *CBTService) LookupCBT(ctx context.Context, userID, token string) ([]domain.CBTLookupPackage, error) {
@@ -90,8 +106,106 @@ func (s *CBTService) StartExam(ctx context.Context, userID, examID, token string
 		UserExamID: attempt.ID, ExamID: exam.ID, Title: exam.Title, Status: attempt.Status,
 		ServerTime: now, StartedAt: attempt.StartedAt, EndsAt: expiresAt,
 		RemainingSeconds: remainingSeconds(expiresAt, now), DurationMinutes: exam.DurationMinutes,
-		Questions: publicQuestions,
+		ExamType:          exam.PackageExamType,
+		ScreenLockEnabled: s.screenLockEnforced(exam.PackageExamType),
+		Questions:         publicQuestions,
 	}, nil
+}
+
+// screenLockEnforced menentukan apakah penguncian layar berlaku untuk mode bank
+// soal. Hanya mode CBT yang dikunci; mode sell dan mode lain tidak tersentuh.
+func (s *CBTService) screenLockEnforced(examType string) bool {
+	return s.locks != nil && strings.EqualFold(strings.TrimSpace(examType), "cbt")
+}
+
+// normalizeLockEvent memangkas dan membersihkan label lifecycle dari klien
+// sebelum disimpan, karena kolomnya dibatasi 64 karakter.
+func normalizeLockEvent(event string) string {
+	event = strings.TrimSpace(event)
+	event = strings.Map(func(r rune) rune {
+		if r <= 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, event)
+	if len(event) > maxLockEventLength {
+		return event[:maxLockEventLength]
+	}
+	return event
+}
+
+// ReportViolation mencatat bahwa siswa keluar aplikasi atau berpindah tab di
+// tengah ujian, lalu mengembalikan apakah layar harus dikunci. Pembulatan waktu
+// memakai jam server supaya hitung mundur klien tidak bisa dimanipulasi.
+func (s *CBTService) ReportViolation(ctx context.Context, userID, userExamID, event string) (*domain.ReportViolationResponse, error) {
+	if !validUUID(userID) || !validUUID(userExamID) {
+		return nil, domain.ErrUserExamNotFound
+	}
+	examType, err := s.attemptExamType(ctx, userID, userExamID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	if !s.screenLockEnforced(examType) {
+		return &domain.ReportViolationResponse{Enforced: false, ServerTime: now}, nil
+	}
+	lock, err := s.locks.UpsertExamScreenLock(ctx, userExamID, normalizeLockEvent(event), now, ScreenLockSeconds*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	return lockResponse(lock, now), nil
+}
+
+// GetScreenLock mengembalikan status kunci terkini untuk polling klien, tanpa
+// menambah penghitung pelanggaran.
+func (s *CBTService) GetScreenLock(ctx context.Context, userID, userExamID string) (*domain.ReportViolationResponse, error) {
+	if !validUUID(userID) || !validUUID(userExamID) {
+		return nil, domain.ErrUserExamNotFound
+	}
+	examType, err := s.attemptExamType(ctx, userID, userExamID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now().UTC()
+	if !s.screenLockEnforced(examType) {
+		return &domain.ReportViolationResponse{Enforced: false, ServerTime: now}, nil
+	}
+	lock, err := s.locks.GetExamScreenLock(ctx, userExamID, now)
+	if err != nil {
+		return nil, err
+	}
+	if lock == nil {
+		return &domain.ReportViolationResponse{Enforced: true, ServerTime: now}, nil
+	}
+	return lockResponse(lock, now), nil
+}
+
+func lockResponse(lock *domain.ExamScreenLock, now time.Time) *domain.ReportViolationResponse {
+	response := &domain.ReportViolationResponse{
+		Enforced:       true,
+		Locked:         lock.IsActiveAt(now),
+		LockSeconds:    ScreenLockSeconds,
+		ViolationCount: lock.ViolationCount,
+		ServerTime:     now,
+	}
+	if response.Locked {
+		until := lock.UnlockUntil.UTC()
+		response.UnlockUntil = &until
+	}
+	return response
+}
+
+// attemptExamType memvalidasi kepemilikan attempt dan mengembalikan mode bank
+// soal induknya, sehingga hanya attempt milik siswa sendiri yang bisa diproses.
+func (s *CBTService) attemptExamType(ctx context.Context, userID, userExamID string) (string, error) {
+	attempt, exam, err := s.exams.GetUserExam(ctx, userExamID, userID)
+	if err != nil {
+		return "", err
+	}
+	if attempt == nil || exam == nil {
+		return "", domain.ErrUserExamNotFound
+	}
+	return exam.PackageExamType, nil
 }
 
 func (s *CBTService) ListPackageExams(ctx context.Context, userID, packageID string) ([]domain.ExamSummary, error) {

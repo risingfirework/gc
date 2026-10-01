@@ -17,6 +17,7 @@ class ExamScreen extends ConsumerStatefulWidget {
 
 class _ExamScreenState extends ConsumerState<ExamScreen> {
   late final ExamLifecycleGuard lifecycleGuard;
+  bool _immersiveApplied = false;
 
   @override
   void initState() {
@@ -35,6 +36,7 @@ class _ExamScreenState extends ConsumerState<ExamScreen> {
   void dispose() {
     lifecycleGuard.detach();
     unawaited(SecurityUtils.disableSecureScreen());
+    unawaited(SecurityUtils.disableImmersiveMode());
     super.dispose();
   }
 
@@ -79,7 +81,23 @@ class _ExamScreenState extends ConsumerState<ExamScreen> {
       );
     }
     final question = session.questions[state.currentIndex];
-    return Scaffold(
+    final locked = state.screenLocked;
+    if (!_immersiveApplied) {
+      _immersiveApplied = true;
+      if (state.screenLockEligible) {
+        unawaited(SecurityUtils.enableImmersiveMode());
+      }
+    }
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        // Saat terkunci tombol keluar tidak berlaku; di luar itu siswa
+        // diarahkan keluar lewat tombol keluar di QuestionNavigator.
+      },
+      child: Stack(
+        children: [
+          Scaffold(
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -167,6 +185,14 @@ class _ExamScreenState extends ConsumerState<ExamScreen> {
           ],
         ),
       ),
+          ),
+          if (locked)
+            _ScreenLockOverlay(
+              secondsLeft: state.screenLockSecondsLeft,
+              violationCount: state.screenLockViolationCount,
+            ),
+        ],
+      ),
     );
   }
 
@@ -193,6 +219,77 @@ class _ExamScreenState extends ConsumerState<ExamScreen> {
         ) ??
         false;
     if (confirmed) await controller.submit();
+  }
+}
+
+class _ScreenLockOverlay extends StatelessWidget {
+  const _ScreenLockOverlay({
+    required this.secondsLeft,
+    required this.violationCount,
+  });
+
+  final int secondsLeft;
+  final int violationCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Material(
+        color: const Color(0xFF17233B),
+        child: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.lock_outline, size: 64, color: Colors.white),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Layar terkunci',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Anda terdeteksi meninggalkan halaman ujian. Layar akan terbuka otomatis, atau hubungi pengawas untuk dibuka.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.white70, height: 1.4),
+                  ),
+                  const SizedBox(height: 28),
+                  Container(
+                    width: 108,
+                    height: 108,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.12),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '$secondsLeft',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 46,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  Text(
+                    'Pelanggaran tercatat: $violationCount',
+                    style: const TextStyle(color: Colors.white54),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

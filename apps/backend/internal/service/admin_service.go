@@ -746,6 +746,14 @@ func (s *AdminService) ListCBTParticipants(ctx context.Context, examID string) (
 	}
 	return s.repository.ListCBTParticipants(ctx, examID)
 }
+
+// ReleaseParticipantScreenLock membuka blokir layar seorang siswa mode CBT.
+func (s *AdminService) ReleaseParticipantScreenLock(ctx context.Context, examID, userExamID string) (*domain.ExamScreenLock, error) {
+	if !validUUID(examID) || !validUUID(userExamID) {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repository.ReleaseParticipantScreenLock(ctx, examID, userExamID, time.Now().UTC())
+}
 func validateAdminQuestion(input domain.AdminQuestionRequest) error {
 	if !validUUID(input.ExamID) {
 		return domain.ErrInvalidInput

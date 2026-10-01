@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import Image from "next/image";
-import { APIError, api, ExamStartResponse, SiteSettings, SubmitExamResponse } from "@/services/api";
+import { APIError, api, ExamStartResponse, ScreenLockResponse, SiteSettings, SubmitExamResponse } from "@/services/api";
 import { AntiCheatEvent, useAntiCheat } from "@/hooks/useAntiCheat";
 import { useCBTAutoSave } from "@/hooks/useCBTAutoSave";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -31,8 +31,12 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   const [submitting, setSubmitting] = useState(false);
   const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [violations, setViolations] = useState<AntiCheatEvent[]>([]);
+  const [screenLocked, setScreenLocked] = useState(false);
+  const [screenLockSeconds, setScreenLockSeconds] = useState(0);
+  const [screenLockViolations, setScreenLockViolations] = useState(0);
   const online = useOnlineStatus();
   const submissionStarted = useRef(false);
+  const clockOffsetRef = useRef(0);
   const { queueAnswer, flushAll, state: autoSaveState } = useCBTAutoSave(exam?.user_exam_id ?? null);
 
   useEffect(() => { api.siteSettings().then(setSettings).catch(() => undefined); }, []);
@@ -42,6 +46,7 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
     start.then((payload) => {
       if (!active) return;
       const offset = Date.parse(payload.server_time) - Date.now();
+      clockOffsetRef.current = offset;
       setClockOffset(offset);
       setExam(payload);
       setRemainingSeconds(payload.remaining_seconds);
@@ -111,7 +116,98 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   const reportViolation = useCallback((event: AntiCheatEvent) => {
     setViolations((current) => [...current.slice(-49), event]);
   }, []);
-  useAntiCheat(Boolean(exam && !result), reportViolation);
+
+  // Penguncian layar hanya berlaku untuk paket mode CBT. Mode sell dan mode
+  // lain tidak pernah dikunci. Server tetap menjadi sumber kebenaran.
+  const lockEligible = Boolean(exam && !result && exam.screen_lock_enabled && exam.exam_type === "cbt");
+
+  const applyScreenLock = useCallback((payload: ScreenLockResponse) => {
+    setScreenLockViolations(payload.violation_count);
+    if (!payload.enforced || !payload.locked) {
+      setScreenLocked(false);
+      setScreenLockSeconds(0);
+      return;
+    }
+    let seconds = payload.lock_seconds;
+    if (payload.unlock_until) {
+      const remaining = Date.parse(payload.unlock_until) - (Date.now() + clockOffsetRef.current);
+      if (remaining <= 0) {
+        setScreenLocked(false);
+        setScreenLockSeconds(0);
+        return;
+      }
+      seconds = Math.ceil(remaining / 1000);
+    }
+    if (seconds <= 0) {
+      setScreenLocked(false);
+      setScreenLockSeconds(0);
+      return;
+    }
+    setScreenLocked(true);
+    setScreenLockSeconds(seconds);
+  }, []);
+
+  const reportScreenLockViolation = useCallback(async (event: string) => {
+    if (!exam || result || submissionStarted.current) return;
+    if (exam.exam_type !== "cbt" || !exam.screen_lock_enabled) return;
+    try {
+      applyScreenLock(await api.reportCBTViolation(exam.user_exam_id, event));
+    } catch {
+      // Gagal menghubungi server: kunci lokal 5 detik tetap dipasang agar
+      // siswa tidak melewati layar, lalu terbuka oleh hitung mundur.
+      applyScreenLock({
+        user_exam_id: exam.user_exam_id,
+        locked: true,
+        enforced: true,
+        lock_seconds: 5,
+        violation_count: screenLockViolations + 1,
+        server_time: new Date().toISOString(),
+      });
+    }
+  }, [applyScreenLock, exam, result, screenLockViolations]);
+
+  const reportViolationRef = useRef(reportScreenLockViolation);
+  useEffect(() => { reportViolationRef.current = reportScreenLockViolation; }, [reportScreenLockViolation]);
+  const reportAntiCheatEvent = useCallback((event: AntiCheatEvent) => {
+    reportViolation(event);
+    if (event.type === "tab_hidden" || event.type === "window_blurred") {
+      void reportViolationRef.current(event.type);
+    }
+  }, [reportViolation]);
+  useAntiCheat(lockEligible, reportAntiCheatEvent);
+
+  // Hitung mundur membuka layar otomatis setelah 5 detik.
+  useEffect(() => {
+    if (!screenLocked) return;
+    const timer = window.setInterval(() => {
+      setScreenLockSeconds((current) => {
+        if (current <= 1) {
+          setScreenLocked(false);
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [screenLocked]);
+
+  // Guru atau admin dapat membuka blokir lebih awal, jadi status ditanyakan
+  // ke server selama layar masih terkunci.
+  useEffect(() => {
+    if (!screenLocked || !exam) return;
+    const poll = window.setInterval(() => {
+      void api.examScreenLock(exam.user_exam_id).then(applyScreenLock).catch(() => undefined);
+    }, 2000);
+    return () => window.clearInterval(poll);
+  }, [applyScreenLock, exam, screenLocked]);
+
+  // Peringatan native browser agar tab tidak ditutup begitu saja saat terkunci.
+  useEffect(() => {
+    if (!screenLocked) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [screenLocked]);
 
   const question = exam?.questions[index];
   const formattedTime = useMemo(() => {
@@ -198,6 +294,7 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
       </div>
     </div>
     {confirmSubmit && createPortal(<div className="verify-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) setConfirmSubmit(false); }}><section className="verify-modal" role="dialog" aria-modal="true" aria-labelledby="submit-exam-title" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="verify-modal-close" disabled={submitting} onClick={() => setConfirmSubmit(false)}>×</button><div className="verify-modal-icon verify-modal-icon--success" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div><p className="eyebrow">Akhiri ujian</p><h2 id="submit-exam-title">Kumpulkan ujian sekarang?</h2><p className="muted">{answeredCount === exam.questions.length ? `Semua ${answeredCount} soal sudah terjawab. Setelah dikumpulkan, jawaban tidak dapat diubah.` : `${answeredCount} dari ${exam.questions.length} soal terjawab${exam.questions.length - answeredCount > 0 ? `, ${exam.questions.length - answeredCount} soal masih kosong` : ""}. Setelah dikumpulkan, jawaban tidak dapat diubah.`}</p><div className="verify-modal-actions"><button type="button" className="verify-cancel" disabled={submitting} onClick={() => setConfirmSubmit(false)}>Batal</button><button type="button" className="verify-confirm-approve" disabled={submitting} onClick={() => { setConfirmSubmit(false); void submitAttempt(false); }}>{submitting ? "Mengirim..." : "Ya, kumpulkan"}</button></div></section></div>, document.body)}
+    {screenLocked && createPortal(<div className="screen-lock-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="screen-lock-title" onContextMenu={(event) => event.preventDefault()}><section className="screen-lock-card"><svg className="screen-lock-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 9V7a5 5 0 0 0-10 0v2H5v12h14V9h-2Zm-8-2a3 3 0 0 1 6 0v2H9V7Z"/></svg><h2 id="screen-lock-title">Layar terkunci</h2><p>Anda terdeteksi meninggalkan halaman ujian. Layar akan terbuka otomatis, atau hubungi pengawas untuk dibuka.</p><div className="screen-lock-countdown" aria-live="assertive">{screenLockSeconds}</div><small>Pelanggaran tercatat: {screenLockViolations}</small></section></div>, document.body)}
   </main>;
 }
 

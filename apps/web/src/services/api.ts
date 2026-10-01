@@ -90,8 +90,9 @@ export type QuestionType = "single_choice" | "multiple_choice" | "category" | "e
 export type PresentationType = "single" | "group";
 export type TKAQuestionFields = { question_type: QuestionType; presentation_type: PresentationType; group_code: string; stimulus_text: string; question_image_url: string; stimulus_image_url: string; category_labels: string[] };
 export type ExamQuestion = { id: string; subject_name: string; content_text: string; options: QuestionOption[] } & TKAQuestionFields;
-export type ExamStartResponse = { user_exam_id: string; exam_id: string; title: string; status: "ongoing"; server_time: string; started_at: string; ends_at: string; remaining_seconds: number; duration_minutes: number; remaining_tokens?: number; questions: ExamQuestion[] };
+export type ExamStartResponse = { user_exam_id: string; exam_id: string; title: string; status: "ongoing"; server_time: string; started_at: string; ends_at: string; remaining_seconds: number; duration_minutes: number; remaining_tokens?: number; exam_type?: string; screen_lock_enabled?: boolean; questions: ExamQuestion[] };
 export type SyncAnswerResponse = { saved: boolean; synced_at: string; remaining_seconds: number };
+export type ScreenLockResponse = { user_exam_id: string; locked: boolean; enforced: boolean; lock_seconds: number; unlock_until?: string; violation_count: number; last_violation_at?: string; server_time: string };
 export type SubmitExamResponse = { user_exam_id: string; exam_id: string; status: "submitted"; finished_at: string; total_score: number; passing_score: number; passed: boolean };
 export type Package = { id: string; title: string; kode: string; description: string; price: number; validity_days: number; status: Status; jenjang: string; publisher_email?: string; sales_count:number; view_count:number; exam_count:number; question_count:number; created_at: string };
 export type HeroSlide = { id:string; image_data_url:string; title:string };
@@ -146,7 +147,7 @@ export type AdminPackagesPage = AdminPage<AdminPackage> & { counts: { active: nu
 export type CBTLookupExam = { exam_id: string; title: string; duration_minutes: number; total_questions: number; passing_score: number; submitted: boolean; publish_pembahasan: boolean; user_exam_id?: string };
 export type CBTLookupPackage = { id: string; title: string; kode: string; jenjang: string; price: number; exams: CBTLookupExam[] };
 export type CBTPublishSetting = { exam_id: string; package_id: string; package_title: string; package_kode: string; jenjang: string; exam_title: string; duration_minutes: number; total_questions: number; passing_score: number; shuffle_questions: boolean; shuffle_options: boolean; publish_pembahasan: boolean; participated: number; publisher_email: string };
-export type CBTParticipant = { user_exam_id: string; user_id: string; name: string; email: string; school_level: string; status: "ongoing" | "submitted"; started_at?: string; finished_at?: string; total_questions: number; current_question?: number; total_score: number; passing_score: number; passed: boolean };
+export type CBTParticipant = { user_exam_id: string; user_id: string; name: string; email: string; school_level: string; status: "ongoing" | "submitted"; started_at?: string; finished_at?: string; total_questions: number; current_question?: number; total_score: number; passing_score: number; passed: boolean; screen_locked?: boolean; lock_until?: string; lock_count?: number; last_lock_at?: string };
 export type AdminDashboardData = { overview: AdminOverview; levels: string[]; jenjangs: MasterItem[]; mapels: MasterItem[]; academic_years: MasterItem[]; kategoris: MasterItem[]; kelas: MasterItem[]; users: User[]; packages: AdminPackage[]; exams: AdminExam[]; transactions: AdminTransaction[]; questions: AdminQuestion[] };
 export type TeacherOverview = { total_packages: number; total_exams: number; total_questions: number; total_sales: number; total_revenue: number };
 export type TeacherDashboardData = { overview: TeacherOverview; levels: string[]; mapels: MasterItem[]; academic_years: MasterItem[]; kategoris: MasterItem[]; kelas: MasterItem[]; packages: AdminPackage[]; exams: AdminExam[]; questions: AdminQuestion[]; transactions: AdminTransaction[]; finance_settings:FinanceSettings; commission_summary:TeacherCommissionSummary; commissions:TeacherCommission[]; payouts:TeacherPayout[]; payout_account:TeacherPayoutAccount; payout_requests:TeacherWithdrawalRequest[] };
@@ -240,15 +241,19 @@ export const api = {
   async adminSetCBTPublish(examID: string, publishPembahasan: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/admin/cbt-settings/${examID}`, { publish_pembahasan: publishPembahasan })).data.item; },
   async adminSetCBTShuffle(examID: string, shuffleQuestions: boolean, shuffleOptions: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/admin/cbt-settings/${examID}/shuffle`, { shuffle_questions: shuffleQuestions, shuffle_options: shuffleOptions })).data.item; },
   async adminCBTParticipants(examID: string) { return (await http.get<{ items: CBTParticipant[] }>(`/admin/cbt-settings/${examID}/participants`)).data.items; },
+  async adminUnlockCBTParticipant(examID: string, userExamID: string) { await http.post(`/admin/cbt-settings/${examID}/participants/${userExamID}/unlock`, {}); },
   async teacherCBTSettings() { return (await http.get<{ items: CBTPublishSetting[] }>("/teacher/cbt-settings")).data.items; },
   async teacherSetCBTPublish(examID: string, publishPembahasan: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}`, { publish_pembahasan: publishPembahasan })).data.item; },
   async teacherSetCBTShuffle(examID: string, shuffleQuestions: boolean, shuffleOptions: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}/shuffle`, { shuffle_questions: shuffleQuestions, shuffle_options: shuffleOptions })).data.item; },
   async teacherCBTParticipants(examID: string) { return (await http.get<{ items: CBTParticipant[] }>(`/teacher/cbt-settings/${examID}/participants`)).data.items; },
+  async teacherUnlockCBTParticipant(examID: string, userExamID: string) { await http.post(`/teacher/cbt-settings/${examID}/participants/${userExamID}/unlock`, {}); },
   async syncAnswer(examID: string, questionID: string, selectedOption: string) {
     return (await http.post<SyncAnswerResponse>("/cbt/answers/sync", { exam_id: examID, question_id: questionID, selected_option: selectedOption })).data;
   },
   async submitExam(userExamID: string) { return (await http.post<SubmitExamResponse>(`/exams/${userExamID}/submit`, {})).data; },
   async examResult(userExamID: string) { return (await http.get<ExamResult>(`/exams/${userExamID}/result`)).data; },
+  async reportCBTViolation(userExamID: string, event: string) { return (await http.post<ScreenLockResponse>("/cbt/violations", { user_exam_id: userExamID, event })).data; },
+  async examScreenLock(userExamID: string) { return (await http.get<ScreenLockResponse>(`/exams/${userExamID}/screen-lock`)).data; },
   async globalRanking(jenjang?: string, page: number = 1, perPage: number = 50, mode?: string) {
     const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
     if (jenjang) params.set("jenjang", jenjang);

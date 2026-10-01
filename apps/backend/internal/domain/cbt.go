@@ -20,6 +20,8 @@ var (
 	ErrInvalidAnswer            = errors.New("invalid selected option")
 	ErrTimerNotFound            = errors.New("exam timer not found")
 	ErrPembahasanNotPublished   = errors.New("pembahasan belum dipublikasikan oleh penyelenggara")
+	ErrScreenLockNotCBT         = errors.New("penguncian layar hanya berlaku untuk mode ujian CBT")
+	ErrScreenLockNotLocked      = errors.New("layar siswa tidak sedang terkunci")
 )
 
 type SyncAnswerRequest struct {
@@ -121,6 +123,54 @@ type CBTParticipant struct {
 	TotalScore      float64    `json:"total_score"`
 	PassingScore    float64    `json:"passing_score"`
 	Passed          bool       `json:"passed"`
+	// Status layar kunci; hanya terisi untuk mode CBT.
+	ScreenLocked bool       `json:"screen_locked"`
+	LockUntil    *time.Time `json:"lock_until,omitempty"`
+	LockCount    int        `json:"lock_count"`
+	LastLockAt   *time.Time `json:"last_lock_at,omitempty"`
+}
+
+// ExamScreenLock adalah status layar kunci untuk satu attempt ujian. Baris ini
+// hanya ada untuk mode CBT: saat siswa terdeteksi keluar aplikasi/tab, klien
+// mengunci layar selama ScreenLockSeconds dan guru/admin bisa melepasnya lebih
+// awal lewat ReleaseExamScreenLock.
+type ExamScreenLock struct {
+	UserExamID string
+	// Locked bernilai true selama masih terkunci, yaitu belum released dan
+	// belum melewati UnlockUntil.
+	Locked         bool
+	ViolationCount int
+	LockedAt       time.Time
+	UnlockUntil    time.Time
+	ReleasedAt     *time.Time
+	LastEvent      string
+}
+
+// IsActiveAt melaporkan apakah kunci masih berlaku pada waktu tertentu.
+func (l ExamScreenLock) IsActiveAt(now time.Time) bool {
+	return l.ReleasedAt == nil && now.Before(l.UnlockUntil)
+}
+
+// ReportViolationRequest adalah laporan dari klien saat siswa keluar
+// aplikasi/tab di tengah ujian CBT.
+type ReportViolationRequest struct {
+	// UserExamID adalah attempt aktif (user_exams.id).
+	UserExamID string `json:"user_exam_id"`
+	// Event adalah label lifecycle singkat, dipangkas server sebelum disimpan.
+	Event string `json:"event"`
+}
+
+// ReportViolationResponse memberi tahu klien apakah layar harus dikunci,
+// sudah dilepas guru, atau penguncian tidak berlaku untuk mode paket ini.
+type ReportViolationResponse struct {
+	// Locked true berarti klien harus menampilkan layar kunci.
+	Locked bool `json:"locked"`
+	// Enforced false untuk mode non-CBT agar klien tidak pernah mengunci.
+	Enforced       bool       `json:"enforced"`
+	UnlockUntil    *time.Time `json:"unlock_until,omitempty"`
+	LockSeconds    int        `json:"lock_seconds"`
+	ViolationCount int        `json:"violation_count"`
+	ServerTime     time.Time  `json:"server_time"`
 }
 
 // ExamSummary is the public, student-facing exam card for an owned package.
@@ -162,6 +212,18 @@ type ExamShuffleRepository interface {
 	EnsureUserExamShuffle(ctx context.Context, userExamID string) (*UserExamShuffle, error)
 }
 
+// ExamScreenLockRepository menyimpan dan membaca status layar kunci satu
+// attempt ujian. Implementasi opsional: bila service tidak memilikinya,
+// seluruh fitur penguncian dilewati dan ujian berjalan seperti biasa.
+type ExamScreenLockRepository interface {
+	// UpsertExamScreenLock merekam satu pelanggaran baru dan mengembalikan
+	// status kunci terbaru setelah increment.
+	UpsertExamScreenLock(ctx context.Context, userExamID, event string, now time.Time, lockFor time.Duration) (*ExamScreenLock, error)
+	GetExamScreenLock(ctx context.Context, userExamID string, now time.Time) (*ExamScreenLock, error)
+	// ReleaseExamScreenLock menandai kunci sudah dilepas guru/admin.
+	ReleaseExamScreenLock(ctx context.Context, userExamID string, now time.Time) (*ExamScreenLock, error)
+}
+
 type CBTRepository interface {
 	SetTimer(ctx context.Context, timer ExamTimer) error
 	GetTimer(ctx context.Context, userExamID string) (*ExamTimer, error)
@@ -178,4 +240,9 @@ type CBTService interface {
 	SyncAnswer(ctx context.Context, userID string, input SyncAnswerRequest) (*SyncAnswerResponse, error)
 	SubmitExam(ctx context.Context, userID, userExamID string) (*SubmitExamResponse, error)
 	AutoSubmitTask(ctx context.Context) error
+	// ReportViolation mencatat siswa keluar aplikasi/tab dan mengembalikan
+	// apakah layar harus dikunci. Enforced false bila mode bukan CBT.
+	ReportViolation(ctx context.Context, userID, userExamID, event string) (*ReportViolationResponse, error)
+	// GetScreenLock mengembalikan status kunci terkini untuk polling klien.
+	GetScreenLock(ctx context.Context, userID, userExamID string) (*ReportViolationResponse, error)
 }

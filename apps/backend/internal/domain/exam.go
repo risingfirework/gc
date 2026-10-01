@@ -96,14 +96,18 @@ type UserAnswer struct {
 }
 
 type ExamStartResponse struct {
-	UserExamID       string             `json:"user_exam_id"`
-	ExamID           string             `json:"exam_id"`
-	Title            string             `json:"title"`
-	Status           string             `json:"status"`
-	ServerTime       time.Time          `json:"server_time"`
-	StartedAt        time.Time          `json:"started_at"`
-	EndsAt           time.Time          `json:"ends_at"`
-	RemainingSeconds int64              `json:"remaining_seconds"`
-	DurationMinutes  int                `json:"duration_minutes"`
-	Questions        []QuestionResponse `json:"questions"`
+	UserExamID       string    `json:"user_exam_id"`
+	ExamID           string    `json:"exam_id"`
+	Title            string    `json:"title"`
+	Status           string    `json:"status"`
+	ServerTime       time.Time `json:"server_time"`
+	StartedAt        time.Time `json:"started_at"`
+	EndsAt           time.Time `json:"ends_at"`
+	RemainingSeconds int64     `json:"remaining_seconds"`
+	DurationMinutes  int       `json:"duration_minutes"`
+	ExamType         string    `json:"exam_type"`
+	// ScreenLockEnabled memberi tahu klien apakah mode ini menerapkan
+	// penguncian layar. Hanya true untuk mode CBT.
+	ScreenLockEnabled bool               `json:"screen_lock_enabled"`
+	Questions         []QuestionResponse `json:"questions"`
 }

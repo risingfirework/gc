@@ -377,6 +377,16 @@ func (h *AdminHandler) CBTParticipants(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
+
+// ReleaseParticipantScreenLock membuka blokir layar seorang siswa mode CBT.
+func (h *AdminHandler) ReleaseParticipantScreenLock(w http.ResponseWriter, r *http.Request) {
+	lock, err := h.service.ReleaseParticipantScreenLock(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "userExamId"))
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"released": true, "lock": lock})
+}
+
 func (h *AdminHandler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 	var input domain.AdminQuestionRequest
 	if decodeJSON(w, r, &input) != nil {
@@ -523,7 +533,7 @@ func writeAdminError(logger *slog.Logger, w http.ResponseWriter, r *http.Request
 		writeError(w, 422, err.Error())
 	case errors.Is(err, domain.ErrUserNotFound), errors.Is(err, domain.ErrPackageNotFound), errors.Is(err, domain.ErrExamNotFound), errors.Is(err, domain.ErrQuestionNotFound), errors.Is(err, domain.ErrMasterNotFound), errors.Is(err, domain.ErrPayoutRequestNotFound), errors.Is(err, domain.ErrTransactionNotFound):
 		writeError(w, 404, err.Error())
-	case errors.Is(err, domain.ErrEmailAlreadyExists), errors.Is(err, domain.ErrAdminConflict), errors.Is(err, domain.ErrDuplicateName), errors.Is(err, domain.ErrDuplicateKode), errors.Is(err, domain.ErrPayoutRequestActive), errors.Is(err, domain.ErrPayoutTransition), errors.Is(err, domain.ErrLastOwnerGuard), errors.Is(err, domain.ErrTransactionNotRefundable), errors.Is(err, domain.ErrPackageHasAttempts), errors.Is(err, domain.ErrPackageInUse), errors.Is(err, domain.ErrExamHasAttempts):
+	case errors.Is(err, domain.ErrEmailAlreadyExists), errors.Is(err, domain.ErrAdminConflict), errors.Is(err, domain.ErrDuplicateName), errors.Is(err, domain.ErrDuplicateKode), errors.Is(err, domain.ErrPayoutRequestActive), errors.Is(err, domain.ErrPayoutTransition), errors.Is(err, domain.ErrLastOwnerGuard), errors.Is(err, domain.ErrTransactionNotRefundable), errors.Is(err, domain.ErrPackageHasAttempts), errors.Is(err, domain.ErrPackageInUse), errors.Is(err, domain.ErrExamHasAttempts), errors.Is(err, domain.ErrScreenLockNotLocked):
 		writeError(w, 409, err.Error())
 	case errors.Is(err, domain.ErrExamForbidden):
 		writeError(w, 403, err.Error())

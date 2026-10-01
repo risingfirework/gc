@@ -16,6 +16,20 @@ class SecurityUtils {
       await _channel.invokeMethod<void>('disableSecureScreen');
     }
   }
+
+  /// Menyembunyikan system bar selama ujian CBT. Layar kunci tetap dipasang
+  /// oleh lapisan Dart sehingga siswa tidak bisa melewati hitung mundur.
+  static Future<void> enableImmersiveMode() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await _channel.invokeMethod<void>('enableImmersiveMode');
+    }
+  }
+
+  static Future<void> disableImmersiveMode() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await _channel.invokeMethod<void>('disableImmersiveMode');
+    }
+  }
 }
 
 class ExamLifecycleGuard with WidgetsBindingObserver {

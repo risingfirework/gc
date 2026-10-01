@@ -328,6 +328,34 @@ func (r *TeacherRepository) CancelPayoutRequest(ctx context.Context, publisherID
 	return &item, nil
 }
 
+// ReleaseParticipantScreenLock membuka blokir layar seorang siswa milik paket
+// guru. PublisherID mencegah guru membuka blokir di luar ujiannya sendiri.
+func (r *TeacherRepository) ReleaseParticipantScreenLock(ctx context.Context, publisherID, examID, userExamID string, now time.Time) (*domain.ExamScreenLock, error) {
+	const query = `
+		UPDATE user_exam_screen_locks AS l
+		SET released_at = $4, updated_at = $4
+		FROM user_exams ue, exams e, packages p
+		WHERE l.user_exam_id = ue.id
+		  AND ue.exam_id = e.id
+		  AND e.package_id = p.id
+		  AND p.publisher_id = $1
+		  AND e.id = $2
+		  AND ue.id = $3
+		  AND l.released_at IS NULL
+		  AND l.unlock_until > $4
+		  AND ue.status = 'ongoing'
+		RETURNING l.user_exam_id, l.violation_count, l.locked_at, l.unlock_until, l.released_at, l.last_event`
+	lock, err := scanExamScreenLock(r.db.QueryRow(ctx, query, publisherID, examID, userExamID, now))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrScreenLockNotLocked
+	}
+	if err != nil {
+		return nil, fmt.Errorf("release teacher participant screen lock: %w", err)
+	}
+	lock.Locked = false
+	return lock, nil
+}
+
 func (r *TeacherRepository) UpdatePayoutAccount(ctx context.Context, publisherID string, input domain.TeacherPayoutAccount) (*domain.TeacherPayoutAccount, error) {
 	const query = `INSERT INTO teacher_payout_accounts(teacher_id,method,provider,account_number,account_holder_name,phone) VALUES($1,$2,$3,$4,$5,$6)
 		ON CONFLICT(teacher_id) DO UPDATE SET method=EXCLUDED.method,provider=EXCLUDED.provider,account_number=EXCLUDED.account_number,account_holder_name=EXCLUDED.account_holder_name,phone=EXCLUDED.phone,updated_at=NOW()
@@ -552,14 +580,17 @@ func (r *TeacherRepository) ListCBTParticipants(ctx context.Context, publisherID
 	const query = `
 		SELECT ue.id, ue.user_id, COALESCE(u.name,''), u.email, COALESCE(u.school_level,''), ue.status,
 		       ue.started_at, ue.finished_at, COALESCE(ue.total_score,0), e.passing_score, e.total_questions,
-		       COUNT(ua.id)
+		       COUNT(ua.id),
+		       COALESCE(sl.violation_count,0), sl.unlock_until, sl.locked_at, sl.released_at
 		FROM user_exams ue
 		JOIN users u ON u.id = ue.user_id
 		JOIN exams e ON e.id = ue.exam_id
 		JOIN packages p ON p.id = e.package_id
 		LEFT JOIN user_answers ua ON ua.user_exam_id = ue.id
+		LEFT JOIN user_exam_screen_locks sl ON sl.user_exam_id = ue.id
 		WHERE ue.exam_id = $2 AND p.publisher_id = $1
-		GROUP BY ue.id, u.id, e.passing_score, e.total_questions
+		GROUP BY ue.id, u.id, e.passing_score, e.total_questions,
+		         sl.violation_count, sl.unlock_until, sl.locked_at, sl.released_at
 		ORDER BY (ue.status = 'submitted') ASC,
 		         CASE WHEN ue.status = 'ongoing' THEN ue.started_at ELSE COALESCE(ue.finished_at, ue.started_at) END,
 		         ue.id`
@@ -572,10 +603,16 @@ func (r *TeacherRepository) ListCBTParticipants(ctx context.Context, publisherID
 	for rows.Next() {
 		var item domain.CBTParticipant
 		var answered int64
+		var releasedAt *time.Time
 		if err := rows.Scan(&item.UserExamID, &item.UserID, &item.Name, &item.Email, &item.SchoolLevel, &item.Status,
-			&item.StartedAt, &item.FinishedAt, &item.TotalScore, &item.PassingScore, &item.TotalQuestions, &answered); err != nil {
+			&item.StartedAt, &item.FinishedAt, &item.TotalScore, &item.PassingScore, &item.TotalQuestions, &answered,
+			&item.LockCount, &item.LockUntil, &item.LastLockAt, &releasedAt); err != nil {
 			return nil, fmt.Errorf("scan cbt participant: %w", err)
 		}
+		// Layar hanya dianggap terkunci untuk attempt ongoing yang belum
+		// dilepas guru dan belum lewat unlock_until.
+		item.ScreenLocked = item.Status == "ongoing" && releasedAt == nil &&
+			item.LockUntil != nil && item.LockUntil.After(time.Now().UTC())
 		if item.Status == "ongoing" {
 			next := int(answered) + 1
 			if next > item.TotalQuestions {

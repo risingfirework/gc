@@ -4,6 +4,7 @@ import (
 	"context"
 	"regexp"
 	"strings"
+	"time"
 
 	"tka/apps/backend/internal/domain"
 )
@@ -132,6 +133,15 @@ func (s *TeacherService) ListCBTParticipants(ctx context.Context, publisherID, e
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repository.ListCBTParticipants(ctx, publisherID, examID)
+}
+
+// ReleaseParticipantScreenLock membuka blokir layar seorang siswa. Repository
+// membatasi attempt pada paket milik guru ini.
+func (s *TeacherService) ReleaseParticipantScreenLock(ctx context.Context, publisherID, examID, userExamID string) (*domain.ExamScreenLock, error) {
+	if !validUUID(publisherID) || !validUUID(examID) || !validUUID(userExamID) {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repository.ReleaseParticipantScreenLock(ctx, publisherID, examID, userExamID, time.Now().UTC())
 }
 func (s *TeacherService) CreateQuestion(ctx context.Context, publisherID string, input domain.AdminQuestionRequest) (*domain.AdminQuestion, error) {
 	input = normalizeQuestion(input)

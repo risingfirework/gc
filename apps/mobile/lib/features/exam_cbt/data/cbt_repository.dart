@@ -20,4 +20,20 @@ class CBTRepository {
   );
   Future<SubmitResult> submitExam(String userExamId) async =>
       SubmitResult.fromJson(await _api.post('/exams/$userExamId/submit'));
+
+  /// Melaporkan siswa keluar aplikasi/tab. Server memutuskan apakah layar
+  /// harus dikunci dan hanya berlaku untuk mode CBT.
+  Future<ScreenLockState> reportViolation(
+    String userExamId,
+    String event,
+  ) async => ScreenLockState.fromJson(
+    await _api.post('/cbt/violations', {
+      'user_exam_id': userExamId,
+      'event': event,
+    }),
+  );
+
+  /// Polling status kunci supaya blokir yang dibuka guru langsung terasa.
+  Future<ScreenLockState> screenLock(String userExamId) async =>
+      ScreenLockState.fromJson(await _api.get('/exams/$userExamId/screen-lock'));
 }

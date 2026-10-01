@@ -761,13 +761,16 @@ func (r *AdminRepository) ListCBTParticipants(ctx context.Context, examID string
 	const query = `
 		SELECT ue.id, ue.user_id, COALESCE(u.name,''), u.email, COALESCE(u.school_level,''), ue.status,
 		       ue.started_at, ue.finished_at, COALESCE(ue.total_score,0), e.passing_score, e.total_questions,
-		       COUNT(ua.id)
+		       COUNT(ua.id),
+		       COALESCE(sl.violation_count,0), sl.unlock_until, sl.locked_at, sl.released_at
 		FROM user_exams ue
 		JOIN users u ON u.id = ue.user_id
 		JOIN exams e ON e.id = ue.exam_id
 		LEFT JOIN user_answers ua ON ua.user_exam_id = ue.id
+		LEFT JOIN user_exam_screen_locks sl ON sl.user_exam_id = ue.id
 		WHERE ue.exam_id = $1
-		GROUP BY ue.id, u.id, e.passing_score, e.total_questions
+		GROUP BY ue.id, u.id, e.passing_score, e.total_questions,
+		         sl.violation_count, sl.unlock_until, sl.locked_at, sl.released_at
 		ORDER BY (ue.status = 'submitted') ASC,
 		         CASE WHEN ue.status = 'ongoing' THEN ue.started_at ELSE COALESCE(ue.finished_at, ue.started_at) END,
 		         ue.id`
@@ -780,10 +783,16 @@ func (r *AdminRepository) ListCBTParticipants(ctx context.Context, examID string
 	for rows.Next() {
 		var item domain.CBTParticipant
 		var answered int64
+		var releasedAt *time.Time
 		if err := rows.Scan(&item.UserExamID, &item.UserID, &item.Name, &item.Email, &item.SchoolLevel, &item.Status,
-			&item.StartedAt, &item.FinishedAt, &item.TotalScore, &item.PassingScore, &item.TotalQuestions, &answered); err != nil {
+			&item.StartedAt, &item.FinishedAt, &item.TotalScore, &item.PassingScore, &item.TotalQuestions, &answered,
+			&item.LockCount, &item.LockUntil, &item.LastLockAt, &releasedAt); err != nil {
 			return nil, fmt.Errorf("scan cbt participant: %w", err)
 		}
+		// Layar hanya dianggap terkunci untuk attempt ongoing yang belum
+		// dilepas guru dan belum lewat unlock_until.
+		item.ScreenLocked = item.Status == "ongoing" && releasedAt == nil &&
+			item.LockUntil != nil && item.LockUntil.After(time.Now().UTC())
 		if item.Status == "ongoing" {
 			next := int(answered) + 1
 			if next > item.TotalQuestions {
@@ -798,6 +807,31 @@ func (r *AdminRepository) ListCBTParticipants(ctx context.Context, examID string
 		return nil, fmt.Errorf("iterate cbt participants: %w", err)
 	}
 	return items, nil
+}
+
+// ReleaseParticipantScreenLock membuka blokir layar seorang siswa. ExamID
+// diverifikasi agar admin tidak bisa membuka attempt dari ujian lain.
+func (r *AdminRepository) ReleaseParticipantScreenLock(ctx context.Context, examID, userExamID string, now time.Time) (*domain.ExamScreenLock, error) {
+	const query = `
+		UPDATE user_exam_screen_locks AS l
+		SET released_at = $3, updated_at = $3
+		FROM user_exams ue
+		WHERE l.user_exam_id = ue.id
+		  AND ue.exam_id = $1
+		  AND ue.id = $2
+		  AND l.released_at IS NULL
+		  AND l.unlock_until > $3
+		  AND ue.status = 'ongoing'
+		RETURNING l.user_exam_id, l.violation_count, l.locked_at, l.unlock_until, l.released_at, l.last_event`
+	lock, err := scanExamScreenLock(r.db.QueryRow(ctx, query, examID, userExamID, now))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrScreenLockNotLocked
+	}
+	if err != nil {
+		return nil, fmt.Errorf("release participant screen lock: %w", err)
+	}
+	lock.Locked = false
+	return lock, nil
 }
 
 func (r *AdminRepository) ListAdminQuestions(ctx context.Context, page, perPage int, packageID string) (domain.Page[domain.AdminQuestion], error) {

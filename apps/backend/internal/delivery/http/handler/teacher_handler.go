@@ -198,6 +198,17 @@ func (h *TeacherHandler) CBTParticipants(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
+
+// ReleaseParticipantScreenLock membuka blokir layar seorang siswa pada ujian
+// milik guru ini.
+func (h *TeacherHandler) ReleaseParticipantScreenLock(w http.ResponseWriter, r *http.Request) {
+	lock, err := h.service.ReleaseParticipantScreenLock(r.Context(), h.publisherID(r), chi.URLParam(r, "id"), chi.URLParam(r, "userExamId"))
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"released": true, "lock": lock})
+}
+
 func (h *TeacherHandler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 	var input domain.AdminQuestionRequest
 	if decodeJSON(w, r, &input) != nil {

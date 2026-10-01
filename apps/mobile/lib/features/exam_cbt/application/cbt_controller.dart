@@ -8,6 +8,10 @@ import '../domain/cbt_models.dart';
 
 enum AnswerSaveStatus { idle, pending, saving, saved, offline, error }
 
+/// Durasi layar kunci saat server tidak dapat dihubungi. Nilainya harus sama
+/// dengan ScreenLockSeconds di backend.
+const int defaultScreenLockSeconds = 5;
+
 class CBTState {
   const CBTState({
     this.session,
@@ -22,6 +26,9 @@ class CBTState {
     this.error,
     this.result,
     this.securityEvents = const [],
+    this.screenLocked = false,
+    this.screenLockSecondsLeft = 0,
+    this.screenLockViolationCount = 0,
   });
   final ExamSession? session;
   final int currentIndex;
@@ -35,6 +42,13 @@ class CBTState {
   final String? error;
   final SubmitResult? result;
   final List<String> securityEvents;
+
+  /// True saat layar harus terkunci karena siswa keluar aplikasi/tab.
+  final bool screenLocked;
+
+  /// Sisa detik hitung mundur sebelum layar terbuka kembali.
+  final int screenLockSecondsLeft;
+  final int screenLockViolationCount;
 
   CBTState copyWith({
     ExamSession? session,
@@ -50,6 +64,9 @@ class CBTState {
     bool clearError = false,
     SubmitResult? result,
     List<String>? securityEvents,
+    bool? screenLocked,
+    int? screenLockSecondsLeft,
+    int? screenLockViolationCount,
   }) => CBTState(
     session: session ?? this.session,
     currentIndex: currentIndex ?? this.currentIndex,
@@ -63,7 +80,18 @@ class CBTState {
     error: clearError ? null : error ?? this.error,
     result: result ?? this.result,
     securityEvents: securityEvents ?? this.securityEvents,
+    screenLocked: screenLocked ?? this.screenLocked,
+    screenLockSecondsLeft: screenLockSecondsLeft ?? this.screenLockSecondsLeft,
+    screenLockViolationCount:
+        screenLockViolationCount ?? this.screenLockViolationCount,
   );
+
+  /// Penguncian hanya berlaku bila sesi berjalan dan mode bank soal adalah CBT.
+  /// Mode sell serta mode lain tetap bebas keluar aplikasi.
+  bool get screenLockEligible {
+    final session = this.session;
+    return session != null && session.screenLockEnabled && session.isCBT;
+  }
 }
 
 class CBTController extends StateNotifier<CBTState> {
@@ -84,6 +112,8 @@ class CBTController extends StateNotifier<CBTState> {
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
   Timer? _clock;
+  Timer? _lockTicker;
+  Timer? _lockPoll;
   Duration _serverOffset = Duration.zero;
   bool _submitStarted = false;
   bool _autoSubmitAttempted = false;
@@ -298,6 +328,109 @@ class CBTController extends StateNotifier<CBTState> {
         event,
       ],
     );
+    if (state.screenLockEligible) {
+      unawaited(reportViolation(event));
+    }
+  }
+
+  /// Melaporkan pelanggaran ke server lalu memunculkan layar kunci bila server
+  /// memutuskan demikian. Untuk mode non-CBT server menjawab Enforced false
+  /// sehingga layar tidak pernah terkunci.
+  Future<void> reportViolation(String event) async {
+    final session = state.session;
+    if (session == null || state.result != null || _submitStarted) return;
+    try {
+      final lock = await _repository.reportViolation(session.userExamId, event);
+      if (lock.enforced && lock.locked) {
+        _applyLock(lock);
+      }
+    } catch (_) {
+      // Jaringan gagal saat melaporkan: kunci lokal tetap dipasang agar siswa
+      // tidak bisa melewati layar, lalu dibuka otomatis oleh ticker.
+      if (state.screenLockEligible) {
+        _applyLock(
+          ScreenLockState(
+            locked: true,
+            enforced: true,
+            lockSeconds: defaultScreenLockSeconds,
+            serverTime: DateTime.now().toUtc(),
+          ),
+        );
+      }
+    }
+  }
+
+  void _applyLock(ScreenLockState lock) {
+    final now = lock.serverTime ?? DateTime.now().toUtc().add(_serverOffset);
+    final until = lock.unlockUntil;
+    var seconds = lock.lockSeconds;
+    if (until != null) {
+      final remaining = until.difference(now).inMilliseconds;
+      if (remaining > 0) {
+        seconds = (remaining / 1000).ceil();
+      } else {
+        // Sudah lewat di server, tidak perlu mengunci.
+        seconds = 0;
+      }
+    }
+    if (seconds <= 0) {
+      _clearLock();
+      return;
+    }
+    state = state.copyWith(
+      screenLocked: true,
+      screenLockSecondsLeft: seconds,
+      screenLockViolationCount: lock.violationCount,
+    );
+    _lockTicker?.cancel();
+    _lockTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!state.screenLocked) return;
+      final next = state.screenLockSecondsLeft - 1;
+      if (next <= 0) {
+        _clearLock();
+      } else {
+        state = state.copyWith(screenLockSecondsLeft: next);
+      }
+    });
+    _startLockPolling();
+  }
+
+  void _clearLock() {
+    _lockTicker?.cancel();
+    _lockTicker = null;
+    _lockPoll?.cancel();
+    _lockPoll = null;
+    if (state.screenLocked || state.screenLockSecondsLeft != 0) {
+      state = state.copyWith(screenLocked: false, screenLockSecondsLeft: 0);
+    }
+  }
+
+  /// Guru atau admin dapat membuka blokir lebih awal, jadi layar tetap
+  /// ditanyakan ke server selama terkunci.
+  void _startLockPolling() {
+    if (_lockPoll != null) return;
+    _lockPoll = Timer.periodic(const Duration(seconds: 2), (_) async {
+      final session = state.session;
+      if (session == null || !state.screenLocked) return;
+      try {
+        final lock = await _repository.screenLock(session.userExamId);
+        if (lock.enforced && !lock.locked) {
+          _clearLock();
+        } else if (lock.enforced && lock.locked) {
+          final now =
+              lock.serverTime ?? DateTime.now().toUtc().add(_serverOffset);
+          final until = lock.unlockUntil;
+          if (until != null) {
+            final remaining = until.difference(now).inMilliseconds;
+            state = state.copyWith(
+              screenLockSecondsLeft: remaining <= 0 ? 1 : (remaining / 1000).ceil(),
+            );
+          }
+        }
+      } catch (_) {
+        // Offline saat polling: biarkan ticker lokal yang mengatur buka.
+      }
+    });
   }
 
   void _updateClock() {
@@ -358,6 +491,8 @@ class CBTController extends StateNotifier<CBTState> {
   @override
   void dispose() {
     _clock?.cancel();
+    _lockTicker?.cancel();
+    _lockPoll?.cancel();
     for (var timer in _debounces.values) {
       timer.cancel();
     }

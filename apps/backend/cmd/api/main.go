@@ -111,7 +111,8 @@ func main() {
 	authService.ConfigurePasswordReset(cfg.PublicWebURL, cfg.Environment, passwordMailer)
 	examRepository := postgresrepo.NewExamRepository(db)
 	cbtRepository := redisrepo.NewCBTRepository(redisClient)
-	cbtService := service.NewCBTService(examRepository, cbtRepository, logger, examRepository)
+	cbtService := service.NewCBTService(examRepository, cbtRepository, logger, examRepository).
+		WithScreenLockRepository(postgresrepo.NewExamScreenLockRepository(db))
 	paymentRepository := postgresrepo.NewPaymentRepository(db)
 	paymentGateway := service.NewXenditGateway(cfg.XenditSecretKey, cfg.PaymentWebhookSecret, cfg.XenditBaseURL, cfg.XenditSuccessRedirectURL, cfg.XenditFailureRedirectURL)
 	paymentService := service.NewPaymentService(paymentRepository, paymentGateway)

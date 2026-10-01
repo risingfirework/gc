@@ -4,13 +4,15 @@ import { useState } from "react";
 import { CBTParticipant, CBTPublishSetting } from "@/services/api";
 import ConfirmModal from "./ConfirmModal";
 
-export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, loadParticipants }: { items: CBTPublishSetting[]; saving: boolean; onToggle: (item: CBTPublishSetting, publish: boolean) => Promise<void> | void; onShuffle: (item: CBTPublishSetting, shuffleQuestions: boolean, shuffleOptions: boolean) => Promise<void> | void; loadParticipants: (examID: string) => Promise<CBTParticipant[]> }) {
+export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, loadParticipants, unlockParticipant }: { items: CBTPublishSetting[]; saving: boolean; onToggle: (item: CBTPublishSetting, publish: boolean) => Promise<void> | void; onShuffle: (item: CBTPublishSetting, shuffleQuestions: boolean, shuffleOptions: boolean) => Promise<void> | void; loadParticipants: (examID: string) => Promise<CBTParticipant[]>; unlockParticipant?: (examID: string, userExamID: string) => Promise<void> }) {
   const [confirmItem, setConfirmItem] = useState<{ item: CBTPublishSetting; publish: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedExam, setSelectedExam] = useState<CBTPublishSetting | null>(null);
   const [participants, setParticipants] = useState<CBTParticipant[]>([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [participantsError, setParticipantsError] = useState("");
+  const [unlocking, setUnlocking] = useState<string | null>(null);
+  const [unlockError, setUnlockError] = useState("");
 
   const openParticipants = async (item: CBTPublishSetting) => {
     if (selectedExam?.exam_id === item.exam_id) {
@@ -28,6 +30,20 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, l
       setParticipantsError(reason instanceof Error ? reason.message : "Gagal memuat daftar peserta.");
     } finally {
       setParticipantsLoading(false);
+    }
+  };
+
+  const runUnlock = async (participant: CBTParticipant) => {
+    if (!selectedExam || !unlockParticipant || unlocking) return;
+    setUnlocking(participant.user_exam_id);
+    setUnlockError("");
+    try {
+      await unlockParticipant(selectedExam.exam_id, participant.user_exam_id);
+      setParticipants((current) => current.map((item) => item.user_exam_id === participant.user_exam_id ? { ...item, screen_locked: false, lock_until: undefined } : item));
+    } catch (reason) {
+      setUnlockError(reason instanceof Error ? reason.message : "Gagal membuka blokir.");
+    } finally {
+      setUnlocking(null);
     }
   };
 
@@ -62,11 +78,14 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, l
       {selectedExam && <div className="card cbt-participants-card">
         <div className="section-heading"><div><p className="eyebrow">Peserta ujian</p><h3>{selectedExam.exam_title}</h3><p className="muted">Siswa yang sedang mengerjakan atau sudah menyelesaikan ujian CBT ini.</p></div><button type="button" className="button secondary small-btn" onClick={() => { setSelectedExam(null); setParticipants([]); }}>Tutup</button></div>
         {participantsError && <p className="error">{participantsError}</p>}
-        {participantsLoading ? <p className="empty-state">Memuat peserta...</p> : participants.length === 0 ? <p className="empty-state">Belum ada siswa yang mengikuti ujian ini.</p> : <div className="transactions-table-wrap"><table className="transactions-table"><thead><tr><th>Nama</th><th>Email</th><th>Jenjang</th><th>Soal</th><th>Status</th><th>Waktu</th></tr></thead><tbody>{participants.map((participant) => {
+        {unlockError && <p className="error">{unlockError}</p>}
+        {participantsLoading ? <p className="empty-state">Memuat peserta...</p> : participants.length === 0 ? <p className="empty-state">Belum ada siswa yang mengikuti ujian ini.</p> : <div className="transactions-table-wrap"><table className="transactions-table"><thead><tr><th>Nama</th><th>Email</th><th>Jenjang</th><th>Soal</th><th>Status</th><th>Layar</th><th>Waktu</th></tr></thead><tbody>{participants.map((participant) => {
           const ongoing = participant.status === "ongoing";
+          const locked = ongoing && Boolean(participant.screen_locked);
           const startedStr = participant.started_at ? new Date(participant.started_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
           const finishedStr = participant.finished_at ? new Date(participant.finished_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
-          return <tr key={participant.user_exam_id} className={ongoing ? "active-row" : ""}><td>{participant.name || "—"}</td><td>{participant.email}</td><td>{participant.school_level || "—"}</td><td>{ongoing ? `Soal ${participant.current_question}/${participant.total_questions}` : `${participant.total_questions} soal`}</td><td>{ongoing ? <span className="status-pill ongoing">Sedang mengerjakan</span> : <span>{<span className="status-pill paid">Selesai</span>} <small className="cbt-hint">· {participant.passed ? "Lulus" : "Belum lulus"}</small></span>}</td><td>{ongoing ? <span className="cbt-hint">Mulai {startedStr}</span> : finishedStr}</td></tr>;
+          const lockUntilStr = participant.lock_until ? new Date(participant.lock_until).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+          return <tr key={participant.user_exam_id} className={ongoing ? "active-row" : ""}><td>{participant.name || "—"}</td><td>{participant.email}</td><td>{participant.school_level || "—"}</td><td>{ongoing ? `Soal ${participant.current_question}/${participant.total_questions}` : `${participant.total_questions} soal`}</td><td>{ongoing ? <span className="status-pill ongoing">Sedang mengerjakan</span> : <span>{<span className="status-pill paid">Selesai</span>} <small className="cbt-hint">· {participant.passed ? "Lulus" : "Belum lulus"}</small></span>}</td><td>{!ongoing ? <span className="cbt-hint">—</span> : locked ? <div className="user-row-actions"><span className="status-pill rejected">Terkunci</span>{unlockParticipant && <button type="button" className="table-action" disabled={unlocking === participant.user_exam_id} onClick={() => void runUnlock(participant)}>{unlocking === participant.user_exam_id ? "Membuka..." : "Buka blokir"}</button>}<small className="cbt-hint">{participant.lock_count ?? 0}×{lockUntilStr ? ` · sampai ${lockUntilStr}` : ""}</small></div> : <span className="cbt-hint">Normal</span>}</td><td>{ongoing ? <span className="cbt-hint">Mulai {startedStr}</span> : finishedStr}</td></tr>;
         })}</tbody></table></div>}
       </div>}
       {confirmItem && <ConfirmModal title={confirmItem.publish ? "Publish pembahasan?" : "Tarik pembahasan?"} message={confirmItem.publish ? `Siswa yang sudah mengerjakan "${confirmItem.item.exam_title}" akan dapat melihat analitik dan pembahasan hasilnya.` : `Siswa yang sudah mengerjakan "${confirmItem.item.exam_title}" tidak akan bisa melihat analitik hasilnya lagi.`} busy={busy} confirmLabel={confirmItem.publish ? "Ya, publish" : "Ya, tarik"} onClose={() => !busy && setConfirmItem(null)} onConfirm={() => void runToggle()} />}

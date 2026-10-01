@@ -66,6 +66,8 @@ class ExamSession {
     required this.serverTime,
     required this.endsAt,
     required this.questions,
+    this.examType = '',
+    this.screenLockEnabled = false,
   });
   final String userExamId;
   final String examId;
@@ -73,16 +75,64 @@ class ExamSession {
   final DateTime serverTime;
   final DateTime endsAt;
   final List<ExamQuestion> questions;
+
+  /// Mode bank soal, misal "cbt" atau "sell". Kosong berarti server lama yang
+  /// tidak mengirim field ini.
+  final String examType;
+
+  /// Hanya true untuk mode CBT. Mode sell dan mode lain tidak dikunci.
+  final bool screenLockEnabled;
+
+  bool get isCBT => examType.toLowerCase() == 'cbt';
+
   factory ExamSession.fromJson(Map<String, dynamic> json) => ExamSession(
     userExamId: json['user_exam_id'] as String,
     examId: json['exam_id'] as String,
     title: json['title'] as String,
     serverTime: DateTime.parse(json['server_time'] as String).toUtc(),
     endsAt: DateTime.parse(json['ends_at'] as String).toUtc(),
+    examType: json['exam_type'] as String? ?? '',
+    screenLockEnabled: json['screen_lock_enabled'] as bool? ?? false,
     questions: (json['questions'] as List<dynamic>)
         .map((item) => ExamQuestion.fromJson(item as Map<String, dynamic>))
         .toList(growable: false),
   );
+}
+
+/// ScreenLockState adalah status layar kunci yang dikembalikan server saat
+/// siswa dilaporkan keluar aplikasi atau berpindah tab.
+class ScreenLockState {
+  const ScreenLockState({
+    this.locked = false,
+    this.enforced = false,
+    this.lockSeconds = 0,
+    this.violationCount = 0,
+    this.serverTime,
+    this.unlockUntil,
+  });
+
+  /// True berarti klien harus menampilkan layar kunci.
+  final bool locked;
+
+  /// False untuk mode non-CBT sehingga klien tidak pernah mengunci.
+  final bool enforced;
+  final int lockSeconds;
+  final int violationCount;
+  final DateTime? serverTime;
+  final DateTime? unlockUntil;
+
+  factory ScreenLockState.fromJson(Map<String, dynamic> json) {
+    final unlock = json['unlock_until'] as String?;
+    final server = json['server_time'] as String?;
+    return ScreenLockState(
+      locked: json['locked'] as bool? ?? false,
+      enforced: json['enforced'] as bool? ?? false,
+      lockSeconds: json['lock_seconds'] as int? ?? 0,
+      violationCount: json['violation_count'] as int? ?? 0,
+      serverTime: server == null ? null : DateTime.parse(server).toUtc(),
+      unlockUntil: unlock == null ? null : DateTime.parse(unlock).toUtc(),
+    );
+  }
 }
 
 class AnswerSyncResult {

@@ -45,6 +45,14 @@ func (s cbtStub) SubmitExam(context.Context, string, string) (*domain.SubmitExam
 }
 func (s cbtStub) AutoSubmitTask(context.Context) error { return nil }
 
+func (s cbtStub) ReportViolation(context.Context, string, string, string) (*domain.ReportViolationResponse, error) {
+	return &domain.ReportViolationResponse{}, nil
+}
+
+func (s cbtStub) GetScreenLock(context.Context, string, string) (*domain.ReportViolationResponse, error) {
+	return &domain.ReportViolationResponse{}, nil
+}
+
 func (s authStub) Register(ctx context.Context, input domain.RegisterRequest) (*domain.RegisterResponse, error) {
 	return s.register(ctx, input)
 }

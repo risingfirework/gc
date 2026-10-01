@@ -102,6 +102,39 @@ func (h *CBTHandler) SubmitExam(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (h *CBTHandler) ReportViolation(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "session invalid")
+		return
+	}
+	var input domain.ReportViolationRequest
+	if err := decodeJSON(w, r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	response, err := h.cbt.ReportViolation(r.Context(), claims.UserID, input.UserExamID, input.Event)
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *CBTHandler) GetScreenLock(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "session invalid")
+		return
+	}
+	response, err := h.cbt.GetScreenLock(r.Context(), claims.UserID, chi.URLParam(r, "id"))
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (h *CBTHandler) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrExamNotFound), errors.Is(err, domain.ErrUserExamNotFound), errors.Is(err, domain.ErrQuestionNotFound):
