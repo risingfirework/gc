@@ -31,6 +31,7 @@ type Package struct {
 	ValidityDays   int       `json:"validity_days"`
 	Status         string    `json:"status"`
 	Jenjang        string    `json:"jenjang"`
+	ExamType       string    `json:"exam_type"`
 	PublisherID    string    `json:"publisher_id,omitempty"`
 	PublisherEmail string    `json:"publisher_email,omitempty"`
 	ExamCount      int       `json:"exam_count"`

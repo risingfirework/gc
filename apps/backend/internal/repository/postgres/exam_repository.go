@@ -146,7 +146,7 @@ func (r *ExamRepository) LookupCBTByToken(ctx context.Context, token, userID str
 func (r *ExamRepository) ListExamsByPackage(ctx context.Context, userID, packageID string) ([]domain.ExamSummary, error) {
 	const query = `
 		SELECT e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method,
-		       e.publish_pembahasan,
+		       e.publish_pembahasan, p.exam_type,
 		       COALESCE(ur.user_exam_id::text,''), ur.total_score, ur.finished_at
 		FROM exams e
 		JOIN packages p ON p.id = e.package_id
@@ -158,11 +158,6 @@ func (r *ExamRepository) ListExamsByPackage(ctx context.Context, userID, package
 			LIMIT 1
 		) ur ON true
 		WHERE e.package_id = $1 AND e.status = 'active'
-		  AND (
-		      p.exam_type <> 'cbt'
-		      OR e.publish_pembahasan
-		      OR ur.user_exam_id IS NULL
-		  )
 		ORDER BY e.created_at, e.id`
 	rows, err := r.db.Query(ctx, query, packageID, userID)
 	if err != nil {
@@ -176,7 +171,7 @@ func (r *ExamRepository) ListExamsByPackage(ctx context.Context, userID, package
 		if err := rows.Scan(
 			&exam.ID, &exam.PackageID, &exam.Title, &exam.DurationMinutes,
 			&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod,
-			&exam.PublishPembahasan,
+			&exam.PublishPembahasan, &exam.ExamType,
 			&attemptID, &exam.TotalScore, &exam.FinishedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan package exam: %w", err)
@@ -539,6 +534,28 @@ func (r *ExamRepository) HasActivePackage(ctx context.Context, userID, packageID
 		return false, fmt.Errorf("check active package: %w", err)
 	}
 	return active, nil
+}
+
+// GrantPackage memberi lisensi paket kepada pengguna tanpa alur pembayaran.
+// Dipakai saat attempt CBT selesai/timeout supaya paket otomatis muncul di
+// "Paket belajar saya". Paket yang sudah dimiliki cukup diperpanjang bila
+// kedaluwarsa lebih awal.
+func (r *ExamRepository) GrantPackage(ctx context.Context, userID, packageID string, now time.Time) error {
+	const query = `
+		INSERT INTO user_packages (user_id, package_id, expired_at, status)
+		SELECT $1, p.id, $3::timestamptz + make_interval(days => GREATEST(p.validity_days, 1)), 'active'
+		FROM packages p WHERE p.id = $2
+		ON CONFLICT (user_id, package_id) DO UPDATE SET
+			status = 'active',
+			expired_at = GREATEST(user_packages.expired_at, EXCLUDED.expired_at)`
+	result, err := r.db.Exec(ctx, query, userID, packageID, now)
+	if err != nil {
+		return fmt.Errorf("grant package: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return domain.ErrPackageNotFound
+	}
+	return nil
 }
 
 var _ domain.ExamRepository = (*ExamRepository)(nil)

@@ -17,6 +17,7 @@ const (
 	testAttemptID   = "33333333-3333-4333-8333-333333333333"
 	testQuestionOne = "44444444-4444-4444-8444-444444444444"
 	testQuestionTwo = "55555555-5555-4555-8555-555555555555"
+	testPackageID   = "66666666-6666-4666-8666-666666666666"
 )
 
 type fakeExamRepository struct {
@@ -76,6 +77,20 @@ func (f *fakeExamRepository) SubmitUserExam(_ context.Context, _, _ string, answ
 }
 func (f *fakeExamRepository) ListExpiredUserExams(context.Context, int) ([]domain.ExpiredUserExam, error) {
 	return f.expired, nil
+}
+
+type fakeExamAccessRepository struct {
+	active  map[string]bool
+	granted []string
+}
+
+func (f *fakeExamAccessRepository) HasActivePackage(_ context.Context, userID, packageID string, _ time.Time) (bool, error) {
+	return f.active[userID+"|"+packageID], nil
+}
+
+func (f *fakeExamAccessRepository) GrantPackage(_ context.Context, _, packageID string, _ time.Time) error {
+	f.granted = append(f.granted, packageID)
+	return nil
 }
 
 type fakeCBTRepository struct {
@@ -218,5 +233,42 @@ func TestSubmitStoresEssayAsUngraded(t *testing.T) {
 	}
 	if response.TotalScore != 0 {
 		t.Fatalf("essay must not count in auto score, got %v", response.TotalScore)
+	}
+}
+
+func TestStartExamAllowsCBTWithTokenWithoutOwnership(t *testing.T) {
+	service, exams, _ := newCBTFixture()
+	exams.exam.PackageExamType = "cbt"
+	exams.exam.PackageCBTToken = "ABC123"
+	exams.exam.PackageID = testPackageID
+	service.access = &fakeExamAccessRepository{active: map[string]bool{}}
+
+	if _, err := service.StartExam(context.Background(), testUserID, testExamID, "ABC123"); err != nil {
+		t.Fatalf("CBT with a valid token must start without ownership, got %v", err)
+	}
+}
+
+func TestStartExamRejectsSellWithoutOwnership(t *testing.T) {
+	service, exams, _ := newCBTFixture()
+	exams.exam.PackageExamType = "sell"
+	exams.exam.PackageID = testPackageID
+	service.access = &fakeExamAccessRepository{active: map[string]bool{}}
+
+	if _, err := service.StartExam(context.Background(), testUserID, testExamID, ""); !errors.Is(err, domain.ErrExamForbidden) {
+		t.Fatalf("sell package without ownership must be forbidden, got %v", err)
+	}
+}
+
+func TestSubmitGrantsPackageAccess(t *testing.T) {
+	service, exams, _ := newCBTFixture()
+	exams.exam.PackageID = testPackageID
+	access := &fakeExamAccessRepository{active: map[string]bool{}}
+	service.access = access
+
+	if _, err := service.SubmitExam(context.Background(), testUserID, testAttemptID); err != nil {
+		t.Fatal(err)
+	}
+	if len(access.granted) != 1 || access.granted[0] != testPackageID {
+		t.Fatalf("package access was not granted after submit: %v", access.granted)
 	}
 }

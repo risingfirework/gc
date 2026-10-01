@@ -40,12 +40,12 @@ func (r *PaymentRepository) InsertReferral(ctx context.Context, affiliateID, ref
 }
 
 func (r *PaymentRepository) ListPackages(ctx context.Context, limit, offset int) ([]domain.Package, error) {
-	const query = `SELECT p.id, p.title, p.description, p.price, p.validity_days, p.status, COALESCE(p.kode,''), p.jenjang, COALESCE(p.publisher_id::text,''), COALESCE(pu.email,''), p.created_at,
+	const query = `SELECT p.id, p.title, p.description, p.price, p.validity_days, p.status, COALESCE(p.kode,''), p.jenjang, p.exam_type, COALESCE(p.publisher_id::text,''), COALESCE(pu.email,''), p.created_at,
 		(SELECT COUNT(*) FROM exams e WHERE e.package_id = p.id AND e.status = 'active'),
 		(SELECT COUNT(*) FROM questions q JOIN exams e ON e.id = q.exam_id WHERE e.package_id = p.id AND e.status = 'active'),
 		(SELECT COUNT(*) FROM transactions t WHERE t.package_id=p.id AND t.payment_status='paid'),
 		(SELECT COUNT(*) FROM package_views pv WHERE pv.package_id=p.id)
-		FROM packages p LEFT JOIN users pu ON pu.id=p.publisher_id WHERE p.status = 'active' ORDER BY p.created_at DESC, p.id LIMIT $1 OFFSET $2`
+		FROM packages p LEFT JOIN users pu ON pu.id=p.publisher_id WHERE p.status = 'active' AND p.exam_type <> 'cbt' ORDER BY p.created_at DESC, p.id LIMIT $1 OFFSET $2`
 	rows, err := r.db.Query(ctx, query, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("list packages: %w", err)
@@ -54,7 +54,7 @@ func (r *PaymentRepository) ListPackages(ctx context.Context, limit, offset int)
 	items := make([]domain.Package, 0, limit)
 	for rows.Next() {
 		var item domain.Package
-		if err := rows.Scan(&item.ID, &item.Title, &item.Description, &item.Price, &item.ValidityDays, &item.Status, &item.Kode, &item.Jenjang, &item.PublisherID, &item.PublisherEmail, &item.CreatedAt, &item.ExamCount, &item.QuestionCount, &item.SalesCount, &item.ViewCount); err != nil {
+		if err := rows.Scan(&item.ID, &item.Title, &item.Description, &item.Price, &item.ValidityDays, &item.Status, &item.Kode, &item.Jenjang, &item.ExamType, &item.PublisherID, &item.PublisherEmail, &item.CreatedAt, &item.ExamCount, &item.QuestionCount, &item.SalesCount, &item.ViewCount); err != nil {
 			return nil, fmt.Errorf("scan package: %w", err)
 		}
 		items = append(items, item)
@@ -84,9 +84,9 @@ func (r *PaymentRepository) TrackPackageView(ctx context.Context, packageID, vis
 }
 
 func (r *PaymentRepository) GetPackage(ctx context.Context, packageID string) (*domain.Package, error) {
-	const query = `SELECT p.id, p.title, p.description, p.price, p.validity_days, p.status, COALESCE(p.kode,''), p.jenjang, COALESCE(p.publisher_id::text,''), COALESCE(pu.email,''), p.created_at FROM packages p LEFT JOIN users pu ON pu.id=p.publisher_id WHERE p.id = $1`
+	const query = `SELECT p.id, p.title, p.description, p.price, p.validity_days, p.status, COALESCE(p.kode,''), p.jenjang, p.exam_type, COALESCE(p.publisher_id::text,''), COALESCE(pu.email,''), p.created_at FROM packages p LEFT JOIN users pu ON pu.id=p.publisher_id WHERE p.id = $1`
 	var item domain.Package
-	err := r.db.QueryRow(ctx, query, packageID).Scan(&item.ID, &item.Title, &item.Description, &item.Price, &item.ValidityDays, &item.Status, &item.Kode, &item.Jenjang, &item.PublisherID, &item.PublisherEmail, &item.CreatedAt)
+	err := r.db.QueryRow(ctx, query, packageID).Scan(&item.ID, &item.Title, &item.Description, &item.Price, &item.ValidityDays, &item.Status, &item.Kode, &item.Jenjang, &item.ExamType, &item.PublisherID, &item.PublisherEmail, &item.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrPackageNotFound
 	}
@@ -112,20 +112,6 @@ SELECT p.id, p.title, p.description, p.price, p.validity_days, p.status, COALESC
 			ORDER BY tr.paid_at DESC LIMIT 1
 		) t ON true
 		WHERE up.user_id = $1 AND up.status = 'active' AND up.expired_at > NOW()
-		  AND (
-		      p.exam_type <> 'cbt'
-		      OR EXISTS (
-		          SELECT 1 FROM exams e2
-		          WHERE e2.package_id = p.id AND e2.status = 'active'
-		            AND (
-		                e2.publish_pembahasan
-		                OR NOT EXISTS (
-		                    SELECT 1 FROM user_exams ue2
-		                    WHERE ue2.exam_id = e2.id AND ue2.user_id = $1 AND ue2.status = 'submitted'
-		                )
-		            )
-		      )
-		  )
 		ORDER BY up.expired_at ASC, p.created_at DESC`
 	rows, err := r.db.Query(ctx, query, userID)
 	if err != nil {
@@ -160,12 +146,12 @@ func (r *PaymentRepository) ClaimFreePackage(ctx context.Context, userID, packag
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	const getQuery = `SELECT p.id, p.title, p.description, p.price, p.validity_days, p.status, COALESCE(p.kode,''), p.jenjang,
+	const getQuery = `SELECT p.id, p.title, p.description, p.price, p.validity_days, p.status, COALESCE(p.kode,''), p.jenjang, p.exam_type,
 		COALESCE(p.publisher_id::text,''), COALESCE(pu.email,''), p.created_at
 		FROM packages p LEFT JOIN users pu ON pu.id=p.publisher_id WHERE p.id = $1`
 	var item domain.Package
 	if err := tx.QueryRow(ctx, getQuery, packageID).Scan(&item.ID, &item.Title, &item.Description, &item.Price, &item.ValidityDays,
-		&item.Status, &item.Kode, &item.Jenjang, &item.PublisherID, &item.PublisherEmail, &item.CreatedAt); err != nil {
+		&item.Status, &item.Kode, &item.Jenjang, &item.ExamType, &item.PublisherID, &item.PublisherEmail, &item.CreatedAt); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, domain.ErrPackageNotFound
 		}

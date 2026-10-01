@@ -66,7 +66,9 @@ func (s *CBTService) StartExam(ctx context.Context, userID, examID, token string
 		return nil, err
 	}
 	now := s.now().UTC()
-	if s.access != nil {
+	// Mode CBT cukup bermodal token rahasia: siswa langsung bisa mengerjakan
+	// tanpa harus claim paket. Mode sell tetap wajib memiliki paket aktif.
+	if s.access != nil && !strings.EqualFold(strings.TrimSpace(exam.PackageExamType), "cbt") {
 		allowed, accessErr := s.access.HasActivePackage(ctx, userID, exam.PackageID, now)
 		if accessErr != nil {
 			return nil, accessErr
@@ -283,6 +285,7 @@ func (s *CBTService) SubmitExam(ctx context.Context, userID, userExamID string) 
 		if err := s.cache.DeleteState(ctx, userExamID); err != nil {
 			s.logger.WarnContext(ctx, "failed to clean state for an existing submission", "user_exam_id", userExamID, "error", err)
 		}
+		s.grantPackageAccess(ctx, userID, exam.PackageID)
 		return submitResponse(attempt, exam), nil
 	}
 	_, questions, err := s.exams.GetExamWithQuestions(ctx, exam.ID)
@@ -349,7 +352,20 @@ func (s *CBTService) SubmitExam(ctx context.Context, userID, userExamID string) 
 		// The database commit is authoritative. Redis keys are bounded by TTL and may be retried safely.
 		s.logger.WarnContext(ctx, "submitted exam but failed to delete Redis state", "user_exam_id", userExamID, "error", err)
 	}
+	s.grantPackageAccess(ctx, userID, exam.PackageID)
 	return submitResponse(finished, exam), nil
+}
+
+// grantPackageAccess memastikan paket yang baru diselesaikan muncul di "Paket
+// belajar saya". Kegagalan di sini tidak boleh membatalkan submission yang
+// sudah ter-commit, jadi hanya dicatat sebagai peringatan.
+func (s *CBTService) grantPackageAccess(ctx context.Context, userID, packageID string) {
+	if s.access == nil || strings.TrimSpace(packageID) == "" {
+		return
+	}
+	if err := s.access.GrantPackage(ctx, userID, packageID, s.now().UTC()); err != nil {
+		s.logger.WarnContext(ctx, "failed to grant package access after submit", "package_id", packageID, "error", err)
+	}
 }
 
 func (s *CBTService) AutoSubmitTask(ctx context.Context) error {

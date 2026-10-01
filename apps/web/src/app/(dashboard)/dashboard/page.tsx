@@ -50,8 +50,12 @@ function OwnedPackageGrid({ items, examsByPackage, onStart, onViewResult }: { it
     return <article className="card package-card owned" key={item.id}><span className="discount">DIMILIKI</span><h3>{item.title}</h3><p>{item.description}</p><div className="package-meta"><span>Berlaku hingga {new Date(item.expired_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</span><span>Dibeli {new Date(item.paid_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</span></div>{exams && exams.length > 0 ? <div className="package-exams">{exams.map((exam) => <div className="exam-row" key={exam.id}><div className="exam-info"><strong>{exam.title}</strong><span>{exam.total_questions} soal · {exam.duration_minutes} menit</span></div>{exam.user_exam_id ? (
   <div>
     <span className="exam-score">Nilai: {exam.total_score?.toFixed(0) ?? "—"} · {(exam.total_score ?? 0) >= exam.passing_score ? "Lulus" : "Belum lulus"} · {exam.finished_at ? new Date(exam.finished_at).toLocaleDateString("id-ID") : "—"}</span>
-    <button className="button secondary" onClick={() => onViewResult(exam.user_exam_id!)}>Lihat analitik</button>
+    {exam.exam_type === "cbt" && !exam.publish_pembahasan
+      ? <span className="exam-score">Menunggu pembahasan dipublikasikan</span>
+      : <button className="button secondary" onClick={() => onViewResult(exam.user_exam_id!)}>Lihat analitik</button>}
   </div>
+) : exam.exam_type === "cbt" ? (
+  <span className="exam-score">Masukkan token di menu Ujian CBT</span>
 ) : (
   <button className="button" onClick={() => onStart(exam.id)}>Mulai ujian</button>
 )}</div>)}</div> : <p className="empty-state">{exams === undefined ? "Memuat ujian..." : "Belum ada ujian di paket ini."}</p>}</article>;
@@ -116,7 +120,7 @@ function DashboardContent() {
   const [cbtToken, setCbtToken] = useState("");
   const [cbtResults, setCbtResults] = useState<CBTLookupPackage[] | null>(null);
   const [cbtSearching, setCbtSearching] = useState(false);
-  const catalogPackages = user ? packages.filter((item) => item.jenjang === user.school_level) : [];
+  const catalogPackages = user ? packages.filter((item) => item.jenjang === user.school_level && item.exam_type !== "cbt") : [];
 
   useEffect(() => {
     if (!tokenStore.hasToken()) {

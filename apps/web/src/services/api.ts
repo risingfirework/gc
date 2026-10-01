@@ -94,7 +94,7 @@ export type ExamStartResponse = { user_exam_id: string; exam_id: string; title: 
 export type SyncAnswerResponse = { saved: boolean; synced_at: string; remaining_seconds: number };
 export type ScreenLockResponse = { user_exam_id: string; locked: boolean; enforced: boolean; lock_seconds: number; unlock_until?: string; violation_count: number; last_violation_at?: string; server_time: string };
 export type SubmitExamResponse = { user_exam_id: string; exam_id: string; status: "submitted"; finished_at: string; total_score: number; passing_score: number; passed: boolean };
-export type Package = { id: string; title: string; kode: string; description: string; price: number; validity_days: number; status: Status; jenjang: string; publisher_email?: string; sales_count:number; view_count:number; exam_count:number; question_count:number; created_at: string };
+export type Package = { id: string; title: string; kode: string; description: string; price: number; validity_days: number; status: Status; jenjang: string; exam_type: "sell" | "cbt"; publisher_email?: string; sales_count:number; view_count:number; exam_count:number; question_count:number; created_at: string };
 export type HeroSlide = { id:string; image_data_url:string; title:string };
 export type YouTubeVideo = { id:string; title:string; url:string };
 export type SiteSettings = { platform_name:string; platform_tagline:string; logo_data_url:string; favicon_data_url:string; support_email:string; whatsapp:string; instagram_url:string; youtube_url:string; youtube_videos:YouTubeVideo[]; hero_interval_ms:number; catalog_interval_ms:number; default_package_validity_days:number; default_exam_duration_minutes:number; default_exam_total_questions:number; default_passing_score:number; hero_slides:HeroSlide[]; updated_at?:string };
@@ -107,6 +107,8 @@ export type PackageExam = {
   total_questions: number;
   passing_score: number;
   scoring_method: string;
+  publish_pembahasan: boolean;
+  exam_type: "sell" | "cbt";
   user_exam_id?: string;
   total_score?: number;
   finished_at?: string;

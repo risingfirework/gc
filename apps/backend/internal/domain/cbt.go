@@ -184,6 +184,7 @@ type ExamSummary struct {
 	PassingScore      float64    `json:"passing_score"`
 	ScoringMethod     string     `json:"scoring_method"`
 	PublishPembahasan bool       `json:"publish_pembahasan"`
+	ExamType          string     `json:"exam_type"`
 	UserExamID        string     `json:"user_exam_id,omitempty"`
 	TotalScore        *float64   `json:"total_score,omitempty"`
 	FinishedAt        *time.Time `json:"finished_at,omitempty"`
@@ -203,6 +204,10 @@ type ExamRepository interface {
 
 type ExamAccessRepository interface {
 	HasActivePackage(ctx context.Context, userID, packageID string, now time.Time) (bool, error)
+	// GrantPackage memberikan (atau memperpanjang) akses paket untuk pengguna.
+	// Dipakai mode CBT agar attempt yang sudah selesai/timeout tetap muncul di
+	// "Paket belajar saya" meski siswa tidak pernah melakukan claim.
+	GrantPackage(ctx context.Context, userID, packageID string, now time.Time) error
 }
 
 // ExamShuffleRepository menyediakan permutasi acak soal/opsi yang stabil per
