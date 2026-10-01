@@ -315,6 +315,9 @@ func TestIntegrationExamLifecycleAndShuffle(t *testing.T) {
 	if gotAttempt.ID != attempt.ID || exam.ID != examID {
 		t.Fatalf("get user exam mismatch: %+v %+v", gotAttempt, exam)
 	}
+	if exam.PackageExamType != "cbt" {
+		t.Fatalf("GetUserExam must load package exam_type, got %q", exam.PackageExamType)
+	}
 	_, questions, err := repos.GetExamWithQuestions(ctx, examID)
 	if err != nil {
 		t.Fatalf("get exam with questions: %v", err)

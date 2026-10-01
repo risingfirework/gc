@@ -209,9 +209,11 @@ func (r *ExamRepository) StartOrGetUserExam(ctx context.Context, userID, examID 
 func (r *ExamRepository) GetUserExam(ctx context.Context, userExamID, userID string) (*domain.UserExam, *domain.Exam, error) {
 	const query = `
 		SELECT ue.id, ue.user_id, ue.exam_id, ue.status, ue.started_at, ue.finished_at, ue.total_score,
-		       e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method, e.created_at
+		       e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method, e.created_at,
+		       p.exam_type
 		FROM user_exams ue
 		JOIN exams e ON e.id = ue.exam_id
+		JOIN packages p ON p.id = e.package_id
 		WHERE ue.id = $1 AND ue.user_id = $2`
 	var attempt domain.UserExam
 	var exam domain.Exam
@@ -220,6 +222,7 @@ func (r *ExamRepository) GetUserExam(ctx context.Context, userExamID, userID str
 		&attempt.StartedAt, &attempt.FinishedAt, &attempt.TotalScore,
 		&exam.ID, &exam.PackageID, &exam.Title, &exam.DurationMinutes,
 		&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod, &exam.CreatedAt,
+		&exam.PackageExamType,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, domain.ErrUserExamNotFound
