@@ -35,24 +35,24 @@ type AnswerReview struct {
 }
 
 type ExamResultResponse struct {
-	UserExamID     string          `json:"user_exam_id"`
-	ExamID         string          `json:"exam_id"`
-	Title          string          `json:"title"`
-	Status         string          `json:"status"`
-	ScoringMethod  string          `json:"scoring_method"`
-	StartedAt      time.Time       `json:"started_at"`
-	FinishedAt     time.Time       `json:"finished_at"`
-	TotalScore     float64         `json:"total_score"`
-	PassingScore   float64         `json:"passing_score"`
-	Passed         bool            `json:"passed"`
+	UserExamID    string    `json:"user_exam_id"`
+	ExamID        string    `json:"exam_id"`
+	Title         string    `json:"title"`
+	Status        string    `json:"status"`
+	ScoringMethod string    `json:"scoring_method"`
+	StartedAt     time.Time `json:"started_at"`
+	FinishedAt    time.Time `json:"finished_at"`
+	TotalScore    float64   `json:"total_score"`
+	PassingScore  float64   `json:"passing_score"`
+	Passed        bool      `json:"passed"`
 	// ReviewAvailable false berarti rincian jawaban/pembahasan belum dirilis;
 	// nilai ringkas tetap boleh ditampilkan.
 	ReviewAvailable bool            `json:"review_available"`
 	CorrectAnswers  int             `json:"correct_answers"`
-	WrongAnswers   int             `json:"wrong_answers"`
-	Unanswered     int             `json:"unanswered"`
-	Subjects       []SubjectResult `json:"subjects"`
-	Review         []AnswerReview  `json:"review"`
+	WrongAnswers    int             `json:"wrong_answers"`
+	Unanswered      int             `json:"unanswered"`
+	Subjects        []SubjectResult `json:"subjects"`
+	Review          []AnswerReview  `json:"review"`
 }
 
 type GlobalRankingEntry struct {
