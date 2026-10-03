@@ -45,7 +45,10 @@ type ExamResultResponse struct {
 	TotalScore     float64         `json:"total_score"`
 	PassingScore   float64         `json:"passing_score"`
 	Passed         bool            `json:"passed"`
-	CorrectAnswers int             `json:"correct_answers"`
+	// ReviewAvailable false berarti rincian jawaban/pembahasan belum dirilis;
+	// nilai ringkas tetap boleh ditampilkan.
+	ReviewAvailable bool            `json:"review_available"`
+	CorrectAnswers  int             `json:"correct_answers"`
 	WrongAnswers   int             `json:"wrong_answers"`
 	Unanswered     int             `json:"unanswered"`
 	Subjects       []SubjectResult `json:"subjects"`

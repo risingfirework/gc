@@ -49,10 +49,12 @@ function OwnedPackageGrid({ items, examsByPackage, onStart, onViewResult }: { it
     const exams = examsByPackage[item.id];
     return <article className="card package-card owned" key={item.id}><span className="discount">DIMILIKI</span><h3>{item.title}</h3><p>{item.description}</p><div className="package-meta"><span>Berlaku hingga {new Date(item.expired_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</span><span>Dibeli {new Date(item.paid_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</span></div>{exams && exams.length > 0 ? <div className="package-exams">{exams.map((exam) => <div className="exam-row" key={exam.id}><div className="exam-info"><strong>{exam.title}</strong><span>{exam.total_questions} soal · {exam.duration_minutes} menit</span></div>{exam.user_exam_id ? (
   <div>
-    <span className="exam-score">Nilai: {exam.total_score?.toFixed(0) ?? "—"} · {(exam.total_score ?? 0) >= exam.passing_score ? "Lulus" : "Belum lulus"} · {exam.finished_at ? new Date(exam.finished_at).toLocaleDateString("id-ID") : "—"}</span>
-    {exam.exam_type === "cbt" && !exam.publish_pembahasan
-      ? <span className="exam-score">Menunggu pembahasan dipublikasikan</span>
-      : <button className="button secondary" onClick={() => onViewResult(exam.user_exam_id!)}>Lihat analitik</button>}
+    {exam.score_released === false
+      ? <span className="exam-score">Menunggu nilai dirilis</span>
+      : <>
+        <span className="exam-score">Nilai: {exam.total_score?.toFixed(0) ?? "—"} · {(exam.total_score ?? 0) >= exam.passing_score ? "Lulus" : "Belum lulus"} · {exam.finished_at ? new Date(exam.finished_at).toLocaleDateString("id-ID") : "—"}</span>
+        <button className="button secondary" onClick={() => onViewResult(exam.user_exam_id!)}>{exam.review_available === false ? "Lihat nilai" : "Lihat analitik"}</button>
+      </>}
   </div>
 ) : exam.exam_type === "cbt" ? (
   <span className="exam-score">Masukkan token di menu Ujian CBT</span>
@@ -85,9 +87,12 @@ function CBTResultPanel({ packages, onSelect, onReview }: { packages: CBTLookupP
     <span className="discount">PAKET CBT</span><h3>{item.title}</h3><p>{item.kode} · {item.jenjang}{item.price === 0 ? " · Gratis" : ""}</p>
     {item.exams.length === 0
       ? <p className="empty-state">Belum ada ujian aktif di paket ini.</p>
-      : <div className="package-exams">{item.exams.map((exam) => <div className="exam-row" key={exam.exam_id}><div className="exam-info"><strong>{exam.title}</strong><span>{exam.total_questions} soal · {exam.duration_minutes} menit · Syarat lulus {exam.passing_score.toFixed(0)}</span></div>{exam.submitted ? exam.publish_pembahasan
-        ? (exam.user_exam_id ? <button className="button secondary" onClick={() => onReview(exam.user_exam_id!)}>Lihat analitik</button> : <span className="exam-score">Sudah dikerjakan</span>)
-        : <span className="exam-score">Sudah dikerjakan</span>
+      : <div className="package-exams">{item.exams.map((exam) => <div className="exam-row" key={exam.exam_id}><div className="exam-info"><strong>{exam.title}</strong><span>{exam.total_questions} soal · {exam.duration_minutes} menit · Syarat lulus {exam.passing_score.toFixed(0)}</span></div>{exam.submitted
+        ? exam.score_released === false
+          ? <span className="exam-score">Menunggu nilai dirilis</span>
+          : exam.user_exam_id
+            ? <button className="button secondary" onClick={() => onReview(exam.user_exam_id!)}>{exam.review_available === false ? "Lihat nilai" : "Lihat analitik"}</button>
+            : <span className="exam-score">Sudah dikerjakan</span>
         : <button className="button" onClick={() => onSelect(exam.exam_id)}>Mulai ujian</button>}</div>)}</div>}
   </article>)}</div>;
 }

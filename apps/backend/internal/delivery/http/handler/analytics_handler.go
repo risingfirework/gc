@@ -36,6 +36,8 @@ func (h *AnalyticsHandler) Result(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, err.Error())
 		case errors.Is(err, domain.ErrPembahasanNotPublished):
 			writeError(w, http.StatusForbidden, err.Error())
+		case errors.Is(err, domain.ErrScoreNotReleased):
+			writeError(w, http.StatusForbidden, err.Error())
 		default:
 			h.logger.ErrorContext(r.Context(), "get exam result", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal server error")

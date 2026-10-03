@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CBTParticipant, CBTPublishSetting } from "@/services/api";
 import ConfirmModal from "./ConfirmModal";
 
-export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, onScreenLock, loadParticipants, unlockParticipant, resetParticipant }: { items: CBTPublishSetting[]; saving: boolean; onToggle: (item: CBTPublishSetting, publish: boolean) => Promise<void> | void; onShuffle: (item: CBTPublishSetting, shuffleQuestions: boolean, shuffleOptions: boolean) => Promise<void> | void; onScreenLock: (item: CBTPublishSetting, screenLockEnabled: boolean, screenLockSeconds: number) => Promise<void> | void; loadParticipants: (examID: string) => Promise<CBTParticipant[]>; unlockParticipant?: (examID: string, userExamID: string) => Promise<void>; resetParticipant?: (examID: string, userExamID: string) => Promise<void> }) {
+export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, onScreenLock, onScoreRelease, loadParticipants, unlockParticipant, resetParticipant }: { items: CBTPublishSetting[]; saving: boolean; onToggle: (item: CBTPublishSetting, publish: boolean) => Promise<void> | void; onShuffle: (item: CBTPublishSetting, shuffleQuestions: boolean, shuffleOptions: boolean) => Promise<void> | void; onScreenLock: (item: CBTPublishSetting, screenLockEnabled: boolean, screenLockSeconds: number) => Promise<void> | void; onScoreRelease: (item: CBTPublishSetting, scoreRelease: string) => Promise<void> | void; loadParticipants: (examID: string) => Promise<CBTParticipant[]>; unlockParticipant?: (examID: string, userExamID: string) => Promise<void>; resetParticipant?: (examID: string, userExamID: string) => Promise<void> }) {
   const [confirmItem, setConfirmItem] = useState<{ item: CBTPublishSetting; publish: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedExam, setSelectedExam] = useState<CBTPublishSetting | null>(null);
@@ -80,13 +80,14 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, o
       <div className="card cbt-settings-card">
         {items.length === 0
           ? <p className="empty-state">Belum ada paket ujian CBT.</p>
-          : <div className="cbt-settings-table-wrap"><table className="transactions-table cbt-settings-table"><thead><tr><th>Ujian</th><th>Pembuat</th><th>Peserta</th><th>Pengacakan</th><th>Blokir layar</th><th>Pembahasan</th><th></th></tr></thead><tbody>
+          : <div className="cbt-settings-table-wrap"><table className="transactions-table cbt-settings-table"><thead><tr><th>Ujian</th><th>Pembuat</th><th>Peserta</th><th>Pengacakan</th><th>Blokir layar</th><th>Rilis nilai</th><th>Pembahasan</th><th></th></tr></thead><tbody>
             {items.map((item) => <tr key={item.exam_id} className={selectedExam?.exam_id === item.exam_id ? "active-row" : ""}>
               <td><button type="button" className="cbt-settings-exam-link" onClick={() => void openParticipants(item)}>{item.exam_title}</button><small>{item.package_title} · {item.package_kode} · {item.jenjang} · {item.total_questions} soal · {item.duration_minutes} menit · Syarat lulus {item.passing_score.toFixed(0)}</small></td>
               <td>{item.publisher_email || "Platform"}</td>
               <td>{item.participated} siswa</td>
               <td><ShuffleSettingsEditor item={item} saving={saving} onShuffle={onShuffle}/></td>
               <td><ScreenLockSettingsEditor item={item} saving={saving} onScreenLock={onScreenLock}/></td>
+              <td><ScoreReleaseSettingsEditor item={item} saving={saving} onScoreRelease={onScoreRelease}/></td>
               <td><span className={`status-pill ${item.publish_pembahasan ? "paid" : "pending"}`}>{item.publish_pembahasan ? "Dipublish" : "Tidak dipublish"}</span></td>
               <td><div className="user-row-actions"><button type="button" className="table-action" onClick={() => void openParticipants(item)}>{selectedExam?.exam_id === item.exam_id ? "Tutup peserta" : "Lihat peserta"}</button>{(item.participated > 0) && <button type="button" className="button small-btn" disabled={saving} onClick={() => setConfirmItem({ item, publish: !item.publish_pembahasan })}>{item.publish_pembahasan ? "Tarik pembahasan" : "Publish pembahasan"}</button>}</div></td>
             </tr>)}
@@ -152,5 +153,28 @@ function ScreenLockSettingsEditor({ item, saving, onScreenLock }: { item: CBTPub
     <label className="cbt-hint" htmlFor={`screen-lock-seconds-${item.exam_id}`}>Durasi kunci (detik)</label>
     <input id={`screen-lock-seconds-${item.exam_id}`} type="number" min={1} max={300} className="cbt-lock-seconds" disabled={busy || !enabled} value={seconds} onChange={(event) => setSeconds(Math.max(1, Math.min(300, Number(event.target.value) || 1)))} />
     <button type="button" className="button small-btn" disabled={busy || !changed || seconds < 1 || seconds > 300} onClick={() => void save()}>{busy ? "Menyimpan..." : "Simpan blokir"}</button>
+  </div>;
+}
+
+function ScoreReleaseSettingsEditor({ item, saving, onScoreRelease }: { item: CBTPublishSetting; saving: boolean; onScoreRelease: (item: CBTPublishSetting, scoreRelease: string) => Promise<void> | void }) {
+  const [release, setRelease] = useState(item.score_release || "after_finish");
+  const [localBusy, setLocalBusy] = useState(false);
+  const changed = release !== (item.score_release || "after_finish");
+  const busy = saving || localBusy;
+  const save = async () => {
+    setLocalBusy(true);
+    try {
+      await onScoreRelease(item, release);
+    } finally {
+      setLocalBusy(false);
+    }
+  };
+  return <div className="cbt-shuffle-cell">
+    <label className="cbt-hint" htmlFor={`score-release-${item.exam_id}`}>Waktu rilis</label>
+    <select id={`score-release-${item.exam_id}`} className="cbt-score-release" disabled={busy} value={release} onChange={(event) => setRelease(event.target.value)}>
+      <option value="after_finish">Setelah selesai</option>
+      <option value="with_pembahasan">Bareng pembahasan</option>
+    </select>
+    <button type="button" className="button small-btn" disabled={busy || !changed} onClick={() => void save()}>{busy ? "Menyimpan..." : "Simpan rilis"}</button>
   </div>;
 }

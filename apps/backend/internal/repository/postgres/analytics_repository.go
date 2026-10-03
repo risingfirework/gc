@@ -22,13 +22,14 @@ func NewAnalyticsRepository(db *pgxpool.Pool) *AnalyticsRepository {
 func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExamID string) (*domain.ExamResultResponse, error) {
 	const headerQuery = `
 		SELECT ue.id, ue.exam_id, e.title, ue.status, e.scoring_method, ue.started_at, ue.finished_at, ue.total_score, e.passing_score,
-		       p.exam_type, e.publish_pembahasan
+		       p.exam_type, e.publish_pembahasan, e.score_release
 		FROM user_exams ue JOIN exams e ON e.id = ue.exam_id JOIN packages p ON p.id = e.package_id
 		WHERE ue.id = $1 AND ue.user_id = $2`
 	var result domain.ExamResultResponse
 	var examType string
 	var publishPembahasan bool
-	err := r.db.QueryRow(ctx, headerQuery, userExamID, userID).Scan(&result.UserExamID, &result.ExamID, &result.Title, &result.Status, &result.ScoringMethod, &result.StartedAt, &result.FinishedAt, &result.TotalScore, &result.PassingScore, &examType, &publishPembahasan)
+	var scoreRelease string
+	err := r.db.QueryRow(ctx, headerQuery, userExamID, userID).Scan(&result.UserExamID, &result.ExamID, &result.Title, &result.Status, &result.ScoringMethod, &result.StartedAt, &result.FinishedAt, &result.TotalScore, &result.PassingScore, &examType, &publishPembahasan, &scoreRelease)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrUserExamNotFound
 	}
@@ -38,9 +39,14 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 	if result.Status != "submitted" {
 		return nil, domain.ErrExamStillRunning
 	}
-	if examType == "cbt" && !publishPembahasan {
-		return nil, domain.ErrPembahasanNotPublished
+	// Untuk mode CBT, rilis nilai bisa lebih awal dari pembahasan. Rincian
+	// jawaban/pembahasan tetap menunggu publish_pembahasan.
+	scoreReleased := examType != "cbt" || publishPembahasan || scoreRelease == "after_finish"
+	reviewAvailable := examType != "cbt" || publishPembahasan
+	if !scoreReleased {
+		return nil, domain.ErrScoreNotReleased
 	}
+	result.ReviewAvailable = reviewAvailable
 	result.Passed = result.TotalScore >= result.PassingScore
 
 	const detailQuery = `
@@ -95,7 +101,9 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 			stats.wrong++
 			result.WrongAnswers++
 		}
-		result.Review = append(result.Review, review)
+		if reviewAvailable {
+			result.Review = append(result.Review, review)
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate result details: %w", err)
@@ -108,6 +116,9 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 			score = math.Round(stats.correctWeight/stats.totalWeight*10000) / 100
 		}
 		result.Subjects = append(result.Subjects, domain.SubjectResult{SubjectName: name, CorrectAnswers: stats.correct, WrongAnswers: stats.wrong, Unanswered: stats.unanswered, TotalQuestions: stats.total, Score: score})
+	}
+	if result.Review == nil {
+		result.Review = []domain.AnswerReview{}
 	}
 	return &result, nil
 }

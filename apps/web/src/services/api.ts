@@ -108,6 +108,9 @@ export type PackageExam = {
   passing_score: number;
   scoring_method: string;
   publish_pembahasan: boolean;
+  score_release?: string;
+  score_released?: boolean;
+  review_available?: boolean;
   exam_type: "sell" | "cbt";
   user_exam_id?: string;
   total_score?: number;
@@ -121,7 +124,7 @@ export type CheckoutResponse = { transaction: Transaction; payment_url: string; 
 export type UserPricingPolicy = { discount_percent: number; account_active: boolean };
 export type SubjectResult = { subject_name: string; correct_answers: number; wrong_answers: number; unanswered: number; total_questions: number; score: number };
 export type AnswerReview = { question_id: string; subject_name: string; content_text: string; question_type: "single_choice" | "multiple_choice" | "category" | "essay"; presentation_type: "single" | "group"; group_code?: string; stimulus_text?: string; question_image_url?: string; stimulus_image_url?: string; category_labels?: string[]; options: QuestionOption[]; selected_option?: string; correct_answer: string; is_correct: boolean; score_weight: number; explanation_text: string; explanation_video_url?: string };
-export type ExamResult = { user_exam_id: string; exam_id: string; title: string; status: "submitted"; scoring_method: "standard" | "irt_2pl"; started_at: string; finished_at: string; total_score: number; passing_score: number; passed: boolean; correct_answers: number; wrong_answers: number; unanswered: number; subjects: SubjectResult[]; review: AnswerReview[] };
+export type ExamResult = { user_exam_id: string; exam_id: string; title: string; status: "submitted"; scoring_method: "standard" | "irt_2pl"; started_at: string; finished_at: string; total_score: number; passing_score: number; passed: boolean; correct_answers: number; wrong_answers: number; unanswered: number; subjects: SubjectResult[]; review_available: boolean; review: AnswerReview[] };
 export type GlobalRanking = { rank: number; display_name: string; school_level: User["school_level"]; score: number; best_percentile: number; duration_seconds: number; finished_at: string; is_current_user: boolean; exams_done: number };
 export type AdminOverview = { total_users: number; total_students: number; total_packages: number; total_exams: number; total_transactions: number; paid_transactions: number };
 export type FinanceSettings = { platform_commission_percent:number; default_discount_percent:number; tax_percent:number; minimum_payout:number; payout_cycle:"weekly"|"monthly"|"manual"; auto_payout:boolean; teacher_upload_fee:number; teacher_sales_bonus_percent:number; affiliate_rate_percent:number; commission_hold_days:number; updated_at?:string };
@@ -146,9 +149,9 @@ export type TeacherVerification = { id: string; email: string; name: string; tea
 export type UserRoleSummary = { total: number; students: number; teachers: number; admins: number };
 export type AdminUsersPage = AdminPage<User> & { summary: UserRoleSummary };
 export type AdminPackagesPage = AdminPage<AdminPackage> & { counts: { active: number; inactive: number; active_teacher: number; inactive_teacher: number } };
-export type CBTLookupExam = { exam_id: string; title: string; duration_minutes: number; total_questions: number; passing_score: number; submitted: boolean; publish_pembahasan: boolean; user_exam_id?: string };
+export type CBTLookupExam = { exam_id: string; title: string; duration_minutes: number; total_questions: number; passing_score: number; submitted: boolean; publish_pembahasan: boolean; score_release?: string; score_released?: boolean; review_available?: boolean; user_exam_id?: string };
 export type CBTLookupPackage = { id: string; title: string; kode: string; jenjang: string; price: number; exams: CBTLookupExam[] };
-export type CBTPublishSetting = { exam_id: string; package_id: string; package_title: string; package_kode: string; jenjang: string; exam_title: string; duration_minutes: number; total_questions: number; passing_score: number; shuffle_questions: boolean; shuffle_options: boolean; publish_pembahasan: boolean; screen_lock_enabled: boolean; screen_lock_seconds: number; participated: number; publisher_email: string };
+export type CBTPublishSetting = { exam_id: string; package_id: string; package_title: string; package_kode: string; jenjang: string; exam_title: string; duration_minutes: number; total_questions: number; passing_score: number; shuffle_questions: boolean; shuffle_options: boolean; publish_pembahasan: boolean; score_release: string; screen_lock_enabled: boolean; screen_lock_seconds: number; participated: number; publisher_email: string };
 export type CBTParticipant = { user_exam_id: string; user_id: string; name: string; email: string; school_level: string; status: "ongoing" | "submitted"; started_at?: string; finished_at?: string; total_questions: number; current_question?: number; total_score: number; passing_score: number; passed: boolean; screen_locked?: boolean; lock_until?: string; lock_count?: number; last_lock_at?: string };
 export type AdminDashboardData = { overview: AdminOverview; levels: string[]; jenjangs: MasterItem[]; mapels: MasterItem[]; academic_years: MasterItem[]; kategoris: MasterItem[]; kelas: MasterItem[]; users: User[]; packages: AdminPackage[]; exams: AdminExam[]; transactions: AdminTransaction[]; questions: AdminQuestion[] };
 export type TeacherOverview = { total_packages: number; total_exams: number; total_questions: number; total_sales: number; total_revenue: number };
@@ -243,6 +246,7 @@ export const api = {
   async adminSetCBTPublish(examID: string, publishPembahasan: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/admin/cbt-settings/${examID}`, { publish_pembahasan: publishPembahasan })).data.item; },
   async adminSetCBTShuffle(examID: string, shuffleQuestions: boolean, shuffleOptions: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/admin/cbt-settings/${examID}/shuffle`, { shuffle_questions: shuffleQuestions, shuffle_options: shuffleOptions })).data.item; },
   async adminSetCBTScreenLock(examID: string, screenLockEnabled: boolean, screenLockSeconds: number) { return (await http.patch<{ item: CBTPublishSetting }>(`/admin/cbt-settings/${examID}/screen-lock`, { screen_lock_enabled: screenLockEnabled, screen_lock_seconds: screenLockSeconds })).data.item; },
+  async adminSetCBTScoreRelease(examID: string, scoreRelease: string) { return (await http.patch<{ item: CBTPublishSetting }>(`/admin/cbt-settings/${examID}/score-release`, { score_release: scoreRelease })).data.item; },
   async adminCBTParticipants(examID: string) { return (await http.get<{ items: CBTParticipant[] }>(`/admin/cbt-settings/${examID}/participants`)).data.items; },
   async adminUnlockCBTParticipant(examID: string, userExamID: string) { await http.post(`/admin/cbt-settings/${examID}/participants/${userExamID}/unlock`, {}); },
   async adminResetCBTParticipant(examID: string, userExamID: string) { await http.post(`/admin/cbt-settings/${examID}/participants/${userExamID}/reset`, {}); },
@@ -250,6 +254,7 @@ export const api = {
   async teacherSetCBTPublish(examID: string, publishPembahasan: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}`, { publish_pembahasan: publishPembahasan })).data.item; },
   async teacherSetCBTShuffle(examID: string, shuffleQuestions: boolean, shuffleOptions: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}/shuffle`, { shuffle_questions: shuffleQuestions, shuffle_options: shuffleOptions })).data.item; },
   async teacherSetCBTScreenLock(examID: string, screenLockEnabled: boolean, screenLockSeconds: number) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}/screen-lock`, { screen_lock_enabled: screenLockEnabled, screen_lock_seconds: screenLockSeconds })).data.item; },
+  async teacherSetCBTScoreRelease(examID: string, scoreRelease: string) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}/score-release`, { score_release: scoreRelease })).data.item; },
   async teacherCBTParticipants(examID: string) { return (await http.get<{ items: CBTParticipant[] }>(`/teacher/cbt-settings/${examID}/participants`)).data.items; },
   async teacherUnlockCBTParticipant(examID: string, userExamID: string) { await http.post(`/teacher/cbt-settings/${examID}/participants/${userExamID}/unlock`, {}); },
   async teacherResetCBTParticipant(examID: string, userExamID: string) { await http.post(`/teacher/cbt-settings/${examID}/participants/${userExamID}/reset`, {}); },

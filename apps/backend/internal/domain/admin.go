@@ -477,6 +477,7 @@ type AdminRepository interface {
 	SetExamPublishPembahasan(ctx context.Context, examID string, publish bool) (*CBTPublishSetting, error)
 	SetExamShuffle(ctx context.Context, examID string, shuffleQuestions, shuffleOptions bool) (*CBTPublishSetting, error)
 	SetExamScreenLock(ctx context.Context, examID string, enabled bool, seconds int) (*CBTPublishSetting, error)
+	SetExamScoreRelease(ctx context.Context, examID, release string) (*CBTPublishSetting, error)
 	ListCBTParticipants(ctx context.Context, examID string) ([]CBTParticipant, error)
 	// ReleaseParticipantScreenLock membuka blokir layar seorang siswa pada
 	// ujian yang ditentukan examID.
@@ -539,6 +540,7 @@ type AdminService interface {
 	SetExamPublishPembahasan(ctx context.Context, actorID, actorEmail, examID string, publish bool) (*CBTPublishSetting, error)
 	SetExamShuffle(ctx context.Context, actorID, actorEmail, examID string, shuffleQuestions, shuffleOptions bool) (*CBTPublishSetting, error)
 	SetExamScreenLock(ctx context.Context, actorID, actorEmail, examID string, enabled bool, seconds int) (*CBTPublishSetting, error)
+	SetExamScoreRelease(ctx context.Context, actorID, actorEmail, examID, release string) (*CBTPublishSetting, error)
 	ListCBTParticipants(ctx context.Context, examID string) ([]CBTParticipant, error)
 	// ReleaseParticipantScreenLock membuka blokir layar seorang siswa pada
 	// ujian yang ditentukan examID.

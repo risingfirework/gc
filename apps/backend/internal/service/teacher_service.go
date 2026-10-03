@@ -134,6 +134,12 @@ func (s *TeacherService) SetExamScreenLock(ctx context.Context, publisherID, exa
 	}
 	return s.repository.SetExamScreenLock(ctx, publisherID, examID, enabled, seconds)
 }
+func (s *TeacherService) SetExamScoreRelease(ctx context.Context, publisherID, examID, release string) (*domain.CBTPublishSetting, error) {
+	if !validUUID(publisherID) || !validUUID(examID) || !validScoreRelease(release) {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repository.SetExamScoreRelease(ctx, publisherID, examID, release)
+}
 func (s *TeacherService) ListCBTParticipants(ctx context.Context, publisherID, examID string) ([]domain.CBTParticipant, error) {
 	if !validUUID(publisherID) || !validUUID(examID) {
 		return nil, domain.ErrInvalidInput

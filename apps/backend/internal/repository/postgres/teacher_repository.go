@@ -515,6 +515,7 @@ func (r *TeacherRepository) ListCBTPublishSettings(ctx context.Context, publishe
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
 		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
+		       e.score_release,
 		       e.screen_lock_enabled, e.screen_lock_seconds,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
@@ -533,7 +534,7 @@ func (r *TeacherRepository) ListCBTPublishSettings(ctx context.Context, publishe
 		if err := rows.Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 			&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
 			&item.ShuffleQuestions, &item.ShuffleOptions,
-			&item.PublishPembahasan, &item.ScreenLockEnabled, &item.ScreenLockSeconds, &item.Participated, &item.PublisherEmail); err != nil {
+			&item.PublishPembahasan, &item.ScoreRelease, &item.ScreenLockEnabled, &item.ScreenLockSeconds, &item.Participated, &item.PublisherEmail); err != nil {
 			return nil, fmt.Errorf("scan cbt publish setting: %w", err)
 		}
 		items = append(items, item)
@@ -566,6 +567,17 @@ func (r *TeacherRepository) SetExamScreenLock(ctx context.Context, publisherID, 
 	return r.getCBTPublishSetting(ctx, publisherID, examID)
 }
 
+func (r *TeacherRepository) SetExamScoreRelease(ctx context.Context, publisherID, examID, release string) (*domain.CBTPublishSetting, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE exams SET score_release = $3 WHERE id = $1 AND package_id IN (SELECT id FROM packages WHERE publisher_id = $2)`, examID, publisherID, release)
+	if err != nil {
+		return nil, adminMutationError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, domain.ErrExamNotFound
+	}
+	return r.getCBTPublishSetting(ctx, publisherID, examID)
+}
+
 func (r *TeacherRepository) SetExamPublishPembahasan(ctx context.Context, publisherID, examID string, publish bool) (*domain.CBTPublishSetting, error) {
 	tag, err := r.db.Exec(ctx, `UPDATE exams SET publish_pembahasan = $3 WHERE id = $1 AND package_id IN (SELECT id FROM packages WHERE publisher_id = $2)`, examID, publisherID, publish)
 	if err != nil {
@@ -587,6 +599,7 @@ func (r *TeacherRepository) getCBTPublishSetting(ctx context.Context, publisherI
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
 		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
+		       e.score_release,
 		       e.screen_lock_enabled, e.screen_lock_seconds,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
@@ -598,7 +611,7 @@ func (r *TeacherRepository) getCBTPublishSetting(ctx context.Context, publisherI
 	err := r.db.QueryRow(ctx, query, publisherID, examID).Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 		&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
 		&item.ShuffleQuestions, &item.ShuffleOptions,
-		&item.PublishPembahasan, &item.ScreenLockEnabled, &item.ScreenLockSeconds, &item.Participated, &item.PublisherEmail)
+		&item.PublishPembahasan, &item.ScoreRelease, &item.ScreenLockEnabled, &item.ScreenLockSeconds, &item.Participated, &item.PublisherEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound
 	}

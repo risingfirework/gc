@@ -93,7 +93,7 @@ func (r *ExamRepository) LookupCBTByToken(ctx context.Context, token, userID str
 	const query = `
 		SELECT p.id, p.title, COALESCE(p.kode,''), p.jenjang, p.price,
 		       e.id, e.title, e.duration_minutes, e.total_questions, e.passing_score,
-		       e.publish_pembahasan,
+		       e.publish_pembahasan, e.score_release,
 		       COALESCE(ue.user_exam_id::text,'')
 		FROM packages p
 		JOIN exams e ON e.package_id = p.id
@@ -121,11 +121,13 @@ func (r *ExamRepository) LookupCBTByToken(ctx context.Context, token, userID str
 		if err := rows.Scan(
 			&packageItem.ID, &packageItem.Title, &packageItem.Kode, &packageItem.Jenjang, &packageItem.Price,
 			&exam.ExamID, &exam.Title, &exam.DurationMinutes, &exam.TotalQuestions, &exam.PassingScore,
-			&exam.PublishPembahasan,
+			&exam.PublishPembahasan, &exam.ScoreRelease,
 			&attemptID,
 		); err != nil {
 			return nil, fmt.Errorf("scan cbt lookup: %w", err)
 		}
+		exam.ScoreReleased = exam.PublishPembahasan || exam.ScoreRelease == "after_finish"
+		exam.ReviewAvailable = exam.PublishPembahasan
 		exam.Submitted = attemptID != ""
 		if attemptID != "" {
 			exam.UserExamID = attemptID
@@ -147,7 +149,7 @@ func (r *ExamRepository) LookupCBTByToken(ctx context.Context, token, userID str
 func (r *ExamRepository) ListExamsByPackage(ctx context.Context, userID, packageID string) ([]domain.ExamSummary, error) {
 	const query = `
 		SELECT e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method,
-		       e.publish_pembahasan, p.exam_type,
+		       e.publish_pembahasan, e.score_release, p.exam_type,
 		       COALESCE(ur.user_exam_id::text,''), ur.total_score, ur.finished_at
 		FROM exams e
 		JOIN packages p ON p.id = e.package_id
@@ -172,13 +174,19 @@ func (r *ExamRepository) ListExamsByPackage(ctx context.Context, userID, package
 		if err := rows.Scan(
 			&exam.ID, &exam.PackageID, &exam.Title, &exam.DurationMinutes,
 			&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod,
-			&exam.PublishPembahasan, &exam.ExamType,
+			&exam.PublishPembahasan, &exam.ScoreRelease, &exam.ExamType,
 			&attemptID, &exam.TotalScore, &exam.FinishedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan package exam: %w", err)
 		}
 		if attemptID != "" {
 			exam.UserExamID = attemptID
+		}
+		// Nilai hanya boleh terlihat bila sudah dirilis; rincian menunggu pembahasan.
+		exam.ReviewAvailable = exam.ExamType != "cbt" || exam.PublishPembahasan
+		exam.ScoreReleased = exam.ExamType != "cbt" || exam.PublishPembahasan || exam.ScoreRelease == "after_finish"
+		if !exam.ScoreReleased {
+			exam.TotalScore = nil
 		}
 		exams = append(exams, exam)
 	}

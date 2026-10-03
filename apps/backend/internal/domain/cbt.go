@@ -20,8 +20,17 @@ var (
 	ErrInvalidAnswer            = errors.New("invalid selected option")
 	ErrTimerNotFound            = errors.New("exam timer not found")
 	ErrPembahasanNotPublished   = errors.New("pembahasan belum dipublikasikan oleh penyelenggara")
+	ErrScoreNotReleased         = errors.New("nilai ujian belum dirilis oleh penyelenggara")
 	ErrScreenLockNotCBT         = errors.New("penguncian layar hanya berlaku untuk mode ujian CBT")
 	ErrScreenLockNotLocked      = errors.New("layar siswa tidak sedang terkunci")
+)
+
+// Mode rilis nilai ujian CBT.
+const (
+	// ScoreReleaseAfterFinish merilis nilai begitu siswa selesai mengerjakan.
+	ScoreReleaseAfterFinish = "after_finish"
+	// ScoreReleaseWithPembahasan merilis nilai bersamaan pembahasan dipublikasikan.
+	ScoreReleaseWithPembahasan = "with_pembahasan"
 )
 
 type SyncAnswerRequest struct {
@@ -73,7 +82,13 @@ type CBTLookupExam struct {
 	PassingScore      float64 `json:"passing_score"`
 	Submitted         bool    `json:"submitted"`
 	PublishPembahasan bool    `json:"publish_pembahasan"`
-	UserExamID        string  `json:"user_exam_id,omitempty"`
+	// ScoreRelease adalah mode rilis nilai: "after_finish" atau "with_pembahasan".
+	ScoreRelease string `json:"score_release"`
+	// ScoreReleased true berarti nilai total boleh ditampilkan ke siswa.
+	ScoreReleased bool `json:"score_released"`
+	// ReviewAvailable true berarti rincian/pembahasan boleh dibuka.
+	ReviewAvailable bool   `json:"review_available"`
+	UserExamID      string `json:"user_exam_id,omitempty"`
 }
 
 // CBTLookupPackage is the public result of a student searching a CBT token.
@@ -102,6 +117,7 @@ type CBTPublishSetting struct {
 	ShuffleQuestions  bool    `json:"shuffle_questions"`
 	ShuffleOptions    bool    `json:"shuffle_options"`
 	PublishPembahasan bool    `json:"publish_pembahasan"`
+	ScoreRelease      string  `json:"score_release"`
 	ScreenLockEnabled bool    `json:"screen_lock_enabled"`
 	ScreenLockSeconds int     `json:"screen_lock_seconds"`
 	Participated      int     `json:"participated"`
@@ -186,6 +202,9 @@ type ExamSummary struct {
 	PassingScore      float64    `json:"passing_score"`
 	ScoringMethod     string     `json:"scoring_method"`
 	PublishPembahasan bool       `json:"publish_pembahasan"`
+	ScoreRelease      string     `json:"score_release"`
+	ScoreReleased     bool       `json:"score_released"`
+	ReviewAvailable   bool       `json:"review_available"`
 	ExamType          string     `json:"exam_type"`
 	UserExamID        string     `json:"user_exam_id,omitempty"`
 	TotalScore        *float64   `json:"total_score,omitempty"`

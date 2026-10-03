@@ -751,6 +751,17 @@ func (s *AdminService) SetExamScreenLock(ctx context.Context, actorID, actorEmai
 	s.audit(ctx, actorID, actorEmail, "cbt_screen_lock", "exam", examID, map[string]any{"screen_lock_enabled": enabled, "screen_lock_seconds": seconds})
 	return item, nil
 }
+func (s *AdminService) SetExamScoreRelease(ctx context.Context, actorID, actorEmail, examID, release string) (*domain.CBTPublishSetting, error) {
+	if !validUUID(examID) || !validScoreRelease(release) {
+		return nil, domain.ErrInvalidInput
+	}
+	item, err := s.repository.SetExamScoreRelease(ctx, examID, release)
+	if err != nil {
+		return nil, err
+	}
+	s.audit(ctx, actorID, actorEmail, "cbt_score_release", "exam", examID, map[string]any{"score_release": release})
+	return item, nil
+}
 func (s *AdminService) ListCBTParticipants(ctx context.Context, examID string) ([]domain.CBTParticipant, error) {
 	if !validUUID(examID) {
 		return nil, domain.ErrInvalidInput
@@ -831,6 +842,9 @@ func validAdminStatus(value string) bool {
 }
 func validScreenLockSeconds(seconds int) bool {
 	return seconds >= 1 && seconds <= 300
+}
+func validScoreRelease(release string) bool {
+	return release == domain.ScoreReleaseAfterFinish || release == domain.ScoreReleaseWithPembahasan
 }
 func normalizeAdminStatus(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))

@@ -79,6 +79,7 @@ type TeacherRepository interface {
 	SetExamPublishPembahasan(ctx context.Context, publisherID, examID string, publish bool) (*CBTPublishSetting, error)
 	SetExamShuffle(ctx context.Context, publisherID, examID string, shuffleQuestions, shuffleOptions bool) (*CBTPublishSetting, error)
 	SetExamScreenLock(ctx context.Context, publisherID, examID string, enabled bool, seconds int) (*CBTPublishSetting, error)
+	SetExamScoreRelease(ctx context.Context, publisherID, examID, release string) (*CBTPublishSetting, error)
 	ListCBTParticipants(ctx context.Context, publisherID, examID string) ([]CBTParticipant, error)
 	// ReleaseParticipantScreenLock membuka blokir layar seorang siswa. Repo
 	// wajib memverifikasi examID milik publisher dan attempt masih ongoing.
@@ -109,6 +110,7 @@ type TeacherService interface {
 	SetExamPublishPembahasan(ctx context.Context, publisherID, examID string, publish bool) (*CBTPublishSetting, error)
 	SetExamShuffle(ctx context.Context, publisherID, examID string, shuffleQuestions, shuffleOptions bool) (*CBTPublishSetting, error)
 	SetExamScreenLock(ctx context.Context, publisherID, examID string, enabled bool, seconds int) (*CBTPublishSetting, error)
+	SetExamScoreRelease(ctx context.Context, publisherID, examID, release string) (*CBTPublishSetting, error)
 	ListCBTParticipants(ctx context.Context, publisherID, examID string) ([]CBTParticipant, error)
 	// ReleaseParticipantScreenLock membuka blokir layar seorang siswa milik
 	// ujian pada request ini.

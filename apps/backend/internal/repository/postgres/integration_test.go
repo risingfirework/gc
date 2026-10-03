@@ -431,6 +431,92 @@ func TestIntegrationExamScreenLockSettings(t *testing.T) {
 	}
 }
 
+func TestIntegrationExamScoreReleaseSettings(t *testing.T) {
+	_, testURL := waitForTestDatabase(t)
+	pool := applyMigrations(t, testURL)
+	ctx := context.Background()
+
+	exams := &ExamRepository{db: pool}
+	users := &UserRepository{db: pool}
+	admin := &AdminRepository{db: pool}
+	analytics := NewAnalyticsRepository(pool)
+
+	_, examID, _ := seedExamPackage(t, ctx, pool)
+
+	// Default dari migrasi 000054: nilai dirilis setelah siswa selesai.
+	defaults, err := admin.getCBTPublishSetting(ctx, examID)
+	if err != nil {
+		t.Fatalf("read default cbt setting: %v", err)
+	}
+	if defaults.ScoreRelease != domain.ScoreReleaseAfterFinish {
+		t.Fatalf("default score_release = %q, want %q", defaults.ScoreRelease, domain.ScoreReleaseAfterFinish)
+	}
+
+	updated, err := admin.SetExamScoreRelease(ctx, examID, domain.ScoreReleaseWithPembahasan)
+	if err != nil {
+		t.Fatalf("set exam score release: %v", err)
+	}
+	if updated.ScoreRelease != domain.ScoreReleaseWithPembahasan {
+		t.Fatalf("updated score_release = %q, want %q", updated.ScoreRelease, domain.ScoreReleaseWithPembahasan)
+	}
+
+	user := &domain.User{Email: "hasil@example.com", PasswordHash: "hash", Role: "student", SchoolLevel: "SMA"}
+	if err := users.Create(ctx, user); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	now := time.Now().UTC()
+	attempt, err := exams.StartOrGetUserExam(ctx, user.ID, examID, now)
+	if err != nil {
+		t.Fatalf("start exam: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE user_exams SET status = 'submitted', total_score = 50, finished_at = $2 WHERE id = $1`, attempt.ID, now); err != nil {
+		t.Fatalf("submit attempt: %v", err)
+	}
+
+	// score_release=with_pembahasan dan pembahasan belum dipublikasikan ->
+	// nilai belum boleh dirilis.
+	if _, err := analytics.GetExamResult(ctx, user.ID, attempt.ID); !errors.Is(err, domain.ErrScoreNotReleased) {
+		t.Fatalf("err = %v, want ErrScoreNotReleased", err)
+	}
+
+	// Publish pembahasan -> nilai dan analitik tersedia.
+	if _, err := admin.SetExamPublishPembahasan(ctx, examID, true); err != nil {
+		t.Fatalf("publish pembahasan: %v", err)
+	}
+	withReview, err := analytics.GetExamResult(ctx, user.ID, attempt.ID)
+	if err != nil {
+		t.Fatalf("get exam result with pembahasan: %v", err)
+	}
+	if !withReview.ReviewAvailable || len(withReview.Review) != 2 {
+		t.Fatalf("review_available=%v review=%d, want true/2", withReview.ReviewAvailable, len(withReview.Review))
+	}
+
+	// score_release=after_finish tanpa pembahasan -> nilai tersedia, analitik
+	// kosong dan ditandai belum tersedia.
+	if _, err := admin.SetExamPublishPembahasan(ctx, examID, false); err != nil {
+		t.Fatalf("unpublish pembahasan: %v", err)
+	}
+	if _, err := admin.SetExamScoreRelease(ctx, examID, domain.ScoreReleaseAfterFinish); err != nil {
+		t.Fatalf("set score release after_finish: %v", err)
+	}
+	scoreOnly, err := analytics.GetExamResult(ctx, user.ID, attempt.ID)
+	if err != nil {
+		t.Fatalf("get exam result score only: %v", err)
+	}
+	if scoreOnly.ReviewAvailable {
+		t.Fatal("review_available harus false saat pembahasan belum dipublikasikan")
+	}
+	if len(scoreOnly.Review) != 0 {
+		t.Fatalf("review = %d, want 0 saat pembahasan belum dipublikasikan", len(scoreOnly.Review))
+	}
+	if scoreOnly.TotalScore != 50 {
+		t.Fatalf("total_score = %v, want 50", scoreOnly.TotalScore)
+	}
+	if len(scoreOnly.Subjects) != 1 {
+		t.Fatalf("subjects = %d, want 1", len(scoreOnly.Subjects))
+	}
+}
+
 func sameShuffle(a, b *domain.UserExamShuffle) bool {
 	if len(a.QuestionOrder) != len(b.QuestionOrder) || len(a.OptionOrder) != len(b.OptionOrder) {
 		return false

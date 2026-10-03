@@ -1,0 +1,1 @@
+ALTER TABLE exams DROP COLUMN IF EXISTS score_release;

@@ -397,6 +397,23 @@ func (h *AdminHandler) SetCBTScreenLock(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, map[string]any{"item": item})
 }
 
+// SetCBTScoreRelease mengatur waktu rilis nilai ujian CBT.
+func (h *AdminHandler) SetCBTScoreRelease(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ScoreRelease string `json:"score_release"`
+	}
+	if decodeJSON(w, r, &input) != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	actorID, actorEmail := actorFromContext(r)
+	item, err := h.service.SetExamScoreRelease(r.Context(), actorID, actorEmail, chi.URLParam(r, "id"), input.ScoreRelease)
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": item})
+}
+
 // ReleaseParticipantScreenLock membuka blokir layar seorang siswa mode CBT.
 func (h *AdminHandler) ReleaseParticipantScreenLock(w http.ResponseWriter, r *http.Request) {
 	lock, err := h.service.ReleaseParticipantScreenLock(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "userExamId"))
