@@ -677,6 +677,7 @@ func (r *AdminRepository) ListCBTPublishSettings(ctx context.Context) ([]domain.
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
 		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
+		       e.screen_lock_enabled, e.screen_lock_seconds,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
 		FROM exams e
@@ -694,7 +695,7 @@ func (r *AdminRepository) ListCBTPublishSettings(ctx context.Context) ([]domain.
 		if err := rows.Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 			&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
 			&item.ShuffleQuestions, &item.ShuffleOptions,
-			&item.PublishPembahasan, &item.Participated, &item.PublisherEmail); err != nil {
+			&item.PublishPembahasan, &item.ScreenLockEnabled, &item.ScreenLockSeconds, &item.Participated, &item.PublisherEmail); err != nil {
 			return nil, fmt.Errorf("scan cbt publish setting: %w", err)
 		}
 		items = append(items, item)
@@ -731,12 +732,24 @@ func (r *AdminRepository) SetExamShuffle(ctx context.Context, examID string, shu
 	return r.getCBTPublishSetting(ctx, examID)
 }
 
+func (r *AdminRepository) SetExamScreenLock(ctx context.Context, examID string, enabled bool, seconds int) (*domain.CBTPublishSetting, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE exams SET screen_lock_enabled = $2, screen_lock_seconds = $3 WHERE id = $1`, examID, enabled, seconds)
+	if err != nil {
+		return nil, adminMutationError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, domain.ErrExamNotFound
+	}
+	return r.getCBTPublishSetting(ctx, examID)
+}
+
 func (r *AdminRepository) getCBTPublishSetting(ctx context.Context, examID string) (*domain.CBTPublishSetting, error) {
 	const query = `
 		SELECT e.id, e.package_id, p.title, COALESCE(p.kode,''), p.jenjang,
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
 		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
+		       e.screen_lock_enabled, e.screen_lock_seconds,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
 		FROM exams e
@@ -747,7 +760,7 @@ func (r *AdminRepository) getCBTPublishSetting(ctx context.Context, examID strin
 	err := r.db.QueryRow(ctx, query, examID).Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 		&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
 		&item.ShuffleQuestions, &item.ShuffleOptions,
-		&item.PublishPembahasan, &item.Participated, &item.PublisherEmail)
+		&item.PublishPembahasan, &item.ScreenLockEnabled, &item.ScreenLockSeconds, &item.Participated, &item.PublisherEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound
 	}
@@ -832,6 +845,22 @@ func (r *AdminRepository) ReleaseParticipantScreenLock(ctx context.Context, exam
 	}
 	lock.Locked = false
 	return lock, nil
+}
+
+// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang siswa
+// sehingga statusnya kembali normal. Operasi idempoten: attempt tanpa catatan
+// tetap dianggap berhasil.
+func (r *AdminRepository) ResetParticipantScreenLock(ctx context.Context, examID, userExamID string) error {
+	const query = `
+		DELETE FROM user_exam_screen_locks l
+		USING user_exams ue
+		WHERE l.user_exam_id = ue.id
+		  AND ue.exam_id = $1
+		  AND ue.id = $2`
+	if _, err := r.db.Exec(ctx, query, examID, userExamID); err != nil {
+		return fmt.Errorf("reset participant screen lock: %w", err)
+	}
+	return nil
 }
 
 func (r *AdminRepository) ListAdminQuestions(ctx context.Context, page, perPage int, packageID string) (domain.Page[domain.AdminQuestion], error) {

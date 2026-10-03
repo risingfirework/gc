@@ -476,10 +476,14 @@ type AdminRepository interface {
 	ListCBTPublishSettings(ctx context.Context) ([]CBTPublishSetting, error)
 	SetExamPublishPembahasan(ctx context.Context, examID string, publish bool) (*CBTPublishSetting, error)
 	SetExamShuffle(ctx context.Context, examID string, shuffleQuestions, shuffleOptions bool) (*CBTPublishSetting, error)
+	SetExamScreenLock(ctx context.Context, examID string, enabled bool, seconds int) (*CBTPublishSetting, error)
 	ListCBTParticipants(ctx context.Context, examID string) ([]CBTParticipant, error)
 	// ReleaseParticipantScreenLock membuka blokir layar seorang siswa pada
 	// ujian yang ditentukan examID.
 	ReleaseParticipantScreenLock(ctx context.Context, examID, userExamID string, now time.Time) (*ExamScreenLock, error)
+	// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang
+	// siswa sehingga statusnya kembali normal.
+	ResetParticipantScreenLock(ctx context.Context, examID, userExamID string) error
 	RefundTransaction(ctx context.Context, transactionID, reason string, now time.Time) (*AdminTransaction, error)
 	GetPaymentTransactionForRefund(ctx context.Context, transactionID string) (*Transaction, error)
 	MarkRefundPending(ctx context.Context, transactionID, providerRefundID string, now time.Time) (*AdminTransaction, error)
@@ -534,10 +538,14 @@ type AdminService interface {
 	ListCBTPublishSettings(ctx context.Context) ([]CBTPublishSetting, error)
 	SetExamPublishPembahasan(ctx context.Context, actorID, actorEmail, examID string, publish bool) (*CBTPublishSetting, error)
 	SetExamShuffle(ctx context.Context, actorID, actorEmail, examID string, shuffleQuestions, shuffleOptions bool) (*CBTPublishSetting, error)
+	SetExamScreenLock(ctx context.Context, actorID, actorEmail, examID string, enabled bool, seconds int) (*CBTPublishSetting, error)
 	ListCBTParticipants(ctx context.Context, examID string) ([]CBTParticipant, error)
 	// ReleaseParticipantScreenLock membuka blokir layar seorang siswa pada
 	// ujian yang ditentukan examID.
 	ReleaseParticipantScreenLock(ctx context.Context, examID, userExamID string) (*ExamScreenLock, error)
+	// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang
+	// siswa sehingga statusnya kembali normal.
+	ResetParticipantScreenLock(ctx context.Context, examID, userExamID string) error
 	RefundTransaction(ctx context.Context, actorID, actorEmail, transactionID string, input RefundTransactionRequest) (*AdminTransaction, error)
 	ListAuditLogs(ctx context.Context) ([]AuditLogEntry, error)
 	ListTeacherVerifications(ctx context.Context, page, perPage int, status string) (Page[TeacherVerification], error)

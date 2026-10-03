@@ -128,6 +128,12 @@ func (s *TeacherService) SetExamShuffle(ctx context.Context, publisherID, examID
 	}
 	return s.repository.SetExamShuffle(ctx, publisherID, examID, shuffleQuestions, shuffleOptions)
 }
+func (s *TeacherService) SetExamScreenLock(ctx context.Context, publisherID, examID string, enabled bool, seconds int) (*domain.CBTPublishSetting, error) {
+	if !validUUID(publisherID) || !validUUID(examID) || !validScreenLockSeconds(seconds) {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repository.SetExamScreenLock(ctx, publisherID, examID, enabled, seconds)
+}
 func (s *TeacherService) ListCBTParticipants(ctx context.Context, publisherID, examID string) ([]domain.CBTParticipant, error) {
 	if !validUUID(publisherID) || !validUUID(examID) {
 		return nil, domain.ErrInvalidInput
@@ -142,6 +148,15 @@ func (s *TeacherService) ReleaseParticipantScreenLock(ctx context.Context, publi
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repository.ReleaseParticipantScreenLock(ctx, publisherID, examID, userExamID, time.Now().UTC())
+}
+
+// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang siswa
+// pada ujian milik guru ini.
+func (s *TeacherService) ResetParticipantScreenLock(ctx context.Context, publisherID, examID, userExamID string) error {
+	if !validUUID(publisherID) || !validUUID(examID) || !validUUID(userExamID) {
+		return domain.ErrInvalidInput
+	}
+	return s.repository.ResetParticipantScreenLock(ctx, publisherID, examID, userExamID)
 }
 func (s *TeacherService) CreateQuestion(ctx context.Context, publisherID string, input domain.AdminQuestionRequest) (*domain.AdminQuestion, error) {
 	input = normalizeQuestion(input)

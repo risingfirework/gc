@@ -356,6 +356,25 @@ func (r *TeacherRepository) ReleaseParticipantScreenLock(ctx context.Context, pu
 	return lock, nil
 }
 
+// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang siswa
+// pada ujian milik guru ini. Operasi idempoten: attempt tanpa catatan tetap
+// dianggap berhasil.
+func (r *TeacherRepository) ResetParticipantScreenLock(ctx context.Context, publisherID, examID, userExamID string) error {
+	const query = `
+		DELETE FROM user_exam_screen_locks l
+		USING user_exams ue, exams e, packages p
+		WHERE l.user_exam_id = ue.id
+		  AND ue.exam_id = e.id
+		  AND e.package_id = p.id
+		  AND p.publisher_id = $1
+		  AND e.id = $2
+		  AND ue.id = $3`
+	if _, err := r.db.Exec(ctx, query, publisherID, examID, userExamID); err != nil {
+		return fmt.Errorf("reset teacher participant screen lock: %w", err)
+	}
+	return nil
+}
+
 func (r *TeacherRepository) UpdatePayoutAccount(ctx context.Context, publisherID string, input domain.TeacherPayoutAccount) (*domain.TeacherPayoutAccount, error) {
 	const query = `INSERT INTO teacher_payout_accounts(teacher_id,method,provider,account_number,account_holder_name,phone) VALUES($1,$2,$3,$4,$5,$6)
 		ON CONFLICT(teacher_id) DO UPDATE SET method=EXCLUDED.method,provider=EXCLUDED.provider,account_number=EXCLUDED.account_number,account_holder_name=EXCLUDED.account_holder_name,phone=EXCLUDED.phone,updated_at=NOW()
@@ -496,6 +515,7 @@ func (r *TeacherRepository) ListCBTPublishSettings(ctx context.Context, publishe
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
 		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
+		       e.screen_lock_enabled, e.screen_lock_seconds,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
 		FROM exams e
@@ -513,7 +533,7 @@ func (r *TeacherRepository) ListCBTPublishSettings(ctx context.Context, publishe
 		if err := rows.Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 			&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
 			&item.ShuffleQuestions, &item.ShuffleOptions,
-			&item.PublishPembahasan, &item.Participated, &item.PublisherEmail); err != nil {
+			&item.PublishPembahasan, &item.ScreenLockEnabled, &item.ScreenLockSeconds, &item.Participated, &item.PublisherEmail); err != nil {
 			return nil, fmt.Errorf("scan cbt publish setting: %w", err)
 		}
 		items = append(items, item)
@@ -526,6 +546,17 @@ func (r *TeacherRepository) ListCBTPublishSettings(ctx context.Context, publishe
 
 func (r *TeacherRepository) SetExamShuffle(ctx context.Context, publisherID, examID string, shuffleQuestions, shuffleOptions bool) (*domain.CBTPublishSetting, error) {
 	tag, err := r.db.Exec(ctx, `UPDATE exams SET shuffle_questions = $3, shuffle_options = $4 WHERE id = $1 AND package_id IN (SELECT id FROM packages WHERE publisher_id = $2)`, examID, publisherID, shuffleQuestions, shuffleOptions)
+	if err != nil {
+		return nil, adminMutationError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, domain.ErrExamNotFound
+	}
+	return r.getCBTPublishSetting(ctx, publisherID, examID)
+}
+
+func (r *TeacherRepository) SetExamScreenLock(ctx context.Context, publisherID, examID string, enabled bool, seconds int) (*domain.CBTPublishSetting, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE exams SET screen_lock_enabled = $3, screen_lock_seconds = $4 WHERE id = $1 AND package_id IN (SELECT id FROM packages WHERE publisher_id = $2)`, examID, publisherID, enabled, seconds)
 	if err != nil {
 		return nil, adminMutationError(err)
 	}
@@ -556,6 +587,7 @@ func (r *TeacherRepository) getCBTPublishSetting(ctx context.Context, publisherI
 		       e.title, e.duration_minutes, e.total_questions, e.passing_score,
 		       e.shuffle_questions, e.shuffle_options,
 		       e.publish_pembahasan,
+		       e.screen_lock_enabled, e.screen_lock_seconds,
 		       (SELECT COUNT(*) FROM user_exams ue WHERE ue.exam_id = e.id AND ue.status = 'submitted'),
 		       COALESCE(pu.email,'')
 		FROM exams e
@@ -566,7 +598,7 @@ func (r *TeacherRepository) getCBTPublishSetting(ctx context.Context, publisherI
 	err := r.db.QueryRow(ctx, query, publisherID, examID).Scan(&item.ExamID, &item.PackageID, &item.PackageTitle, &item.PackageKode, &item.Jenjang,
 		&item.ExamTitle, &item.DurationMinutes, &item.TotalQuestions, &item.PassingScore,
 		&item.ShuffleQuestions, &item.ShuffleOptions,
-		&item.PublishPembahasan, &item.Participated, &item.PublisherEmail)
+		&item.PublishPembahasan, &item.ScreenLockEnabled, &item.ScreenLockSeconds, &item.Participated, &item.PublisherEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound
 	}

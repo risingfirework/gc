@@ -740,6 +740,17 @@ func (s *AdminService) SetExamShuffle(ctx context.Context, actorID, actorEmail, 
 	s.audit(ctx, actorID, actorEmail, "cbt_shuffle", "exam", examID, map[string]any{"shuffle_questions": shuffleQuestions, "shuffle_options": shuffleOptions})
 	return item, nil
 }
+func (s *AdminService) SetExamScreenLock(ctx context.Context, actorID, actorEmail, examID string, enabled bool, seconds int) (*domain.CBTPublishSetting, error) {
+	if !validUUID(examID) || !validScreenLockSeconds(seconds) {
+		return nil, domain.ErrInvalidInput
+	}
+	item, err := s.repository.SetExamScreenLock(ctx, examID, enabled, seconds)
+	if err != nil {
+		return nil, err
+	}
+	s.audit(ctx, actorID, actorEmail, "cbt_screen_lock", "exam", examID, map[string]any{"screen_lock_enabled": enabled, "screen_lock_seconds": seconds})
+	return item, nil
+}
 func (s *AdminService) ListCBTParticipants(ctx context.Context, examID string) ([]domain.CBTParticipant, error) {
 	if !validUUID(examID) {
 		return nil, domain.ErrInvalidInput
@@ -753,6 +764,14 @@ func (s *AdminService) ReleaseParticipantScreenLock(ctx context.Context, examID,
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repository.ReleaseParticipantScreenLock(ctx, examID, userExamID, time.Now().UTC())
+}
+
+// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang siswa.
+func (s *AdminService) ResetParticipantScreenLock(ctx context.Context, examID, userExamID string) error {
+	if !validUUID(examID) || !validUUID(userExamID) {
+		return domain.ErrInvalidInput
+	}
+	return s.repository.ResetParticipantScreenLock(ctx, examID, userExamID)
 }
 func validateAdminQuestion(input domain.AdminQuestionRequest) error {
 	if !validUUID(input.ExamID) {
@@ -809,6 +828,9 @@ func validatePackageBundle(input domain.PackageBundle) error {
 }
 func validAdminStatus(value string) bool {
 	return value == domain.StatusActive || value == domain.StatusInactive
+}
+func validScreenLockSeconds(seconds int) bool {
+	return seconds >= 1 && seconds <= 300
 }
 func normalizeAdminStatus(value string) string {
 	value = strings.ToLower(strings.TrimSpace(value))

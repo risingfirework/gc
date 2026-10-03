@@ -102,6 +102,8 @@ type CBTPublishSetting struct {
 	ShuffleQuestions  bool    `json:"shuffle_questions"`
 	ShuffleOptions    bool    `json:"shuffle_options"`
 	PublishPembahasan bool    `json:"publish_pembahasan"`
+	ScreenLockEnabled bool    `json:"screen_lock_enabled"`
+	ScreenLockSeconds int     `json:"screen_lock_seconds"`
 	Participated      int     `json:"participated"`
 	PublisherEmail    string  `json:"publisher_email,omitempty"`
 }

@@ -28,7 +28,7 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 	const examQuery = `
 		SELECT e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method,
 		       e.shuffle_questions, e.shuffle_options, e.created_at,
-		       p.exam_type, COALESCE(p.cbt_token,'')
+		       p.exam_type, COALESCE(p.cbt_token,''), e.screen_lock_enabled, e.screen_lock_seconds
 		FROM exams e
 		JOIN packages p ON p.id = e.package_id
 		WHERE e.id = $1`
@@ -38,6 +38,7 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 		&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod,
 		&exam.ShuffleQuestions, &exam.ShuffleOptions, &exam.CreatedAt,
 		&exam.PackageExamType, &exam.PackageCBTToken,
+		&exam.ScreenLockEnabled, &exam.ScreenLockSeconds,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, domain.ErrExamNotFound
@@ -210,7 +211,7 @@ func (r *ExamRepository) GetUserExam(ctx context.Context, userExamID, userID str
 	const query = `
 		SELECT ue.id, ue.user_id, ue.exam_id, ue.status, ue.started_at, ue.finished_at, ue.total_score,
 		       e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method, e.created_at,
-		       p.exam_type
+		       p.exam_type, e.screen_lock_enabled, e.screen_lock_seconds
 		FROM user_exams ue
 		JOIN exams e ON e.id = ue.exam_id
 		JOIN packages p ON p.id = e.package_id
@@ -222,7 +223,7 @@ func (r *ExamRepository) GetUserExam(ctx context.Context, userExamID, userID str
 		&attempt.StartedAt, &attempt.FinishedAt, &attempt.TotalScore,
 		&exam.ID, &exam.PackageID, &exam.Title, &exam.DurationMinutes,
 		&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod, &exam.CreatedAt,
-		&exam.PackageExamType,
+		&exam.PackageExamType, &exam.ScreenLockEnabled, &exam.ScreenLockSeconds,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, domain.ErrUserExamNotFound

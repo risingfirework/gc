@@ -378,6 +378,25 @@ func (h *AdminHandler) CBTParticipants(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+// SetCBTScreenLock mengatur penguncian layar (aktif/nonaktif dan durasi) untuk
+// sebuah ujian CBT.
+func (h *AdminHandler) SetCBTScreenLock(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		ScreenLockEnabled bool `json:"screen_lock_enabled"`
+		ScreenLockSeconds int  `json:"screen_lock_seconds"`
+	}
+	if decodeJSON(w, r, &input) != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	actorID, actorEmail := actorFromContext(r)
+	item, err := h.service.SetExamScreenLock(r.Context(), actorID, actorEmail, chi.URLParam(r, "id"), input.ScreenLockEnabled, input.ScreenLockSeconds)
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"item": item})
+}
+
 // ReleaseParticipantScreenLock membuka blokir layar seorang siswa mode CBT.
 func (h *AdminHandler) ReleaseParticipantScreenLock(w http.ResponseWriter, r *http.Request) {
 	lock, err := h.service.ReleaseParticipantScreenLock(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "userExamId"))
@@ -385,6 +404,15 @@ func (h *AdminHandler) ReleaseParticipantScreenLock(w http.ResponseWriter, r *ht
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"released": true, "lock": lock})
+}
+
+// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang siswa.
+func (h *AdminHandler) ResetParticipantScreenLock(w http.ResponseWriter, r *http.Request) {
+	err := h.service.ResetParticipantScreenLock(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "userExamId"))
+	if writeAdminError(h.logger, w, r, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reset": true})
 }
 
 func (h *AdminHandler) CreateQuestion(w http.ResponseWriter, r *http.Request) {

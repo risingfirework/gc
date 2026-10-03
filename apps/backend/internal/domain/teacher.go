@@ -78,10 +78,14 @@ type TeacherRepository interface {
 	ListCBTPublishSettings(ctx context.Context, publisherID string) ([]CBTPublishSetting, error)
 	SetExamPublishPembahasan(ctx context.Context, publisherID, examID string, publish bool) (*CBTPublishSetting, error)
 	SetExamShuffle(ctx context.Context, publisherID, examID string, shuffleQuestions, shuffleOptions bool) (*CBTPublishSetting, error)
+	SetExamScreenLock(ctx context.Context, publisherID, examID string, enabled bool, seconds int) (*CBTPublishSetting, error)
 	ListCBTParticipants(ctx context.Context, publisherID, examID string) ([]CBTParticipant, error)
 	// ReleaseParticipantScreenLock membuka blokir layar seorang siswa. Repo
 	// wajib memverifikasi examID milik publisher dan attempt masih ongoing.
 	ReleaseParticipantScreenLock(ctx context.Context, publisherID, examID, userExamID string, now time.Time) (*ExamScreenLock, error)
+	// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang
+	// siswa pada ujian milik publisher ini.
+	ResetParticipantScreenLock(ctx context.Context, publisherID, examID, userExamID string) error
 	UpdatePayoutAccount(ctx context.Context, publisherID string, input TeacherPayoutAccount) (*TeacherPayoutAccount, error)
 	CreatePayoutRequest(ctx context.Context, publisherID string, amount float64) (*TeacherWithdrawalRequest, error)
 	CancelPayoutRequest(ctx context.Context, publisherID, requestID string) (*TeacherWithdrawalRequest, error)
@@ -104,10 +108,14 @@ type TeacherService interface {
 	ListCBTPublishSettings(ctx context.Context, publisherID string) ([]CBTPublishSetting, error)
 	SetExamPublishPembahasan(ctx context.Context, publisherID, examID string, publish bool) (*CBTPublishSetting, error)
 	SetExamShuffle(ctx context.Context, publisherID, examID string, shuffleQuestions, shuffleOptions bool) (*CBTPublishSetting, error)
+	SetExamScreenLock(ctx context.Context, publisherID, examID string, enabled bool, seconds int) (*CBTPublishSetting, error)
 	ListCBTParticipants(ctx context.Context, publisherID, examID string) ([]CBTParticipant, error)
 	// ReleaseParticipantScreenLock membuka blokir layar seorang siswa milik
 	// ujian pada request ini.
 	ReleaseParticipantScreenLock(ctx context.Context, publisherID, examID, userExamID string) (*ExamScreenLock, error)
+	// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang
+	// siswa pada ujian milik publisher ini.
+	ResetParticipantScreenLock(ctx context.Context, publisherID, examID, userExamID string) error
 	UpdatePayoutAccount(ctx context.Context, publisherID string, input TeacherPayoutAccount) (*TeacherPayoutAccount, error)
 	CreatePayoutRequest(ctx context.Context, publisherID string, amount float64) (*TeacherWithdrawalRequest, error)
 	CancelPayoutRequest(ctx context.Context, publisherID, requestID string) (*TeacherWithdrawalRequest, error)

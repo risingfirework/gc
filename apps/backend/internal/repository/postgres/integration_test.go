@@ -363,6 +363,74 @@ func TestIntegrationExamLifecycleAndShuffle(t *testing.T) {
 	}
 }
 
+func TestIntegrationExamScreenLockSettings(t *testing.T) {
+	_, testURL := waitForTestDatabase(t)
+	pool := applyMigrations(t, testURL)
+	ctx := context.Background()
+
+	exams := &ExamRepository{db: pool}
+	users := &UserRepository{db: pool}
+	admin := &AdminRepository{db: pool}
+
+	_, examID, _ := seedExamPackage(t, ctx, pool)
+
+	// Default dari migrasi 000053: aktif dengan durasi 5 detik.
+	defaults, err := admin.getCBTPublishSetting(ctx, examID)
+	if err != nil {
+		t.Fatalf("read default cbt setting: %v", err)
+	}
+	if !defaults.ScreenLockEnabled || defaults.ScreenLockSeconds != 5 {
+		t.Fatalf("default screen lock = %v/%d, want true/5", defaults.ScreenLockEnabled, defaults.ScreenLockSeconds)
+	}
+
+	updated, err := admin.SetExamScreenLock(ctx, examID, false, 12)
+	if err != nil {
+		t.Fatalf("set exam screen lock: %v", err)
+	}
+	if updated.ScreenLockEnabled || updated.ScreenLockSeconds != 12 {
+		t.Fatalf("updated screen lock = %v/%d, want false/12", updated.ScreenLockEnabled, updated.ScreenLockSeconds)
+	}
+
+	// GetUserExam harus ikut memuat pengaturan blokir agar service CBT
+	// mengunci sesuai konfigurasi ujian.
+	user := &domain.User{Email: "lock@example.com", PasswordHash: "hash", Role: "student", SchoolLevel: "SMA"}
+	if err := users.Create(ctx, user); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	now := time.Now().UTC()
+	attempt, err := exams.StartOrGetUserExam(ctx, user.ID, examID, now)
+	if err != nil {
+		t.Fatalf("start exam: %v", err)
+	}
+	_, loaded, err := exams.GetUserExam(ctx, attempt.ID, user.ID)
+	if err != nil {
+		t.Fatalf("get user exam: %v", err)
+	}
+	if loaded.ScreenLockEnabled || loaded.ScreenLockSeconds != 12 {
+		t.Fatalf("GetUserExam screen lock = %v/%d, want false/12", loaded.ScreenLockEnabled, loaded.ScreenLockSeconds)
+	}
+
+	// Reset menghapus catatan pelanggaran sehingga status kembali normal.
+	if _, err := pool.Exec(ctx, `INSERT INTO user_exam_screen_locks (user_exam_id, violation_count, locked_at, unlock_until) VALUES ($1, 3, $2, $3)`, attempt.ID, now, now.Add(30*time.Second)); err != nil {
+		t.Fatalf("seed screen lock: %v", err)
+	}
+	if err := admin.ResetParticipantScreenLock(ctx, examID, attempt.ID); err != nil {
+		t.Fatalf("reset participant screen lock: %v", err)
+	}
+	var remaining int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM user_exam_screen_locks WHERE user_exam_id = $1`, attempt.ID).Scan(&remaining); err != nil {
+		t.Fatalf("count screen locks: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("screen lock rows after reset = %d, want 0", remaining)
+	}
+
+	// Operasi idempoten saat attempt tanpa catatan pelanggaran.
+	if err := admin.ResetParticipantScreenLock(ctx, examID, attempt.ID); err != nil {
+		t.Fatalf("reset is expected to be idempotent: %v", err)
+	}
+}
+
 func sameShuffle(a, b *domain.UserExamShuffle) bool {
 	if len(a.QuestionOrder) != len(b.QuestionOrder) || len(a.OptionOrder) != len(b.OptionOrder) {
 		return false

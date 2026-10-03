@@ -15,6 +15,9 @@ type Exam struct {
 	PackageCBTToken  string
 	ShuffleQuestions bool
 	ShuffleOptions   bool
+	// Pengaturan blokir layar per ujian CBT.
+	ScreenLockEnabled bool
+	ScreenLockSeconds int
 }
 
 type QuestionOption struct {
