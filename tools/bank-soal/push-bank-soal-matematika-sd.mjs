@@ -60,6 +60,7 @@ function pick(items, name) {
 
 const questionPayload = QUESTIONS.map((item) => ({
   subject_name: "Matematika",
+  chapter_name: item.chapter ?? "",
   content_text: item.text,
   question_type: item.t,
   presentation_type: "single",

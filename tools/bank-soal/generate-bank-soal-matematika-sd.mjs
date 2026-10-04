@@ -15,12 +15,47 @@ const ExcelJS = require("exceljs");
 
 const OPTION_KEYS = ["A", "B", "C", "D", "E"];
 
+// Bab Pelajaran per soal (urutan sama dengan QUESTIONS). Dipakai untuk analisis
+// per bab di halaman hasil siswa, dan konsisten dengan data yang ada di produksi.
+const CHAPTERS = [
+  // Pilihan ganda (15)
+  "Operasi Hitung Bilangan",
+  "KPK dan FPB",
+  "KPK dan FPB",
+  "Pecahan",
+  "Pecahan",
+  "Bangun Datar",
+  "Bangun Datar",
+  "Bangun Ruang",
+  "Pengolahan Data",
+  "Pengolahan Data",
+  "Perbandingan dan Skala",
+  "Kecepatan, Jarak, dan Waktu",
+  "Bilangan Bulat",
+  "Persen",
+  "Perbandingan dan Skala",
+  // Pilihan ganda majemuk (5)
+  "Operasi Hitung Bilangan",
+  "Bilangan Berpangkat dan Kuadrat",
+  "Pecahan",
+  "Bangun Datar",
+  "Bilangan Prima",
+  // Benar / salah (5)
+  "Pecahan",
+  "Bilangan Bulat",
+  "Bangun Datar",
+  "Pengukuran",
+  "KPK dan FPB",
+  // Esai (5)
+  "Operasi Hitung Bilangan",
+  "Operasi Hitung Bilangan",
+  "Bangun Ruang",
+  "Pengolahan Data",
+  "Kecepatan, Jarak, dan Waktu",
+];
+
 function chapterForQuestion(index) {
-  if (index < 5) return "Bilangan dan Pecahan";
-  if (index < 8) return "Geometri";
-  if (index < 10) return "Pengolahan Data";
-  if (index < 12) return "Pengukuran";
-  return "Bilangan dan Perbandingan";
+  return CHAPTERS[index] ?? "";
 }
 
 const QUESTIONS = [
@@ -277,6 +312,10 @@ const QUESTIONS = [
     exp: "Kecepatan = jarak : waktu = 180 km : 3 jam = 60 km/jam.",
   },
 ];
+
+QUESTIONS.forEach((item, index) => {
+  if (item.chapter === undefined) item.chapter = chapterForQuestion(index);
+});
 
 const GUIDE_ROWS = [
   "TEMPLATE BANK SOAL TKA",
