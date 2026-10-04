@@ -341,6 +341,7 @@ type AdminQuestion struct {
 	ExamID           string           `json:"exam_id"`
 	ExamTitle        string           `json:"exam_title"`
 	SubjectName      string           `json:"subject_name"`
+	ChapterName      string           `json:"chapter_name"`
 	ContentText      string           `json:"content_text"`
 	QuestionType     string           `json:"question_type"`
 	PresentationType string           `json:"presentation_type"`
@@ -415,6 +416,7 @@ type AdminExamRequest struct {
 type AdminQuestionRequest struct {
 	ExamID           string           `json:"exam_id"`
 	SubjectName      string           `json:"subject_name"`
+	ChapterName      string           `json:"chapter_name"`
 	ContentText      string           `json:"content_text"`
 	QuestionType     string           `json:"question_type"`
 	PresentationType string           `json:"presentation_type"`

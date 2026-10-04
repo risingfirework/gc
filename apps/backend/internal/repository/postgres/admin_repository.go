@@ -218,7 +218,7 @@ func (r *AdminRepository) GetDashboard(ctx context.Context) (*domain.AdminDashbo
 	if err := transactions.Err(); err != nil {
 		return nil, err
 	}
-	questions, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status FROM questions q JOIN exams e ON e.id=q.exam_id ORDER BY q.id DESC LIMIT 200`)
+	questions, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status,q.chapter_name FROM questions q JOIN exams e ON e.id=q.exam_id ORDER BY q.id DESC LIMIT 200`)
 	if err != nil {
 		return nil, fmt.Errorf("admin questions: %w", err)
 	}
@@ -227,7 +227,7 @@ func (r *AdminRepository) GetDashboard(ctx context.Context) (*domain.AdminDashbo
 		var item domain.AdminQuestion
 		var rawOptions []byte
 		var rawCategoryLabels []byte
-		if err := questions.Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status); err != nil {
+		if err := questions.Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status, &item.ChapterName); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(rawOptions, &item.Options); err != nil {
@@ -446,8 +446,8 @@ func (r *AdminRepository) CreateQuestion(ctx context.Context, input domain.Admin
 	if err != nil {
 		return nil, fmt.Errorf("encode category labels: %w", err)
 	}
-	const query = `WITH changed AS (INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status FROM changed c JOIN exams e ON e.id=c.exam_id`
-	return r.questionRow(ctx, query, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status)
+	const query = `WITH changed AS (INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status,chapter_name) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name FROM changed c JOIN exams e ON e.id=c.exam_id`
+	return r.questionRow(ctx, query, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ChapterName)
 }
 func (r *AdminRepository) UpdateQuestion(ctx context.Context, id string, input domain.AdminQuestionRequest) (*domain.AdminQuestion, error) {
 	optionsJSON, err := json.Marshal(input.Options)
@@ -458,8 +458,8 @@ func (r *AdminRepository) UpdateQuestion(ctx context.Context, id string, input d
 	if err != nil {
 		return nil, fmt.Errorf("encode category labels: %w", err)
 	}
-	const query = `WITH changed AS (UPDATE questions SET exam_id=$2,subject_name=$3,content_text=$4,question_type=$5,presentation_type=$6,group_code=NULLIF($7,''),stimulus_text=$8,question_image_url=$9,stimulus_image_url=$10,category_labels_json=$11,options_json=$12,correct_answer=$13,score_weight=$14,explanation_text=$15,status=$16 WHERE id=$1 RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status FROM changed c JOIN exams e ON e.id=c.exam_id`
-	item, err := r.questionRow(ctx, query, id, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status)
+	const query = `WITH changed AS (UPDATE questions SET exam_id=$2,subject_name=$3,content_text=$4,question_type=$5,presentation_type=$6,group_code=NULLIF($7,''),stimulus_text=$8,question_image_url=$9,stimulus_image_url=$10,category_labels_json=$11,options_json=$12,correct_answer=$13,score_weight=$14,explanation_text=$15,status=$16,chapter_name=$17 WHERE id=$1 RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name FROM changed c JOIN exams e ON e.id=c.exam_id`
+	item, err := r.questionRow(ctx, query, id, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ChapterName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrQuestionNotFound
 	}
@@ -469,7 +469,7 @@ func (r *AdminRepository) questionRow(ctx context.Context, query string, args ..
 	var item domain.AdminQuestion
 	var rawOptions []byte
 	var rawCategoryLabels []byte
-	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status)
+	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status, &item.ChapterName)
 	if err != nil {
 		return nil, adminMutationError(err)
 	}
@@ -885,7 +885,7 @@ func (r *AdminRepository) ListAdminQuestions(ctx context.Context, page, perPage 
 		args = append(args, packageID)
 	}
 	queryArgs := append(args, perPage, (page-1)*perPage)
-	rows, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status FROM questions q JOIN exams e ON e.id=q.exam_id`+whereClause+` ORDER BY q.id DESC LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs))+``, queryArgs...)
+	rows, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status,q.chapter_name FROM questions q JOIN exams e ON e.id=q.exam_id`+whereClause+` ORDER BY q.id DESC LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs))+``, queryArgs...)
 	if err != nil {
 		return domain.Page[domain.AdminQuestion]{}, fmt.Errorf("admin questions list: %w", err)
 	}
@@ -894,7 +894,7 @@ func (r *AdminRepository) ListAdminQuestions(ctx context.Context, page, perPage 
 	for rows.Next() {
 		var item domain.AdminQuestion
 		var rawOptions, rawCategoryLabels []byte
-		if err := rows.Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status); err != nil {
+		if err := rows.Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status, &item.ChapterName); err != nil {
 			return domain.Page[domain.AdminQuestion]{}, err
 		}
 		if err := json.Unmarshal(rawOptions, &item.Options); err != nil {

@@ -17,6 +17,7 @@ type Props={
   onImportQuestion?:(input:{
     exam_id:string;
     subject_name:string;
+    chapter_name:string;
     content_text:string;
     question_type:QuestionType;
     presentation_type:PresentationType;
@@ -41,12 +42,14 @@ const GUIDE_ROWS=[
   "PGK Kategori: seluruh pernyataan diberi kategori, contoh A=Benar;B=Salah;C=Benar.",
   "Esai: correct_answer diisi jawaban referensi, option dibiarkan kosong.",
   "Setiap baris adalah satu soal mandiri. Masukkan stimulus langsung pada question_text.",
+  "Isi chapter_name untuk analisis kekuatan dan kelemahan siswa per bab.",
   "Gunakan nilai kode pada sheet Referensi agar data konsisten.",
 ];
 
 const REF_ROWS=[
   ["Field","Nilai yang diizinkan","Keterangan"],
   ["question_type","single_choice | multiple_choice | category | essay","Empat bentuk soal TKA"],
+  ["chapter_name","contoh: Pecahan","Bab pelajaran; wajib untuk analisis per bab"],
   ["category_labels","Benar|Salah","Pisahkan kategori dengan tanda |"],
   ["correct_answer","B / A,C / A=Benar;B=Salah","Sintaks mengikuti bentuk soal"],
   ["status","active | inactive","Status publikasi"],
@@ -108,6 +111,7 @@ export default function QuestionBankTools({
     dataSheet.columns=[
       {header:"no",key:"no",width:11},
       {header:"question_type",key:"question_type",width:18},
+      {header:"chapter_name",key:"chapter_name",width:24},
       {header:"question_text",key:"question_text",width:30},
       {header:"question_image_url",key:"question_image_url",width:30},
       {header:"option_a",key:"option_a",width:28},{header:"option_a_image_url",key:"option_a_image_url",width:28},
@@ -131,6 +135,7 @@ export default function QuestionBankTools({
       dataSheet.addRow({
         no:itemIndex+1,
         question_type:item.question_type,
+        chapter_name:item.chapter_name??"",
         question_text:item.content_text??"",
         question_image_url:item.question_image_url??"",
         option_a:byKey.A?.content??"",option_a_image_url:byKey.A?.image_url??"",
@@ -189,6 +194,7 @@ export default function QuestionBankTools({
       const parsed:{
         row:number;
         question_type:string;
+        chapter_name:string;
         content_text:string;
         question_image_url:string;
         options:{key:string;content:string;image_url?:string}[];
@@ -210,6 +216,8 @@ export default function QuestionBankTools({
         }
         const contentText=val(row,colMap["question_text"]??4);
         if(!contentText){parseErrors.push(`Baris ${rowNumber}: question_text kosong`);return}
+        const chapterName=val(row,colMap["chapter_name"]??0);
+        if(!chapterName){parseErrors.push(`Baris ${rowNumber}: chapter_name (Bab Pelajaran) kosong`);return}
 
         const options:{key:string;content:string;image_url?:string}[]=[];
         if(qType!=="essay"){
@@ -227,6 +235,7 @@ export default function QuestionBankTools({
         parsed.push({
           row:rowNumber,
           question_type:qType,
+          chapter_name:chapterName,
           content_text:contentText,
           question_image_url:val(row,colMap["question_image_url"]??0),
           options,
@@ -246,6 +255,7 @@ export default function QuestionBankTools({
           await onImportQuestion({
             exam_id:examId,
             subject_name:subjectName??"",
+            chapter_name:row.chapter_name,
             content_text:row.content_text,
             question_type:row.question_type as QuestionType,
             presentation_type:"single",

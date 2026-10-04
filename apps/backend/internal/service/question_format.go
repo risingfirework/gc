@@ -10,6 +10,7 @@ import (
 
 func normalizeQuestion(input domain.AdminQuestionRequest) domain.AdminQuestionRequest {
 	input.SubjectName = strings.TrimSpace(input.SubjectName)
+	input.ChapterName = strings.TrimSpace(input.ChapterName)
 	input.ContentText = strings.TrimSpace(input.ContentText)
 	input.QuestionType = strings.ToLower(strings.TrimSpace(input.QuestionType))
 	if input.QuestionType == "" {

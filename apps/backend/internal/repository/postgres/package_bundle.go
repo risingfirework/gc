@@ -44,8 +44,8 @@ func createPackageBundle(ctx context.Context, db *pgxpool.Pool, publisherID *str
 			if marshalErr != nil {
 				return nil, fmt.Errorf("encode category labels: %w", marshalErr)
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-				examID, question.SubjectName, question.ContentText, question.QuestionType, question.PresentationType, question.GroupCode, question.StimulusText, question.QuestionImageURL, question.StimulusImageURL, categoryLabelsJSON, optionsJSON, question.CorrectAnswer, question.ScoreWeight, question.Explanation, question.Status,
+			if _, err := tx.Exec(ctx, `INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status,chapter_name) VALUES($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+				examID, question.SubjectName, question.ContentText, question.QuestionType, question.PresentationType, question.GroupCode, question.StimulusText, question.QuestionImageURL, question.StimulusImageURL, categoryLabelsJSON, optionsJSON, question.CorrectAnswer, question.ScoreWeight, question.Explanation, question.Status, question.ChapterName,
 			); err != nil {
 				return nil, adminMutationError(err)
 			}

@@ -14,9 +14,20 @@ type SubjectResult struct {
 	Score          float64 `json:"score"`
 }
 
+// ChapterResult summarizes a student's performance for one chapter in an exam.
+type ChapterResult struct {
+	ChapterName    string  `json:"chapter_name"`
+	CorrectAnswers int     `json:"correct_answers"`
+	WrongAnswers   int     `json:"wrong_answers"`
+	Unanswered     int     `json:"unanswered"`
+	TotalQuestions int     `json:"total_questions"`
+	Score          float64 `json:"score"`
+}
+
 type AnswerReview struct {
 	QuestionID          string           `json:"question_id"`
 	SubjectName         string           `json:"subject_name"`
+	ChapterName         string           `json:"chapter_name,omitempty"`
 	ContentText         string           `json:"content_text"`
 	QuestionType        string           `json:"question_type"`
 	PresentationType    string           `json:"presentation_type"`
@@ -52,6 +63,7 @@ type ExamResultResponse struct {
 	WrongAnswers    int             `json:"wrong_answers"`
 	Unanswered      int             `json:"unanswered"`
 	Subjects        []SubjectResult `json:"subjects"`
+	Chapters        []ChapterResult `json:"chapters"`
 	Review          []AnswerReview  `json:"review"`
 }
 

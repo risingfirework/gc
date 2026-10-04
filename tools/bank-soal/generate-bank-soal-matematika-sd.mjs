@@ -15,6 +15,14 @@ const ExcelJS = require("exceljs");
 
 const OPTION_KEYS = ["A", "B", "C", "D", "E"];
 
+function chapterForQuestion(index) {
+  if (index < 5) return "Bilangan dan Pecahan";
+  if (index < 8) return "Geometri";
+  if (index < 10) return "Pengolahan Data";
+  if (index < 12) return "Pengukuran";
+  return "Bilangan dan Perbandingan";
+}
+
 const QUESTIONS = [
   // ================= PILIHAN GANDA (single_choice) 15 =================
   {
@@ -305,6 +313,7 @@ function buildWorkbook() {
   dataSheet.columns = [
     { header: "no", key: "no", width: 8 },
     { header: "question_type", key: "question_type", width: 18 },
+    { header: "chapter_name", key: "chapter_name", width: 24 },
     { header: "question_text", key: "question_text", width: 45 },
     { header: "question_image_url", key: "question_image_url", width: 24 },
     { header: "option_a", key: "option_a", width: 30 }, { header: "option_a_image_url", key: "option_a_image_url", width: 24 },
@@ -328,6 +337,7 @@ function buildWorkbook() {
     const row = {
       no: index + 1,
       question_type: item.t,
+      chapter_name: item.chapter ?? chapterForQuestion(index),
       question_text: item.text,
       question_image_url: "",
       category_labels: item.labels ? item.labels.join("|") : "",

@@ -48,7 +48,7 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 	}
 
 	const questionsQuery = `
-		SELECT id, exam_id, subject_name, content_text, question_type, presentation_type,
+		SELECT id, exam_id, subject_name, chapter_name, content_text, question_type, presentation_type,
 		       COALESCE(group_code,''), stimulus_text, question_image_url, stimulus_image_url,
 		       category_labels_json, options_json, correct_answer, score_weight,
 		       difficulty, discrimination, explanation_text, explanation_video_url
@@ -67,7 +67,7 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 		var rawOptions []byte
 		var rawCategoryLabels []byte
 		if err := rows.Scan(
-			&question.ID, &question.ExamID, &question.SubjectName, &question.ContentText,
+			&question.ID, &question.ExamID, &question.SubjectName, &question.ChapterName, &question.ContentText,
 			&question.QuestionType, &question.PresentationType, &question.GroupCode, &question.StimulusText,
 			&question.QuestionImageURL, &question.StimulusImageURL,
 			&rawCategoryLabels, &rawOptions, &question.CorrectAnswer, &question.ScoreWeight,

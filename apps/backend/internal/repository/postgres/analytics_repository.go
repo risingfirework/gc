@@ -50,14 +50,14 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 	result.Passed = result.TotalScore >= result.PassingScore
 
 	const detailQuery = `
-		SELECT q.id, q.subject_name, q.content_text, q.question_type, q.presentation_type,
+		SELECT q.id, q.subject_name, q.chapter_name, q.content_text, q.question_type, q.presentation_type,
 		       COALESCE(q.group_code,''), q.stimulus_text, q.question_image_url, q.stimulus_image_url,
 		       q.category_labels_json, q.options_json, q.correct_answer, q.score_weight,
 		       q.explanation_text, q.explanation_video_url,
 		       ua.selected_option, COALESCE(ua.is_correct, false)
 		FROM questions q
 		LEFT JOIN user_answers ua ON ua.question_id = q.id AND ua.user_exam_id = $1
-		WHERE q.exam_id = $2 ORDER BY q.subject_name, q.id`
+		WHERE q.exam_id = $2 ORDER BY q.subject_name, q.chapter_name, q.id`
 	rows, err := r.db.Query(ctx, detailQuery, userExamID, result.ExamID)
 	if err != nil {
 		return nil, fmt.Errorf("query result details: %w", err)
@@ -68,11 +68,13 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 		correctWeight, totalWeight        float64
 	}
 	bySubject := make(map[string]*accumulator)
+	byChapter := make(map[string]*accumulator)
 	order := make([]string, 0)
+	chapterOrder := make([]string, 0)
 	for rows.Next() {
 		var review domain.AnswerReview
 		var rawOptions, rawCategoryLabels []byte
-		if err := rows.Scan(&review.QuestionID, &review.SubjectName, &review.ContentText, &review.QuestionType, &review.PresentationType, &review.GroupCode, &review.StimulusText, &review.QuestionImageURL, &review.StimulusImageURL, &rawCategoryLabels, &rawOptions, &review.CorrectAnswer, &review.ScoreWeight, &review.ExplanationText, &review.ExplanationVideoURL, &review.SelectedOption, &review.IsCorrect); err != nil {
+		if err := rows.Scan(&review.QuestionID, &review.SubjectName, &review.ChapterName, &review.ContentText, &review.QuestionType, &review.PresentationType, &review.GroupCode, &review.StimulusText, &review.QuestionImageURL, &review.StimulusImageURL, &rawCategoryLabels, &rawOptions, &review.CorrectAnswer, &review.ScoreWeight, &review.ExplanationText, &review.ExplanationVideoURL, &review.SelectedOption, &review.IsCorrect); err != nil {
 			return nil, fmt.Errorf("scan result detail: %w", err)
 		}
 		if err := json.Unmarshal(rawCategoryLabels, &review.CategoryLabels); err != nil {
@@ -87,18 +89,34 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 			bySubject[review.SubjectName] = stats
 			order = append(order, review.SubjectName)
 		}
+		chapter := review.ChapterName
+		if chapter == "" {
+			chapter = "Belum dikelompokkan"
+		}
+		chapterStats := byChapter[chapter]
+		if chapterStats == nil {
+			chapterStats = &accumulator{}
+			byChapter[chapter] = chapterStats
+			chapterOrder = append(chapterOrder, chapter)
+		}
 		stats.total++
+		chapterStats.total++
 		stats.totalWeight += review.ScoreWeight
+		chapterStats.totalWeight += review.ScoreWeight
 		switch {
 		case review.SelectedOption == nil:
 			stats.unanswered++
+			chapterStats.unanswered++
 			result.Unanswered++
 		case review.IsCorrect:
 			stats.correct++
+			chapterStats.correct++
 			stats.correctWeight += review.ScoreWeight
+			chapterStats.correctWeight += review.ScoreWeight
 			result.CorrectAnswers++
 		default:
 			stats.wrong++
+			chapterStats.wrong++
 			result.WrongAnswers++
 		}
 		if reviewAvailable {
@@ -109,6 +127,7 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 		return nil, fmt.Errorf("iterate result details: %w", err)
 	}
 	result.Subjects = make([]domain.SubjectResult, 0, len(order))
+	result.Chapters = make([]domain.ChapterResult, 0, len(chapterOrder))
 	for _, name := range order {
 		stats := bySubject[name]
 		score := 0.0
@@ -116,6 +135,14 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 			score = math.Round(stats.correctWeight/stats.totalWeight*10000) / 100
 		}
 		result.Subjects = append(result.Subjects, domain.SubjectResult{SubjectName: name, CorrectAnswers: stats.correct, WrongAnswers: stats.wrong, Unanswered: stats.unanswered, TotalQuestions: stats.total, Score: score})
+	}
+	for _, name := range chapterOrder {
+		stats := byChapter[name]
+		score := 0.0
+		if stats.totalWeight > 0 {
+			score = math.Round(stats.correctWeight/stats.totalWeight*10000) / 100
+		}
+		result.Chapters = append(result.Chapters, domain.ChapterResult{ChapterName: name, CorrectAnswers: stats.correct, WrongAnswers: stats.wrong, Unanswered: stats.unanswered, TotalQuestions: stats.total, Score: score})
 	}
 	if result.Review == nil {
 		result.Review = []domain.AnswerReview{}

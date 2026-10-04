@@ -39,6 +39,7 @@ type Question struct {
 	ID                  string
 	ExamID              string
 	SubjectName         string
+	ChapterName         string
 	ContentText         string
 	QuestionType        string
 	PresentationType    string
@@ -60,6 +61,7 @@ type Question struct {
 type QuestionResponse struct {
 	ID               string           `json:"id"`
 	SubjectName      string           `json:"subject_name"`
+	ChapterName      string           `json:"chapter_name,omitempty"`
 	ContentText      string           `json:"content_text"`
 	QuestionType     string           `json:"question_type"`
 	PresentationType string           `json:"presentation_type"`

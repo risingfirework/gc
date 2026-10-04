@@ -123,7 +123,7 @@ func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string
 	if err := transactions.Err(); err != nil {
 		return nil, err
 	}
-	questions, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status FROM questions q JOIN exams e ON e.id=q.exam_id JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$1 ORDER BY q.id DESC LIMIT 200`, publisherID)
+	questions, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status,q.chapter_name FROM questions q JOIN exams e ON e.id=q.exam_id JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$1 ORDER BY q.id DESC LIMIT 200`, publisherID)
 	if err != nil {
 		return nil, fmt.Errorf("teacher questions: %w", err)
 	}
@@ -132,7 +132,7 @@ func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string
 		var item domain.AdminQuestion
 		var rawOptions []byte
 		var rawCategoryLabels []byte
-		if err := questions.Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status); err != nil {
+		if err := questions.Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status, &item.ChapterName); err != nil {
 			return nil, err
 		}
 		if err := json.Unmarshal(rawOptions, &item.Options); err != nil {
@@ -683,8 +683,8 @@ func (r *TeacherRepository) CreateQuestion(ctx context.Context, publisherID stri
 	if err != nil {
 		return nil, fmt.Errorf("encode category labels: %w", err)
 	}
-	const query = `WITH allowed AS (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE e.id=$16 AND p.publisher_id=$17), changed AS (INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status) SELECT $1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15 FROM allowed RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status FROM changed c JOIN exams e ON e.id=c.exam_id`
-	item, err := r.teacherQuestionRow(ctx, query, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ExamID, publisherID)
+	const query = `WITH allowed AS (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE e.id=$17 AND p.publisher_id=$18), changed AS (INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status,chapter_name) SELECT $1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16 FROM allowed RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name FROM changed c JOIN exams e ON e.id=c.exam_id`
+	item, err := r.teacherQuestionRow(ctx, query, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ChapterName, input.ExamID, publisherID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound
 	}
@@ -699,8 +699,8 @@ func (r *TeacherRepository) UpdateQuestion(ctx context.Context, publisherID, id 
 	if err != nil {
 		return nil, fmt.Errorf("encode category labels: %w", err)
 	}
-	const query = `WITH changed AS (UPDATE questions SET exam_id=$3,subject_name=$4,content_text=$5,question_type=$6,presentation_type=$7,group_code=NULLIF($8,''),stimulus_text=$9,question_image_url=$10,stimulus_image_url=$11,category_labels_json=$12,options_json=$13,correct_answer=$14,score_weight=$15,explanation_text=$16,status=$17 WHERE id=$1 AND exam_id IN (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$2) RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status FROM changed c JOIN exams e ON e.id=c.exam_id`
-	item, err := r.teacherQuestionRow(ctx, query, id, publisherID, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status)
+	const query = `WITH changed AS (UPDATE questions SET exam_id=$3,subject_name=$4,content_text=$5,question_type=$6,presentation_type=$7,group_code=NULLIF($8,''),stimulus_text=$9,question_image_url=$10,stimulus_image_url=$11,category_labels_json=$12,options_json=$13,correct_answer=$14,score_weight=$15,explanation_text=$16,status=$17,chapter_name=$18 WHERE id=$1 AND exam_id IN (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$2) RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name FROM changed c JOIN exams e ON e.id=c.exam_id`
+	item, err := r.teacherQuestionRow(ctx, query, id, publisherID, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ChapterName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrQuestionNotFound
 	}
@@ -710,7 +710,7 @@ func (r *TeacherRepository) teacherQuestionRow(ctx context.Context, query string
 	var item domain.AdminQuestion
 	var rawOptions []byte
 	var rawCategoryLabels []byte
-	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status)
+	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status, &item.ChapterName)
 	if err != nil {
 		return nil, adminMutationError(err)
 	}

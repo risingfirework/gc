@@ -12,7 +12,7 @@ import (
 // memiliki pola kunci jawaban yang berbeda.
 func displayQuestion(question domain.Question, mapping *domain.UserExamShuffle) domain.QuestionResponse {
 	response := domain.QuestionResponse{
-		ID: question.ID, SubjectName: question.SubjectName, ContentText: question.ContentText,
+		ID: question.ID, SubjectName: question.SubjectName, ChapterName: question.ChapterName, ContentText: question.ContentText,
 		QuestionType: question.QuestionType, PresentationType: question.PresentationType,
 		GroupCode: question.GroupCode, StimulusText: question.StimulusText,
 		QuestionImageURL: question.QuestionImageURL, StimulusImageURL: question.StimulusImageURL,
