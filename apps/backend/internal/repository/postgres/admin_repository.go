@@ -48,6 +48,8 @@ func masterTable(category domain.MasterCategory) (string, error) {
 		return "kategori", nil
 	case domain.MasterKelas:
 		return "kelas", nil
+	case domain.MasterBabPelajaran:
+		return "bab_pelajaran", nil
 	default:
 		return "", fmt.Errorf("%w: master category tidak dikenal", domain.ErrInvalidInput)
 	}

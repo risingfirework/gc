@@ -216,8 +216,7 @@ export default function QuestionBankTools({
         }
         const contentText=val(row,colMap["question_text"]??4);
         if(!contentText){parseErrors.push(`Baris ${rowNumber}: question_text kosong`);return}
-        const chapterName=val(row,colMap["chapter_name"]??0);
-        if(!chapterName){parseErrors.push(`Baris ${rowNumber}: chapter_name (Bab Pelajaran) kosong`);return}
+        const chapterName=val(row,colMap["chapter_name"]??0) || "";
 
         const options:{key:string;content:string;image_url?:string}[]=[];
         if(qType!=="essay"){

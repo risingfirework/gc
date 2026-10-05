@@ -42,11 +42,12 @@ const (
 type MasterCategory = string
 
 const (
-	MasterMapel       MasterCategory = "mapel"
-	MasterJenjang     MasterCategory = "jenjang"
-	MasterTahunAjaran MasterCategory = "tahun-ajaran"
-	MasterKategori    MasterCategory = "kategori"
-	MasterKelas       MasterCategory = "kelas"
+	MasterMapel        MasterCategory = "mapel"
+	MasterJenjang      MasterCategory = "jenjang"
+	MasterTahunAjaran  MasterCategory = "tahun-ajaran"
+	MasterKategori     MasterCategory = "kategori"
+	MasterKelas        MasterCategory = "kelas"
+	MasterBabPelajaran MasterCategory = "bab-pelajaran"
 )
 
 type MasterItem struct {
