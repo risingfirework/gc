@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [pendingGoogleToken,setPendingGoogleToken] = useState("");
   const [googleLevel,setGoogleLevel] = useState<User["school_level"]>("SMA");
   const [regRole,setRegRole] = useState<"student"|"teacher">("student");
+  const [showPassword,setShowPassword] = useState(false);
   const [twoFAMode,setTwoFAMode] = useState(false);
   const [mfaToken,setMFAToken] = useState("");
   const [twoFACode,setTwoFACode] = useState("");
