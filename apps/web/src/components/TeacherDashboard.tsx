@@ -66,6 +66,10 @@ export default function TeacherDashboard({ user, onLogout, loggingOut, onUserUpd
     if (view !== "cbt") return;
     api.teacherCBTSettings().then(setCbtSettings).catch((reason) => setError(reason instanceof Error ? reason.message : "Pengaturan CBT gagal dimuat."));
   }, [view]);
+  useEffect(() => {
+    if ((user.teacher_verification_status ?? "approved") !== "approved") return;
+    api.listMaster("bab-pelajaran").then((items) => setMasters((current) => ({ ...current, "bab-pelajaran": items }))).catch(() => { /* guru memilih bab dari daftar yang tersedia */ });
+  }, [user.teacher_verification_status]);
 
   async function action(task: () => Promise<unknown>, success?: string) {
     setSaving("mutation"); setError("");

@@ -35,28 +35,109 @@ type Props={
 };
 
 const GUIDE_ROWS=[
-  "TEMPLATE BANK SOAL TKA",
-  "Isi data pada sheet Bank Soal. Ujian dan mata pelajaran dipilih saat paket dibuat di aplikasi.",
-  "PG Sederhana: satu kunci, contoh B.",
-  "PGK MCMA: minimal dua kunci dipisahkan koma, contoh A,C.",
-  "PGK Kategori: seluruh pernyataan diberi kategori, contoh A=Benar;B=Salah;C=Benar.",
-  "Esai: correct_answer diisi jawaban referensi, option dibiarkan kosong.",
-  "Setiap baris adalah satu soal mandiri. Masukkan stimulus langsung pada question_text.",
-  "Isi chapter_name untuk analisis kekuatan dan kelemahan siswa per bab.",
-  "Gunakan nilai kode pada sheet Referensi agar data konsisten.",
+  "TEMPLATE BANK SOAL TKA — CARA PAKAI",
+  "Isi data pada sheet 'Bank Soal'. Satu baris = satu soal. Ujian dan mata pelajaran dipilih saat paket dibuat di aplikasi.",
+  "Kolom 'jenis_soal' cukup tulis: Pilihan Ganda, Pilihan Majemuk, Benar/Salah, atau Esai. Boleh dikosongkan (otomatis).",
+  "Pilihan Ganda: isi pilihan_1 sampai pilihan_5, lalu tulis kunci_jawaban memakai nomor pilihan. Contoh: 2",
+  "Pilihan Majemuk: jawaban benar lebih dari satu, tulis nomornya dipisah koma. Contoh: 1,3",
+  "Benar/Salah: tulis kategori tiap pernyataan. Contoh: 1=Benar;2=Salah;3=Benar",
+  "Esai: kosongkan pilihan, isi kunci_jawaban dengan jawaban referensi (boleh dikosongkan).",
+  "Kolom 'bab' opsional (contoh: Pecahan) untuk analisis kekuatan/kelemahan siswa per bab.",
+  "Kolom 'gambar_soal' dan 'gambar_pilihan_1..5' opsional untuk tautan gambar. 'kategori' hanya untuk Benar/Salah.",
+  "Kolom 'status': active (tampil) atau inactive (disimpan, tidak ditampilkan). Bila kosong dianggap active.",
+  "Huruf A-E juga masih diterima untuk pilihan dan kunci jawaban.",
 ];
 
 const REF_ROWS=[
-  ["Field","Nilai yang diizinkan","Keterangan"],
-  ["question_type","single_choice | multiple_choice | category | essay","Empat bentuk soal TKA"],
-  ["chapter_name","contoh: Pecahan","Bab pelajaran; wajib untuk analisis per bab"],
-  ["category_labels","Benar|Salah","Pisahkan kategori dengan tanda |"],
-  ["correct_answer","B / A,C / A=Benar;B=Salah","Sintaks mengikuti bentuk soal"],
-  ["status","active | inactive","Status publikasi"],
+  ["Kolom","Nilai yang diterima","Keterangan"],
+  ["jenis_soal","Pilihan Ganda | Pilihan Majemuk | Benar/Salah | Esai","Boleh juga: PG, PGK, BS. Kosong = otomatis."],
+  ["kunci_jawaban","2 | 1,3 | 1=Benar;2=Salah","Pakai nomor pilihan 1-5 (huruf A-E juga boleh)"],
+  ["bab","contoh: Pecahan","Opsional; untuk analisis per bab"],
+  ["kategori","Benar|Salah","Khusus Benar/Salah; pemisah tanda |"],
+  ["status","active | inactive","Kosong = active"],
 ];
 
-const VALID_TYPES=["single_choice","multiple_choice","category","essay"];
 const OPTION_KEYS=["a","b","c","d","e"];
+const LETTERS=["a","b","c","d","e"];
+const TYPE_LABEL:Record<string,string>={single_choice:"Pilihan Ganda",multiple_choice:"Pilihan Majemuk",category:"Benar/Salah",essay:"Esai"};
+const TYPE_ALIASES:Record<string,string>={
+  "pilihan ganda":"single_choice","pg":"single_choice","pg tunggal":"single_choice","pilihan_ganda":"single_choice","single choice":"single_choice","single_choice":"single_choice",
+  "pilihan majemuk":"multiple_choice","pg majemuk":"multiple_choice","pgk":"multiple_choice","pilihan ganda majemuk":"multiple_choice","pilihan ganda kompleks":"multiple_choice","multiple choice":"multiple_choice","multiple_choice":"multiple_choice",
+  "benar/salah":"category","benar salah":"category","benar-salah":"category","bs":"category","kategori":"category","category":"category","pg kategori":"category","pg benar salah":"category",
+  "esai":"essay","essay":"essay","uraian":"essay","isian":"essay","esai/uraian":"essay",
+};
+const HEADER_ALIASES:Record<string,string>={
+  no:"no",nomor:"no","nomor soal":"no",
+  jenis_soal:"jenis_soal","jenis soal":"jenis_soal",jenis:"jenis_soal","question type":"jenis_soal","tipe soal":"jenis_soal","bentuk soal":"jenis_soal",bentuk:"jenis_soal",bentukan:"jenis_soal",
+  bab:"bab","bab pelajaran":"bab",chapter:"bab","chapter name":"bab",
+  soal:"soal",pertanyaan:"soal","question text":"soal",naskah:"soal",question:"soal",content:"soal","content text":"soal",
+  kunci:"kunci","kunci jawaban":"kunci",jawaban:"kunci","correct answer":"kunci",answer:"kunci",
+  bobot:"bobot",skor:"bobot","score weight":"bobot",score:"bobot","bobot nilai":"bobot",
+  pembahasan:"pembahasan",penjelasan:"pembahasan",explanation:"pembahasan","explanation text":"pembahasan",
+  status:"status",publikasi:"status",
+  "gambar soal":"gambar_soal","question image url":"gambar_soal",gambar:"gambar_soal",image:"gambar_soal","image url":"gambar_soal",image_url:"gambar_soal",
+  kategori:"kategori","category labels":"kategori","category label":"kategori",category:"kategori",labels:"kategori",label:"kategori",
+};
+
+function canonHeader(raw:unknown):string|undefined{
+  const key=String(raw??"").trim().toLowerCase().replace(/[_\s]+/g," ");
+  if(!key)return undefined;
+  if(HEADER_ALIASES[key])return HEADER_ALIASES[key];
+  let m=key.match(/^(?:pilihan|opsi|option|jawaban) ([1-5a-e])$/);
+  if(m)return "option_"+m[1];
+  m=key.match(/^(?:gambar pilihan|gambar opsi|gambar) ([1-5a-e])$/);
+  if(m)return "option_image_"+m[1];
+  m=key.match(/^(?:pilihan|opsi|option) ([1-5a-e]) (?:image url|image|gambar)$/);
+  if(m)return "option_image_"+m[1];
+  return undefined;
+}
+
+function slotToLetter(token:string):string|undefined{
+  const t=token.trim().toLowerCase();
+  if(/^[1-9]$/.test(t))return OPTION_KEYS[Number(t)-1]?.toUpperCase();
+  if(OPTION_KEYS.includes(t))return t.toUpperCase();
+  return undefined;
+}
+
+function letterToNumber(ch:string):string{
+  const i=OPTION_KEYS.indexOf(ch.trim().toLowerCase());
+  return i>=0?String(i+1):ch.trim();
+}
+
+function normalizeAnswer(raw:string,type:string):{correct_answer:string;category_labels:string[];error?:string}{
+  if(type==="essay")return {correct_answer:raw.trim(),category_labels:[]};
+  if(!raw.trim())return {correct_answer:"",category_labels:[],error:"Kunci jawaban belum diisi"};
+  if(type==="category"){
+    const parts=raw.split(";").map(s=>s.trim()).filter(Boolean);
+    const pairs:{key:string;label:string}[]=[];
+    for(const part of parts){
+      const eq=part.indexOf("=");
+      if(eq<0)return {correct_answer:"",category_labels:[],error:'Format Benar/Salah harus seperti "1=Benar;2=Salah"'};
+      const key=slotToLetter(part.slice(0,eq));
+      if(!key)return {correct_answer:"",category_labels:[],error:`Nomor pilihan "${part.slice(0,eq).trim()}" tidak dikenal`};
+      pairs.push({key,label:part.slice(eq+1).trim()});
+    }
+    pairs.sort((a,b)=>OPTION_KEYS.indexOf(a.key.toLowerCase())-OPTION_KEYS.indexOf(b.key.toLowerCase()));
+    const labels=[...new Set(pairs.map(p=>p.label))];
+    return {correct_answer:pairs.map(p=>`${p.key}=${p.label}`).join(";"),category_labels:labels};
+  }
+  const tokens=raw.split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+  const letters:string[]=[];
+  for(const token of tokens){
+    const key=slotToLetter(token);
+    if(!key)return {correct_answer:"",category_labels:[],error:`Kunci "${token}" tidak dikenal (gunakan nomor 1-5 atau huruf A-E)`};
+    letters.push(key);
+  }
+  const sorted=[...new Set(letters)].sort((a,b)=>OPTION_KEYS.indexOf(a.toLowerCase())-OPTION_KEYS.indexOf(b.toLowerCase()));
+  if(type==="single_choice"&&sorted.length>1)return {correct_answer:"",category_labels:[],error:"Pilihan Ganda hanya boleh satu kunci"};
+  return {correct_answer:sorted.join(","),category_labels:[]};
+}
+
+function answerToNumbers(answer:string,type:string):string{
+  if(type==="essay"||!answer)return answer??"";
+  if(type==="category")return answer.split(";").map(part=>{const eq=part.indexOf("=");if(eq<0)return part;return `${letterToNumber(part.slice(0,eq))}=${part.slice(eq+1)}`}).join(";");
+  return answer.split(",").map(a=>letterToNumber(a)).join(",");
+}
 
 export default function QuestionBankTools({
   packageTitle,packageCode,level,questions,durationMinutes=60,
@@ -109,21 +190,18 @@ export default function QuestionBankTools({
 
     const dataSheet=wb.addWorksheet("Bank Soal",{views:[{state:"frozen",ySplit:1}]});
     dataSheet.columns=[
-      {header:"no",key:"no",width:11},
-      {header:"question_type",key:"question_type",width:18},
-      {header:"chapter_name",key:"chapter_name",width:24},
-      {header:"question_text",key:"question_text",width:30},
-      {header:"question_image_url",key:"question_image_url",width:30},
-      {header:"option_a",key:"option_a",width:28},{header:"option_a_image_url",key:"option_a_image_url",width:28},
-      {header:"option_b",key:"option_b",width:28},{header:"option_b_image_url",key:"option_b_image_url",width:28},
-      {header:"option_c",key:"option_c",width:28},{header:"option_c_image_url",key:"option_c_image_url",width:28},
-      {header:"option_d",key:"option_d",width:28},{header:"option_d_image_url",key:"option_d_image_url",width:28},
-      {header:"option_e",key:"option_e",width:28},{header:"option_e_image_url",key:"option_e_image_url",width:28},
-      {header:"category_labels",key:"category_labels",width:22},
-      {header:"correct_answer",key:"correct_answer",width:18},
-      {header:"score_weight",key:"score_weight",width:13},
-      {header:"explanation",key:"explanation",width:30},
+      {header:"no",key:"no",width:8},
+      {header:"jenis_soal",key:"jenis_soal",width:18},
+      {header:"bab",key:"bab",width:20},
+      {header:"soal",key:"soal",width:44},
+      {header:"pilihan_1",key:"pilihan_1",width:26},{header:"pilihan_2",key:"pilihan_2",width:26},{header:"pilihan_3",key:"pilihan_3",width:26},{header:"pilihan_4",key:"pilihan_4",width:26},{header:"pilihan_5",key:"pilihan_5",width:26},
+      {header:"kunci_jawaban",key:"kunci_jawaban",width:20},
+      {header:"bobot",key:"bobot",width:10},
+      {header:"pembahasan",key:"pembahasan",width:36},
       {header:"status",key:"status",width:12},
+      {header:"gambar_soal",key:"gambar_soal",width:28},
+      {header:"kategori",key:"kategori",width:16},
+      {header:"gambar_pilihan_1",key:"gambar_pilihan_1",width:26},{header:"gambar_pilihan_2",key:"gambar_pilihan_2",width:26},{header:"gambar_pilihan_3",key:"gambar_pilihan_3",width:26},{header:"gambar_pilihan_4",key:"gambar_pilihan_4",width:26},{header:"gambar_pilihan_5",key:"gambar_pilihan_5",width:26},
     ];
     const headerRow=dataSheet.getRow(1);
     headerRow.font={bold:true,color:{argb:"FFFFFF"}};
@@ -131,23 +209,21 @@ export default function QuestionBankTools({
     headerRow.alignment={horizontal:"center"};
 
     questions.forEach((item,itemIndex)=>{
-      const byKey=Object.fromEntries((item.options??[]).map(option=>[option.key,option]));
+      const byKey=Object.fromEntries((item.options??[]).map(option=>[option.key.toUpperCase(),option]));
+      const type=item.question_type||"single_choice";
       dataSheet.addRow({
         no:itemIndex+1,
-        question_type:item.question_type,
-        chapter_name:item.chapter_name??"",
-        question_text:item.content_text??"",
-        question_image_url:item.question_image_url??"",
-        option_a:byKey.A?.content??"",option_a_image_url:byKey.A?.image_url??"",
-        option_b:byKey.B?.content??"",option_b_image_url:byKey.B?.image_url??"",
-        option_c:byKey.C?.content??"",option_c_image_url:byKey.C?.image_url??"",
-        option_d:byKey.D?.content??"",option_d_image_url:byKey.D?.image_url??"",
-        option_e:byKey.E?.content??"",option_e_image_url:byKey.E?.image_url??"",
-        category_labels:(item.category_labels??[]).join("|"),
-        correct_answer:item.correct_answer,
-        score_weight:item.score_weight??"",
-        explanation:item.explanation_text??"",
+        jenis_soal:TYPE_LABEL[type]??type,
+        bab:item.chapter_name??"",
+        soal:item.content_text??"",
+        pilihan_1:byKey.A?.content??"",pilihan_2:byKey.B?.content??"",pilihan_3:byKey.C?.content??"",pilihan_4:byKey.D?.content??"",pilihan_5:byKey.E?.content??"",
+        kunci_jawaban:answerToNumbers(item.correct_answer??"",type),
+        bobot:item.score_weight??"",
+        pembahasan:item.explanation_text??"",
         status:item.status,
+        gambar_soal:item.question_image_url??"",
+        kategori:(item.category_labels??[]).join("|"),
+        gambar_pilihan_1:byKey.A?.image_url??"",gambar_pilihan_2:byKey.B?.image_url??"",gambar_pilihan_3:byKey.C?.image_url??"",gambar_pilihan_4:byKey.D?.image_url??"",gambar_pilihan_5:byKey.E?.image_url??"",
       });
     });
 
@@ -186,9 +262,13 @@ export default function QuestionBankTools({
       const headerRow=sheet.getRow(1);
       const colMap:Record<string,number>={};
       headerRow.eachCell((cell,colNumber)=>{
-        const val=String(cell.value??"").trim().toLowerCase();
-        if(val)colMap[val]=colNumber;
+        const field=canonHeader(cell.value);
+        if(field&&!colMap[field])colMap[field]=colNumber;
       });
+      if(!colMap["soal"]&&!colMap["jenis_soal"]){
+        setImportProgress(p=>p?{...p,errors:["Header sheet 'Bank Soal' tidak dikenali. Silakan unduh ulang template terbaru."]}:null);
+        return;
+      }
 
       const parseErrors:string[]=[];
       const parsed:{
@@ -208,40 +288,49 @@ export default function QuestionBankTools({
       const val=(row:ExcelJS.Row,col:number)=>col>0?String(row.getCell(col).value??"").trim():"";
       sheet.eachRow((row,rowNumber)=>{
         if(rowNumber<=1)return;
-        const qType=val(row,colMap["question_type"]??3).toLowerCase();
-        if(!qType)return;
-        if(!VALID_TYPES.includes(qType)){
-          parseErrors.push(`Baris ${rowNumber}: bentukan soal "${qType}" tidak dikenal`);
-          return;
-        }
-        const contentText=val(row,colMap["question_text"]??4);
-        if(!contentText){parseErrors.push(`Baris ${rowNumber}: question_text kosong`);return}
-        const chapterName=val(row,colMap["chapter_name"]??0) || "";
+        const contentText=val(row,colMap["soal"]??0);
+        const rawType=val(row,colMap["jenis_soal"]??0).toLowerCase().replace(/\s+/g," ").trim();
+        const rawAnswer=val(row,colMap["kunci"]??0);
+        const rawLabels=val(row,colMap["kategori"]??0);
+        if(!contentText&&!rawType&&!rawAnswer)return;
 
         const options:{key:string;content:string;image_url?:string}[]=[];
-        if(qType!=="essay"){
-          OPTION_KEYS.forEach(k=>{
-            const content=val(row,colMap[`option_${k}`]??0);
-            const image_url=val(row,colMap[`option_${k}_image_url`]??0);
-            if(content||image_url)options.push({key:k.toUpperCase(),content,image_url:image_url||undefined});
-          });
-          if(options.length<2){parseErrors.push(`Baris ${rowNumber}: butuh minimal 2 pilihan jawaban`);return}
-        }
+        LETTERS.forEach((letter,slot)=>{
+          const content=val(row,colMap[`option_${slot+1}`]??0)||val(row,colMap[`option_${letter}`]??0);
+          const image_url=val(row,colMap[`option_image_${slot+1}`]??0)||val(row,colMap[`option_image_${letter}`]??0);
+          if(content||image_url)options.push({key:letter.toUpperCase(),content,image_url:image_url||undefined});
+        });
 
-        const catRaw=val(row,colMap["category_labels"]??0);
-        const category_labels=catRaw?catRaw.split("|").map(s=>s.trim()).filter(Boolean):[];
+        let qType=rawType?TYPE_ALIASES[rawType]:undefined;
+        if(rawType&&!qType){
+          parseErrors.push(`Baris ${rowNumber}: jenis soal "${rawType}" tidak dikenal. Gunakan: Pilihan Ganda, Pilihan Majemuk, Benar/Salah, atau Esai.`);
+          return;
+        }
+        if(!qType){
+          if(rawAnswer.includes("="))qType="category";
+          else if(!options.length)qType="essay";
+          else if(/[,;]/.test(rawAnswer))qType="multiple_choice";
+          else qType="single_choice";
+        }
+        if(!contentText){parseErrors.push(`Baris ${rowNumber}: kolom "soal" kosong`);return}
+        if(qType!=="essay"&&options.length<2){parseErrors.push(`Baris ${rowNumber}: butuh minimal 2 pilihan jawaban (isi pilihan_1 dan seterusnya)`);return}
+
+        const normalized=normalizeAnswer(rawAnswer,qType);
+        if(normalized.error){parseErrors.push(`Baris ${rowNumber}: ${normalized.error}`);return}
+        const category_labels=qType==="category"&&rawLabels?rawLabels.split(/[|,]/).map(s=>s.trim()).filter(Boolean):normalized.category_labels;
+        if(qType==="category"&&!category_labels.length){parseErrors.push(`Baris ${rowNumber}: kategori Benar/Salah belum diisi`);return}
 
         parsed.push({
           row:rowNumber,
           question_type:qType,
-          chapter_name:chapterName,
+          chapter_name:val(row,colMap["bab"]??0),
           content_text:contentText,
-          question_image_url:val(row,colMap["question_image_url"]??0),
+          question_image_url:val(row,colMap["gambar_soal"]??0),
           options,
           category_labels,
-          correct_answer:val(row,colMap["correct_answer"]??0),
-          score_weight:Number(val(row,colMap["score_weight"]??0))||1,
-          explanation_text:val(row,colMap["explanation"]??0),
+          correct_answer:normalized.correct_answer,
+          score_weight:Number(val(row,colMap["bobot"]??0))||1,
+          explanation_text:val(row,colMap["pembahasan"]??0),
           status:val(row,colMap["status"]??0).toLowerCase()==="inactive"?"inactive":"active",
         });
       });

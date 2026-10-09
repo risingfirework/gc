@@ -196,6 +196,9 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
     api.adminCBTSettings().then(setCbtSettings).catch((reason) => setError(reason instanceof Error ? reason.message : "Pengaturan CBT gagal dimuat."));
   }, [effectiveView, role, refreshKey]);
   useEffect(() => {
+    api.listMaster("bab-pelajaran").then((items) => setMasters((current) => ({ ...current, "bab-pelajaran": items }))).catch(() => { /* master bab bersifat opsional */ });
+  }, [refreshKey]);
+  useEffect(() => {
     if (role !== "owner") return;
     api.adminUsers(userPage, 25, {
       role: userRoleFilter === "all" ? undefined : userRoleFilter,
