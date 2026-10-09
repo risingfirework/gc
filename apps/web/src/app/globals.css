@@ -96,6 +96,8 @@ textarea { width:100%;min-height:100px;resize:vertical;border:1px solid #cfd7e6;
 .option { display:flex; align-items:center; gap:14px; }
 .option-key { display:grid; flex:0 0 34px; width:34px; height:34px; place-items:center; border-radius:50%; background:#eef1f6; font-weight:800; }
 .option.selected .option-key { background:var(--primary); color:white; }
+.option.multi .option-key { border-radius:8px; background:#fff; border:1.5px solid #c3cbd9; color:#536176; }
+.option.multi.selected .option-key { background:var(--primary); border-color:var(--primary); color:#fff; }
 .exam-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:28px; }
 .doubt-button { border:0; border-radius:10px; padding:11px 14px; color:#815500; background:#fff4ce; cursor:pointer; }
 .doubt-button.active { color:white; background:#d79500; }
