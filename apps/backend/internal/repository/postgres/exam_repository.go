@@ -54,7 +54,7 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 		       difficulty, discrimination, explanation_text, explanation_video_url
 		FROM questions
 		WHERE exam_id = $1
-		ORDER BY id`
+		ORDER BY display_order, id`
 	rows, err := r.db.Query(ctx, questionsQuery, examID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("query exam questions: %w", err)

@@ -176,6 +176,58 @@ export default function QuestionBankTools({
     window.setTimeout(()=>{document.title=oldTitle},500);
   }
 
+  async function downloadSimpleTemplate(){
+    const wb=new ExcelJS.Workbook();
+    wb.creator="TKA";
+    wb.created=new Date();
+
+    const guideSheet=wb.addWorksheet("Panduan",{properties:{tabColor:{argb:"4472C4"}}});
+    [
+      "TEMPLATE RINGKAS BANK SOAL TKA",
+      "Isi hanya sheet 'Bank Soal'. Satu baris adalah satu soal.",
+      "Isi soal, minimal dua pilihan, lalu kunci_jawaban. Gunakan nomor pilihan: 1, 2, 3, atau 4.",
+      "Untuk pilihan majemuk, isi lebih dari satu kunci dengan koma. Contoh: 1,3.",
+      "Untuk esai, isi soal saja dan kosongkan semua pilihan serta kunci jawaban.",
+      "Butuh bab, pembahasan, gambar, atau Benar/Salah? Gunakan menu 'Download Soal Lengkap' sebagai format lanjutan.",
+    ].forEach((text,rowIndex)=>{
+      const row=guideSheet.addRow([text]);
+      if(rowIndex===0)row.getCell(1).font={bold:true,size:16};
+    });
+    guideSheet.getColumn(1).width=115;
+
+    const dataSheet=wb.addWorksheet("Bank Soal",{views:[{state:"frozen",ySplit:1}]});
+    dataSheet.columns=[
+      {header:"soal",key:"soal",width:50},
+      {header:"pilihan_1",key:"pilihan_1",width:28},
+      {header:"pilihan_2",key:"pilihan_2",width:28},
+      {header:"pilihan_3",key:"pilihan_3",width:28},
+      {header:"pilihan_4",key:"pilihan_4",width:28},
+      {header:"kunci_jawaban",key:"kunci_jawaban",width:18},
+    ];
+    const headerRow=dataSheet.getRow(1);
+    headerRow.font={bold:true,color:{argb:"FFFFFF"}};
+    headerRow.fill={type:"pattern",pattern:"solid",fgColor:{argb:"4472C4"}};
+    headerRow.alignment={horizontal:"center"};
+
+    const exampleSheet=wb.addWorksheet("Contoh",{properties:{tabColor:{argb:"70AD47"}}});
+    exampleSheet.columns=dataSheet.columns.map(column=>({header:column.header,key:column.key,width:column.width}));
+    exampleSheet.getRow(1).font={bold:true,color:{argb:"FFFFFF"}};
+    exampleSheet.getRow(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"70AD47"}};
+    exampleSheet.addRow({soal:"Hasil dari 2 + 3 adalah ...",pilihan_1:"4",pilihan_2:"5",pilihan_3:"6",pilihan_4:"7",kunci_jawaban:"2"});
+    exampleSheet.addRow({soal:"Pilih bilangan genap.",pilihan_1:"2",pilihan_2:"3",pilihan_3:"4",pilihan_4:"5",kunci_jawaban:"1,3"});
+
+    const buffer=await wb.xlsx.writeBuffer();
+    const blob=new Blob([buffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    const url=URL.createObjectURL(blob);
+    const anchor=document.createElement("a");
+    anchor.href=url;
+    anchor.download=`${packageCode}-${packageTitle}-template-ringkas.xlsx`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }
+
   async function downloadExcel(){
     const wb=new ExcelJS.Workbook();
     wb.creator="TKA";
@@ -376,7 +428,8 @@ export default function QuestionBankTools({
     <div className="question-bank-tools">
       <button className="button secondary" type="button" disabled={!questions.length} onClick={()=>{setIndex(0);setPreview(true)}}>Preview Tes</button>
       <button className="button secondary" type="button" disabled={!questions.length} onClick={printPDF}>Cetak / Simpan PDF</button>
-      <button className="button secondary" type="button" disabled={!questions.length} onClick={downloadExcel}>Download Soal</button>
+      <button className="button secondary" type="button" disabled={!examId||!onImportQuestion} onClick={downloadSimpleTemplate}>Unduh Template Mudah</button>
+      <button className="button secondary" type="button" disabled={!questions.length} onClick={downloadExcel}>Download Soal Lengkap</button>
       <input ref={fileRef} type="file" accept=".xlsx" className="hidden-file-input" onChange={handleImportFile}/>
       <button className="button secondary" type="button" disabled={!examId||!onImportQuestion||importing} onClick={()=>fileRef.current?.click()}>{importing?"Mengimpor...":"Import Soal"}</button>
       <span>{questions.length} soal siap ditampilkan</span>

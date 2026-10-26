@@ -220,7 +220,7 @@ func (r *AdminRepository) GetDashboard(ctx context.Context) (*domain.AdminDashbo
 	if err := transactions.Err(); err != nil {
 		return nil, err
 	}
-	questions, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status,q.chapter_name FROM questions q JOIN exams e ON e.id=q.exam_id ORDER BY q.id DESC LIMIT 200`)
+	questions, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status,q.chapter_name FROM questions q JOIN exams e ON e.id=q.exam_id ORDER BY q.display_order DESC, q.id DESC LIMIT 200`)
 	if err != nil {
 		return nil, fmt.Errorf("admin questions: %w", err)
 	}
@@ -887,7 +887,7 @@ func (r *AdminRepository) ListAdminQuestions(ctx context.Context, page, perPage 
 		args = append(args, packageID)
 	}
 	queryArgs := append(args, perPage, (page-1)*perPage)
-	rows, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status,q.chapter_name FROM questions q JOIN exams e ON e.id=q.exam_id`+whereClause+` ORDER BY q.id DESC LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs))+``, queryArgs...)
+	rows, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status,q.chapter_name FROM questions q JOIN exams e ON e.id=q.exam_id`+whereClause+` ORDER BY q.display_order DESC, q.id DESC LIMIT $`+fmt.Sprint(len(queryArgs)-1)+` OFFSET $`+fmt.Sprint(len(queryArgs))+``, queryArgs...)
 	if err != nil {
 		return domain.Page[domain.AdminQuestion]{}, fmt.Errorf("admin questions list: %w", err)
 	}

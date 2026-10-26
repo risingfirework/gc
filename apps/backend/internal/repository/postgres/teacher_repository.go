@@ -123,7 +123,7 @@ func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string
 	if err := transactions.Err(); err != nil {
 		return nil, err
 	}
-	questions, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status,q.chapter_name FROM questions q JOIN exams e ON e.id=q.exam_id JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$1 ORDER BY q.id DESC LIMIT 200`, publisherID)
+	questions, err := r.db.Query(ctx, `SELECT q.id,q.exam_id,e.title,q.subject_name,q.content_text,q.question_type,q.presentation_type,COALESCE(q.group_code,''),q.stimulus_text,q.question_image_url,q.stimulus_image_url,q.category_labels_json,q.options_json,q.correct_answer,q.score_weight,q.explanation_text,q.status,q.chapter_name FROM questions q JOIN exams e ON e.id=q.exam_id JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$1 ORDER BY q.display_order DESC, q.id DESC LIMIT 200`, publisherID)
 	if err != nil {
 		return nil, fmt.Errorf("teacher questions: %w", err)
 	}
