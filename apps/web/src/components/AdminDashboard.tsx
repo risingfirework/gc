@@ -95,6 +95,7 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
       : ["ringkasan", "katalog", "cbt", "cbt-pengaturan", "master", "transaksi", "ranking", "testimoni", "video", "pengaturan", "verifikasi", "profil"];
   const [view, setView] = useState<AdminView>(allowedViews[0]);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [data, setData] = useState<AdminDashboardData | null>(null);
   const [masters, setMasters] = useState<Record<string, MasterItem[]>>({});
@@ -173,6 +174,7 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
 
   const navigate = (next: AdminView) => {
     setView(next);
+    setMobileMenuOpen(false);
     setSelectedPackageId(null);
     setPkgExamPage(1);
     setPkgQuestionPage(1);
@@ -401,8 +403,9 @@ Masukkan alasan refund (wajib):`, "");
     finally { setSaving(""); }
   }
 
-  return <main><div className="admin-layout">
-    <aside className="admin-sidebar"><Link className="brand" href="/dashboard"><BrandLogo logoDataURL={siteSettings?.logo_data_url}/><span>{siteSettings?.platform_name??""}<small>Administrator</small></span></Link><nav>{topLevelViews.map((key) => <button key={key} className={effectiveView===key?"active":""} onClick={()=>navigate(key)}>{adminViewLabels[key]}</button>)}
+  return <main><div className={`admin-layout admin-dashboard-layout ${mobileMenuOpen ? "mobile-menu-open" : ""}`}>
+    <button className="admin-mobile-backdrop" type="button" aria-label="Tutup menu" onClick={()=>setMobileMenuOpen(false)}/>
+    <aside className={`admin-sidebar ${mobileMenuOpen ? "mobile-open" : ""}`} id="admin-navigation"><Link className="brand" href="/dashboard"><BrandLogo logoDataURL={siteSettings?.logo_data_url}/><span>{siteSettings?.platform_name??""}<small>Administrator</small></span></Link><nav>{topLevelViews.map((key) => <button key={key} className={effectiveView===key?"active":""} onClick={()=>navigate(key)}>{adminViewLabels[key]}</button>)}
   {sidebarGroups.map((group) => {
     const views = group.views.filter((key) => allowedViews.includes(key));
     if (views.length === 0) return null;
@@ -412,7 +415,7 @@ Masukkan alasan refund (wajib):`, "");
   })}
   </nav><LogoutButton className="admin-logout" loggingOut={loggingOut} onLogout={onLogout}/></aside>
     <section className="admin-main">
-      <header className="admin-topbar"><div><p className="eyebrow">Panel administrator</p><h1>{menus.find(([key])=>key===view)?.[1]}</h1></div><span className="topbar-actions"><NotificationBell/><button className="admin-identity" onClick={()=>navigate("profil")}><span>{(user.name?.trim()||user.email)[0].toUpperCase()}</span><div><strong>{user.name?.trim()||"Nama belum dilengkapi"}</strong><small>{user.email} · {userRoleLabel(user.role)}</small></div></button></span></header>
+      <header className="admin-topbar"><div className="admin-topbar-title"><button className="admin-menu-toggle" type="button" aria-label="Buka menu administrasi" aria-controls="admin-navigation" aria-expanded={mobileMenuOpen} onClick={()=>setMobileMenuOpen((open)=>!open)}><span aria-hidden="true">☰</span> Menu</button><div><p className="eyebrow">Panel administrator</p><h1>{menus.find(([key])=>key===view)?.[1]}</h1></div></div><span className="topbar-actions"><NotificationBell/><button className="admin-identity" onClick={()=>navigate("profil")}><span>{(user.name?.trim()||user.email)[0].toUpperCase()}</span><div><strong>{user.name?.trim()||"Nama belum dilengkapi"}</strong><small>{user.email} · {userRoleLabel(user.role)}</small></div></button></span></header>
       {error && <p className="error">{error}</p>}{!data && !error && role !== "finance" && <div className="card">Memuat data administrasi...</div>}
 
       {data && effectiveView==="ringkasan" && <div className="admin-view summary-view">

@@ -502,3 +502,37 @@ img,svg,video,canvas{max-width:100%}
   .connection-banner{max-width:calc(100vw - 24px);text-align:center}
   .logout-modal,.verify-modal,.screen-lock-card{padding:22px 18px}
 }
+
+/* Admin navigation becomes a touch-friendly drawer instead of a crowded horizontal menu. */
+.admin-mobile-backdrop,.admin-menu-toggle{display:none}
+.admin-topbar-title{display:flex;align-items:center;gap:12px;min-width:0}
+.admin-topbar-title h1{overflow-wrap:anywhere}
+
+@media(max-width:850px){
+  .admin-menu-toggle{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:42px;padding:9px 12px;border:1px solid #cfe0dc;border-radius:11px;background:#fff;color:var(--primary);font-size:12px;font-weight:800;cursor:pointer;box-shadow:0 4px 14px rgba(14,58,77,.08)}
+  .admin-menu-toggle span{font-size:19px;line-height:1}
+  .admin-mobile-backdrop{position:fixed;z-index:80;inset:0;border:0;background:rgba(8,29,43,.48);opacity:0;pointer-events:none;transition:opacity .2s ease}
+  .admin-dashboard-layout.mobile-menu-open .admin-mobile-backdrop{display:block;opacity:1;pointer-events:auto}
+  .admin-dashboard-layout .admin-sidebar{position:fixed;z-index:90;top:0;bottom:0;left:0;width:min(288px,86vw);height:100dvh;padding:22px 16px;transform:translateX(-105%);transition:transform .22s ease;overflow-y:auto;box-shadow:18px 0 50px rgba(6,25,38,.25)}
+  .admin-dashboard-layout .admin-sidebar.mobile-open{transform:translateX(0)}
+  .admin-dashboard-layout .admin-sidebar .brand{padding:0 7px 22px}
+  .admin-dashboard-layout .admin-sidebar nav{display:grid;overflow:visible;margin:0;padding:0;gap:6px}
+  .admin-dashboard-layout .admin-sidebar nav button{width:100%;min-height:44px;white-space:normal}
+  .admin-dashboard-layout .admin-sidebar nav .sidebar-submenu{padding-left:28px}
+  .admin-dashboard-layout .admin-sidebar .admin-logout{position:static;width:100%;min-height:44px;margin-top:auto}
+  .admin-main{padding-inline:20px}
+  .admin-topbar{position:sticky;z-index:20;top:0;background:rgba(244,247,251,.96);backdrop-filter:blur(14px)}
+  .admin-topbar-title{flex:1}
+}
+
+@media(max-width:640px){
+  .admin-main{padding-inline:12px}
+  .admin-topbar{align-items:center;flex-direction:row;padding:13px 0}
+  .admin-topbar-title .eyebrow{display:none}
+  .admin-topbar-title h1{margin:0;font-size:21px;line-height:1.15}
+  .topbar-actions{gap:8px}
+  .topbar-actions .admin-identity>div{display:none}
+  .topbar-actions .admin-identity>span{width:38px;height:38px;border-radius:11px}
+  .notification-bell-button{width:38px;height:38px;border-radius:11px}
+  .admin-dashboard-layout .admin-sidebar{width:min(284px,88vw);padding:18px 14px}
+}
