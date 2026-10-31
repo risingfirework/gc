@@ -1,17 +1,21 @@
 -- Up migration: create master bab_pelajaran
-CREATE TABLE bab_pelajaran (
+CREATE TABLE IF NOT EXISTS bab_pelajaran (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   nama VARCHAR(160) NOT NULL,
   mapel_id UUID NULL REFERENCES mapel(id) ON DELETE SET NULL,
   jenjang VARCHAR(50) NULL,
   urutan INT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (nama, COALESCE(mapel_id, '00000000-0000-0000-0000-000000000000'), COALESCE(jenjang, ''))
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_bab_pelajaran_mapel ON bab_pelajaran(mapel_id);
-CREATE INDEX idx_bab_pelajaran_nama ON bab_pelajaran(nama);
+-- Postgres tidak mengizinkan ekspresi di UNIQUE table constraint,
+-- jadi keunikan dengan COALESCE dibuat sebagai unique index.
+CREATE UNIQUE INDEX IF NOT EXISTS bab_pelajaran_nama_mapel_jenjang_key
+  ON bab_pelajaran (nama, COALESCE(mapel_id, '00000000-0000-0000-0000-000000000000'::uuid), COALESCE(jenjang, ''));
+
+CREATE INDEX IF NOT EXISTS idx_bab_pelajaran_mapel ON bab_pelajaran(mapel_id);
+CREATE INDEX IF NOT EXISTS idx_bab_pelajaran_nama ON bab_pelajaran(nama);
 
 -- Seed 13 bab granular (opsional)
 INSERT INTO bab_pelajaran (nama, urutan) VALUES

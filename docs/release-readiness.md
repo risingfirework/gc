@@ -8,12 +8,12 @@ Tanggal pemeriksaan terakhir: 21 September 2026.
 - Migrasi dan repository PostgreSQL: `go test -count=1 -tags integration ./internal/repository/postgres/ -v`.
 - Pengacakan soal: urutan soal, pilihan, snapshot peserta, serta fallback snapshot parsial teruji.
 - Xendit: pembuatan Payment Session, refund, autentikasi webhook, dan parsing event teruji dengan fake server.
-- Security Go: `govulncheck` memakai Go 1.26.6 menghasilkan **0 reachable vulnerabilities**.
+- Security Go: `govulncheck` memakai Go 1.26.10 menghasilkan **0 reachable vulnerabilities**.
 - Web: `npm audit --omit=dev --audit-level=moderate`, lint, typecheck, dan production build lulus.
 - SIMPKB: lockfile reproducible, `npm audit` 0 vulnerability, `node --check server.js`, serta build image lulus. Runtime Chromium sehat, berjalan sebagai user `node` non-root, dan menolak NIK/body/route invalid dengan HTTP 400/413/404.
 - Mobile: `flutter pub get`, `flutter analyze`, dan `flutter test` lulus memakai Flutter 3.44.6/Dart 3.12.2.
 - Android release: Gradle hanya menandatangani release bila `key.properties` tersedia; workflow manual memvalidasi input dan secret, lalu membangun AAB bertanda tangan tanpa menyimpan keystore di repository.
-- Image backend dan web berhasil dibangun. Binary backend terbukti memakai Go 1.26.6.
+- Image backend dan web berhasil dibangun. Binary backend terbukti memakai Go 1.26.10.
 - Runtime image web mengembalikan HTTP 200 dan CSP nonce, `strict-dynamic`, `frame-ancestors 'none'`, `DENY`, serta `nosniff`.
 - `docker compose ... config --quiet` dan sintaks `scripts/preflight-production.sh` lulus.
 - Seluruh workflow YAML dapat diparse dan skrip preflight/backup/restore/bootstrap lulus ShellCheck.
