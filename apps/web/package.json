@@ -15,8 +15,8 @@
     "@types/react-dom": "^19.0.0",
     "axios": "^1.18.0",
     "exceljs": "^4.4.0",
-    "katex": "^0.16.11",
-    "next": "^16.3.8",
+    "katex": "^0.19.1",
+    "next": "^16.4.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-katex": "^3.1.0",
@@ -25,11 +25,19 @@
   "devDependencies": {
     "@types/katex": "^0.16.7",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.3.8",
+    "eslint-config-next": "^16.4.3",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.7.0"
   },
   "overrides": {
-    "uuid": "11.1.1"
+    "uuid": "11.1.1",
+    "katex": "$katex",
+    "sharp": "0.35.5",
+    "follow-redirects": "1.16.2",
+    "source-map-js": "1.2.2",
+    "exceljs": {
+      "archiver": "^8.0.0",
+      "minimatch": "^11.0.3"
+    }
   }
 }
