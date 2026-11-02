@@ -3,11 +3,15 @@ package service
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/smtp"
 	"strings"
+	"time"
 )
+
+const smtpSendTimeout = 20 * time.Second
 
 type SMTPPasswordResetMailer struct {
 	host, port, username, password, from string
@@ -21,82 +25,112 @@ func (m *SMTPPasswordResetMailer) SendPasswordReset(ctx context.Context, recipie
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	serverAddr := m.host + ":" + m.port
+	host := strings.TrimSpace(m.host)
+	from := strings.TrimSpace(m.from)
+	if host == "" || from == "" {
+		return errors.New("konfigurasi SMTP belum lengkap")
+	}
+	port := strings.TrimSpace(m.port)
+	if port == "" {
+		port = "587"
+	}
 
-	// Use TLS for SMTP connections to protect credentials in transit.
-	// Falls back to STARTTLS if the server supports it.
 	tlsConfig := &tls.Config{
-		ServerName: m.host,
+		ServerName: host,
 		MinVersion: tls.VersionTLS12,
 	}
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	serverAddr := net.JoinHostPort(host, port)
 
 	var conn net.Conn
 	var err error
-
-	// Try direct TLS connection first (SMTPS on port 465)
-	conn, err = tls.Dial("tcp", serverAddr, tlsConfig)
-	if err != nil {
-		// Fallback to plain TCP with STARTTLS upgrade
-		conn, err = net.Dial("tcp", serverAddr)
-		if err != nil {
-			return fmt.Errorf("connect to SMTP server: %w", err)
-		}
+	if port == "465" {
+		// Port 465 memakai TLS langsung (SMTPS).
+		conn, err = (&tls.Dialer{NetDialer: dialer, Config: tlsConfig}).DialContext(ctx, "tcp", serverAddr)
+	} else {
+		conn, err = dialer.DialContext(ctx, "tcp", serverAddr)
 	}
-
-	client, err := smtp.NewClient(conn, m.host)
 	if err != nil {
-		_ = conn.Close()
-		return fmt.Errorf("create SMTP client: %w", err)
+		return fmt.Errorf("hubungi server SMTP: %w", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	deadline := time.Now().Add(smtpSendTimeout)
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+	_ = conn.SetDeadline(deadline)
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return fmt.Errorf("buat sesi SMTP: %w", err)
 	}
 	defer func() { _ = client.Close() }()
 
-	// If we used plain TCP, try to upgrade to STARTTLS
-	if _, isTLS := conn.(*tls.Conn); !isTLS {
-		if ok, _ := client.Extension("STARTTLS"); ok {
-			if err := client.StartTLS(tlsConfig); err != nil {
-				return fmt.Errorf("start TLS: %w", err)
-			}
+	// Port selain 465 wajib memakai STARTTLS agar kredensial tidak terkirim
+	// dalam bentuk plaintext.
+	if _, alreadyTLS := conn.(*tls.Conn); !alreadyTLS {
+		supportsSTARTTLS, _ := client.Extension("STARTTLS")
+		if !supportsSTARTTLS {
+			return errors.New("server SMTP tidak mendukung STARTTLS")
+		}
+		if err := client.StartTLS(tlsConfig); err != nil {
+			return fmt.Errorf("mulai TLS: %w", err)
 		}
 	}
 
-	// Authenticate if credentials are provided
 	if m.username != "" {
-		auth := smtp.PlainAuth("", m.username, m.password, m.host)
+		auth := smtp.PlainAuth("", m.username, m.password, host)
 		if err := client.Auth(auth); err != nil {
-			return fmt.Errorf("SMTP authentication: %w", err)
+			return fmt.Errorf("autentikasi SMTP: %w", err)
 		}
 	}
-
-	// Set sender and recipient
-	if err := client.Mail(m.from); err != nil {
-		return fmt.Errorf("set sender: %w", err)
+	if err := client.Mail(from); err != nil {
+		return fmt.Errorf("alamat pengirim ditolak: %w", err)
 	}
 	if err := client.Rcpt(recipient); err != nil {
-		return fmt.Errorf("set recipient: %w", err)
+		return fmt.Errorf("alamat penerima ditolak: %w", err)
 	}
 
-	// Write email body
-	w, err := client.Data()
+	writer, err := client.Data()
 	if err != nil {
-		return fmt.Errorf("open data connection: %w", err)
+		return fmt.Errorf("buka koneksi data email: %w", err)
 	}
-	body := "From: " + m.from + "\r\n" +
-		"To: " + recipient + "\r\n" +
-		"Subject: Reset kata sandi platform Tryout TKA\r\n" +
-		"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n" +
-		"Kami menerima permintaan reset kata sandi akun Anda.\r\n\r\n" +
-		"Buka tautan berikut dalam 15 menit:\r\n" + resetURL + "\r\n\r\n" +
-		"Jika Anda tidak meminta reset, abaikan email ini."
-	if _, err := w.Write([]byte(strings.ReplaceAll(body, "\n", "\r\n"))); err != nil {
-		_ = w.Close()
-		return fmt.Errorf("write email body: %w", err)
+	if _, err := writer.Write([]byte(passwordResetMessage(from, recipient, resetURL))); err != nil {
+		_ = writer.Close()
+		return fmt.Errorf("tulis isi email: %w", err)
 	}
-	if err := w.Close(); err != nil {
-		return fmt.Errorf("close data connection: %w", err)
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("tutup koneksi data email: %w", err)
 	}
-
-	if err := client.Quit(); err != nil {
-		return fmt.Errorf("quit SMTP: %w", err)
-	}
+	// Email sudah diterima server pada tahap ini. Kegagalan QUIT tidak perlu
+	// dianggap gagal kirim karena bisa memicu pengiriman ulang.
+	_ = client.Quit()
 	return nil
+}
+
+func passwordResetMessage(from, recipient, resetURL string) string {
+	lines := []string{
+		"From: " + from,
+		"To: " + recipient,
+		"Subject: Reset kata sandi platform Tryout TKA",
+		"Date: " + time.Now().Format(time.RFC1123Z),
+		"MIME-Version: 1.0",
+		"Content-Type: text/plain; charset=UTF-8",
+		"Content-Transfer-Encoding: 8bit",
+		"",
+		"Halo,",
+		"",
+		"Kami menerima permintaan untuk mengatur ulang kata sandi akun Anda.",
+		"Buka tautan berikut dalam 15 menit:",
+		"",
+		resetURL,
+		"",
+		"Jika Anda tidak meminta reset kata sandi, abaikan email ini.",
+		"Kata sandi Anda tidak akan berubah sampai tautan tersebut dibuka.",
+		"",
+		"Salam,",
+		"Tim SIAP TKA",
+	}
+	return strings.Join(lines, "\r\n") + "\r\n"
 }

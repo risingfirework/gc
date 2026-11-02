@@ -15,6 +15,8 @@ var (
 	ErrSessionInvalid        = errors.New("device limit reached or session invalid")
 	ErrGoogleAuthUnavailable = errors.New("google sign-in is not configured")
 	ErrInvalidResetToken     = errors.New("tautan reset tidak valid atau sudah kedaluwarsa")
+	ErrPasswordResetDisabled = errors.New("fitur reset kata sandi lewat email belum aktif")
+	ErrPasswordResetDelivery = errors.New("email reset kata sandi gagal dikirim")
 	ErrReferralNotFound      = errors.New("kode rujukan tidak ditemukan")
 	ErrInvalidReferralCode   = errors.New("kode rujukan tidak valid")
 	Err2FANotEnabled         = errors.New("2fa tidak aktif")

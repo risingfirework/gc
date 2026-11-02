@@ -252,6 +252,58 @@ func TestForgotAndResetPasswordRevokesSession(t *testing.T) {
 	}
 }
 
+type fakePasswordResetMailer struct {
+	sent int
+	err  error
+}
+
+func (f *fakePasswordResetMailer) SendPasswordReset(_ context.Context, _, _ string) error {
+	if f.err != nil {
+		return f.err
+	}
+	f.sent++
+	return nil
+}
+
+func TestForgotPasswordWithoutSMTPFailsInProduction(t *testing.T) {
+	service := newTestAuthService()
+	service.ConfigurePasswordReset("https://example.com", "production", nil)
+	if _, err := service.ForgotPassword(context.Background(), domain.ForgotPasswordRequest{Email: "student@example.com"}); !errors.Is(err, domain.ErrPasswordResetDisabled) {
+		t.Fatalf("forgot password error = %v, want ErrPasswordResetDisabled", err)
+	}
+}
+
+func TestForgotPasswordReportsDeliveryFailure(t *testing.T) {
+	service := newTestAuthService()
+	mailer := &fakePasswordResetMailer{err: errors.New("smtp tidak tersedia")}
+	service.ConfigurePasswordReset("https://example.com", "production", mailer)
+	if _, err := service.Register(context.Background(), domain.RegisterRequest{Email: "student@example.com", Password: "old-password", SchoolLevel: "SMA"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ForgotPassword(context.Background(), domain.ForgotPasswordRequest{Email: "student@example.com"}); !errors.Is(err, domain.ErrPasswordResetDelivery) {
+		t.Fatalf("forgot password error = %v, want ErrPasswordResetDelivery", err)
+	}
+}
+
+func TestForgotPasswordSendsEmailInProduction(t *testing.T) {
+	service := newTestAuthService()
+	mailer := &fakePasswordResetMailer{}
+	service.ConfigurePasswordReset("https://example.com", "production", mailer)
+	if _, err := service.Register(context.Background(), domain.RegisterRequest{Email: "student@example.com", Password: "old-password", SchoolLevel: "SMA"}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := service.ForgotPassword(context.Background(), domain.ForgotPasswordRequest{Email: "student@example.com"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mailer.sent != 1 {
+		t.Fatalf("email terkirim %d kali, want 1", mailer.sent)
+	}
+	if response.ResetURL != "" {
+		t.Fatalf("reset URL tidak boleh diekspos di production: %q", response.ResetURL)
+	}
+}
+
 func TestLoginReplacesPreviousSession(t *testing.T) {
 	service := newTestAuthService()
 	_, err := service.Register(context.Background(), domain.RegisterRequest{Email: "student@example.com", Password: "strong-password", SchoolLevel: "SMA"})

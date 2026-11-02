@@ -153,6 +153,25 @@ func TestAuthRoutes(t *testing.T) {
 	}
 }
 
+func TestForgotPasswordReturnsServiceUnavailableWhenEmailDisabled(t *testing.T) {
+	stub := authStub{
+		forgot: func(context.Context, domain.ForgotPasswordRequest) (*domain.ForgotPasswordResponse, error) {
+			return nil, domain.ErrPasswordResetDisabled
+		},
+	}
+	router := NewRouter(stub, nil, nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), "https://app.example.test")
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/forgot-password", strings.NewReader(`{"email":"student@example.com"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("forgot password status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "belum aktif") {
+		t.Fatalf("forgot password body = %s", response.Body.String())
+	}
+}
+
 func TestLoginUsesSecureHTTPOnlyRefreshCookie(t *testing.T) {
 	stub := authStub{
 		login: func(context.Context, domain.LoginRequest) (*domain.LoginResponse, error) {

@@ -102,12 +102,18 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	response, err := h.auth.ForgotPassword(r.Context(), input)
 	if err != nil {
-		if errors.Is(err, domain.ErrInvalidInput) {
+		switch {
+		case errors.Is(err, domain.ErrInvalidInput):
 			writeError(w, http.StatusUnprocessableEntity, "alamat email tidak valid")
-			return
+		case errors.Is(err, domain.ErrPasswordResetDisabled):
+			writeError(w, http.StatusServiceUnavailable, "Fitur reset kata sandi lewat email belum aktif. Hubungi pengelola platform.")
+		case errors.Is(err, domain.ErrPasswordResetDelivery):
+			h.logger.ErrorContext(r.Context(), "forgot password email delivery failed", "error", err)
+			writeError(w, http.StatusBadGateway, "Email reset gagal dikirim. Coba lagi beberapa saat lagi atau hubungi pengelola platform.")
+		default:
+			h.logger.ErrorContext(r.Context(), "forgot password", "error", err)
+			writeError(w, http.StatusInternalServerError, "permintaan reset gagal diproses")
 		}
-		h.logger.ErrorContext(r.Context(), "forgot password", "error", err)
-		writeError(w, http.StatusInternalServerError, "permintaan reset gagal diproses")
 		return
 	}
 	writeJSON(w, http.StatusAccepted, response)

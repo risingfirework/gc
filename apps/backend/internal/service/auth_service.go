@@ -82,6 +82,13 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input domain.ForgotPas
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid email", domain.ErrInvalidInput)
 	}
+	development := s.environment == "development" || s.environment == "local"
+	// Di production, jangan berpura-pura mengirim email ketika SMTP belum
+	// dikonfigurasi. Pesan yang jelas lebih baik daripada pengguna menunggu
+	// tautan yang tidak akan pernah datang.
+	if (s.resetMailer == nil || s.resetBaseURL == "") && !development {
+		return nil, domain.ErrPasswordResetDisabled
+	}
 	rawToken := make([]byte, 32)
 	if _, err := rand.Read(rawToken); err != nil {
 		return nil, fmt.Errorf("generate reset token: %w", err)
@@ -98,9 +105,11 @@ func (s *AuthService) ForgotPassword(ctx context.Context, input domain.ForgotPas
 	}
 	resetURL := s.resetBaseURL + "/reset-password?token=" + url.QueryEscape(token)
 	if s.resetMailer != nil {
-		_ = s.resetMailer.SendPasswordReset(ctx, email, resetURL)
+		if err := s.resetMailer.SendPasswordReset(ctx, email, resetURL); err != nil {
+			return nil, fmt.Errorf("%w: %v", domain.ErrPasswordResetDelivery, err)
+		}
 	}
-	if s.environment == "development" || s.environment == "local" {
+	if development {
 		response.ResetURL = resetURL
 	}
 	return response, nil

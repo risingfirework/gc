@@ -107,6 +107,10 @@ func main() {
 	var passwordMailer domain.PasswordResetMailer
 	if cfg.SMTPHost != "" && cfg.SMTPFrom != "" {
 		passwordMailer = service.NewSMTPPasswordResetMailer(cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUsername, cfg.SMTPPassword, cfg.SMTPFrom)
+		logger.Info("email reset kata sandi aktif", "smtp_host", cfg.SMTPHost, "smtp_port", cfg.SMTPPort)
+	} else if cfg.Environment == "production" {
+		logger.Warn("SMTP belum dikonfigurasi; email reset kata sandi dinonaktifkan",
+			"hint", "isi SMTP_HOST, SMTP_USERNAME, SMTP_FROM di .env.production dan secrets/smtp_password.txt")
 	}
 	authService.ConfigurePasswordReset(cfg.PublicWebURL, cfg.Environment, passwordMailer)
 	examRepository := postgresrepo.NewExamRepository(db)

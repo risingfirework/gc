@@ -92,9 +92,16 @@ XENDIT_BASE_URL=https://api.xendit.co
 APP_RELEASE=2026.09.26-1
 ```
 
+Pastikan domain pengirim punya record **SPF** dan **DKIM** di DNS. Tanpa keduanya,
+email reset kata sandi sering masuk folder spam atau ditolak penerima.
+
 Catatan tentang perilaku runtime:
 - `SentryDSN` kosong → Sentry tidak diinisialisasi (aman).
-- `SMTPHost` kosong → outbound email nonaktif (aman).
+- `SMTPHost` kosong → outbound email nonaktif (aman). Di production, halaman
+  lupa kata sandi akan menjawab **503** dengan pesan bahwa fitur belum aktif,
+  bukan pesan "email terkirim". Bila SMTP terisi tetapi pengiriman gagal, API
+  menjawab **502**. Cek `docker compose -f docker-compose.prod.yml logs api`
+  untuk detail error SMTP.
 - `xendit_secret_key.txt` berisi `disabled` → pembayaran tidak aktif sampai owner
   mengisi konfigurasi lewat panel admin (halaman Integrasi Pembayaran), yang tersimpan
   terenkripsi di database.
