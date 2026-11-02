@@ -16,11 +16,98 @@ export default function LandingPage() {
   const router=useRouter(); const openAuth=()=>router.push("/login"); const [settings,setSettings]=useState<SiteSettings>();
   useEffect(()=>{api.siteSettings().then(setSettings).catch(()=>undefined)},[]);
   return <main className="landing">
-    <div className="container"><nav className="nav"><div className="brand"><BrandLogo logoDataURL={settings?.logo_data_url}/><span className="brand-copy"><strong>{settings?.platform_name??""}</strong><small>{settings?.platform_tagline??""}</small></span></div><div className="nav-links"><a href="#video">Video</a><a href="#testimoni">Testimoni</a><a href="#paket">Lihat paket</a><button className="button secondary" onClick={openAuth}>Masuk / Daftar</button></div></nav></div>
+    <div className="container"><nav className="nav"><div className="brand"><BrandLogo logoDataURL={settings?.logo_data_url}/><span className="brand-copy"><strong>{settings?.platform_name??""}</strong><small>{settings?.platform_tagline??""}</small></span></div><div className="nav-links"><a href="#keunggulan">Keunggulan</a><a href="#paket">Paket</a><a href="#video">Video</a><a href="#testimoni">Testimoni</a><a href="#faq">FAQ</a><button className="button secondary" onClick={openAuth}>Masuk / Daftar</button></div></nav></div>
     <HeroSlider onStart={openAuth} showPaket slides={settings?.hero_slides} intervalMS={settings?.hero_interval_ms}/>
-    <div className="container"><PackagesSlider onStart={openAuth} intervalMS={settings?.catalog_interval_ms}/><VideoSection videos={settings?.youtube_videos??[]} id="video" eyebrow="Tonton dulu" title={settings?.platform_name?`Kenali ${settings.platform_name} dalam satu video`:"Kenali kami dalam satu video"} lead="Tonton cara berlatih, analisis hasil, dan alur pembelian paket sebelum memulai." /><TestimonialSlider platformName={settings?.platform_name}/></div>
+    <div className="container"><LandingFeatures/><PackagesSlider onStart={openAuth} intervalMS={settings?.catalog_interval_ms}/><HowItWorks/><VideoSection videos={settings?.youtube_videos??[]} id="video" eyebrow="Tonton dulu" title={settings?.platform_name?`Kenali ${settings.platform_name} dalam satu video`:"Kenali kami dalam satu video"} lead="Tonton cara berlatih, analisis hasil, dan alur pembelian paket sebelum memulai." /><TestimonialSlider platformName={settings?.platform_name}/><LandingFaq/><CtaBand onStart={openAuth}/></div>
     <ContactFooter settings={settings}/>
   </main>;
+}
+
+const featureItems = [
+  {
+    title: "Soal terstandar",
+    text: "Bank soal disusun per jenjang dan bab, lengkap dengan pembahasan setelah ujian.",
+    icon: <><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v17H6.5A2.5 2.5 0 0 0 4 22V5.5Z" /><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v17h4.5A2.5 2.5 0 0 1 20 22V5.5Z" /></>,
+  },
+  {
+    title: "CBT realistis",
+    text: "Timer, navigasi soal, dan mode layar terkunci memberi pengalaman ujian yang sesungguhnya.",
+    icon: <><rect x="4" y="4" width="16" height="16" rx="3" /><path d="M8 9h8M8 13h5M8 17h3" /></>,
+  },
+  {
+    title: "Analisis per bab",
+    text: "Lihat kekuatan dan area yang perlu diulang lewat skor tiap bab setelah setiap tryout.",
+    icon: <><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></>,
+  },
+  {
+    title: "Ranking global",
+    text: "Bandingkan persentil dan waktu pengerjaanmu dengan siswa lain di jenjang yang sama.",
+    icon: <><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z" /><path d="M7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3" /></>,
+  },
+];
+
+const howSteps = [
+  { title: "Pilih paket", text: "Pilih paket tryout sesuai jenjang, lalu selesaikan pembayaran atau ambil paket gratis." },
+  { title: "Kerjakan tryout", text: "Mulai ujian dari dashboard. Jawaban tersimpan otomatis, jadi kamu bisa melanjutkan kapan saja." },
+  { title: "Evaluasi hasil", text: "Baca skor, analisis per bab, ranking, dan pembahasan untuk menentukan langkah belajar berikutnya." },
+];
+
+const faqItems = [
+  { q: "Apakah ada paket yang gratis?", a: "Ada. Paket bertanda GRATIS bisa langsung diambil dari katalog tanpa pembayaran. Kamu tetap perlu membuat akun agar hasil ujian tersimpan." },
+  { q: "Bagaimana cara mengikuti ujian CBT?", a: "Masuk ke dashboard, buka menu Ujian CBT, lalu masukkan token dari gurumu. Token hanya berlaku untuk paket CBT yang sedang aktif." },
+  { q: "Apakah nilai keluar langsung setelah ujian?", a: "Sebagian besar ujian menampilkan nilai langsung setelah dikumpulkan. Kalau pengelola mengatur rilis nilai, hasil akan muncul setelah waktu rilis tiba." },
+  { q: "Bisa dikerjakan dari HP?", a: "Bisa. Tampilan dashboard, katalog, dan ujian sudah responsif untuk HP, tablet, maupun desktop." },
+  { q: "Metode pembayaran apa saja yang tersedia?", a: "Pembayaran diproses melalui kanal aman Xendit. Metode aktif seperti QRIS, virtual account, dan e-wallet tampil saat kamu membuat invoice." },
+];
+
+function LandingFeatures() {
+  return <section className="section landing-features-section" id="keunggulan">
+    <div className="section-heading"><div><p className="eyebrow">Kenapa belajar di sini</p><h2>Belajar lebih terarah, hasil lebih terukur</h2></div></div>
+    <div className="landing-features">
+      {featureItems.map((item) => <article className="feature-card" key={item.title}>
+        <span className="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24">{item.icon}</svg></span>
+        <h3>{item.title}</h3>
+        <p>{item.text}</p>
+      </article>)}
+    </div>
+  </section>;
+}
+
+function HowItWorks() {
+  return <section className="section" id="cara-kerja">
+    <div className="section-heading"><div><p className="eyebrow">Cara kerja</p><h2>Mulai dalam tiga langkah</h2></div></div>
+    <div className="how-steps">
+      {howSteps.map((step, index) => <article className="step-card" key={step.title}>
+        <span className="step-number" aria-hidden="true">{index + 1}</span>
+        <h3>{step.title}</h3>
+        <p>{step.text}</p>
+      </article>)}
+    </div>
+  </section>;
+}
+
+function LandingFaq() {
+  return <section className="section" id="faq">
+    <div className="section-heading"><div><p className="eyebrow">Pertanyaan umum</p><h2>Hal yang sering ditanyakan</h2></div></div>
+    <div className="faq-list">
+      {faqItems.map((item) => <details className="faq-item" key={item.q}>
+        <summary>{item.q}</summary>
+        <p>{item.a}</p>
+      </details>)}
+    </div>
+  </section>;
+}
+
+function CtaBand({ onStart }: { onStart: () => void }) {
+  return <section className="section cta-section">
+    <div className="cta-band">
+      <div>
+        <h2>Siap mulai tryout pertamamu?</h2>
+        <p>Daftar gratis, pilih paket sesuai jenjang, dan pantau perkembangan belajarmu dalam satu dashboard.</p>
+      </div>
+      <button className="button" type="button" onClick={onStart}>Daftar sekarang</button>
+    </div>
+  </section>;
 }
 
 function PackagesSlider({onStart,intervalMS=4000}:{onStart:()=>void;intervalMS?:number}) {

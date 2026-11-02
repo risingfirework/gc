@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { APIError, api, CBTLookupPackage, GlobalRanking, MyTransaction, OwnedPackage, Package, PackageExam, PendingTransaction, SiteSettings, tokenStore, User, UserPricingPolicy } from "@/services/api";
 import AdminDashboard from "@/components/AdminDashboard";
 import TeacherDashboard from "@/components/TeacherDashboard";
@@ -14,6 +14,10 @@ import TestimonialSlider from "@/components/TestimonialSlider";
 import HeroSlider from "@/components/HeroSlider";
 import CatalogStats from "@/components/CatalogStats";
 import BrandLogo from "@/components/BrandLogo";
+import EmptyState from "@/components/EmptyState";
+import StudentBottomNav from "@/components/StudentBottomNav";
+import Toast, { ToastState } from "@/components/Toast";
+import { Skeleton, SkeletonExamRows, SkeletonOwnedGrid, SkeletonPackageGrid } from "@/components/Skeleton";
 import { VideoSection } from "@/components/YouTubeEmbed";
 
 const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
@@ -60,8 +64,18 @@ function OwnedPackageGrid({ items, examsByPackage, onStart, onViewResult }: { it
   <span className="exam-score">Masukkan token di menu Ujian CBT</span>
 ) : (
   <button className="button" onClick={() => onStart(exam.id)}>Mulai ujian</button>
-)}</div>)}</div> : <p className="empty-state">{exams === undefined ? "Memuat ujian..." : "Belum ada ujian di paket ini."}</p>}</article>;
+)}</div>)}</div> : (exams === undefined
+    ? <SkeletonExamRows count={2}/>
+    : <EmptyState variant="plain" icon="exam" title="Belum ada ujian" description="Paket ini belum memiliki ujian aktif. Cek kembali nanti atau hubungi pembuat paket."/>)}</article>;
   })}</div>;
+}
+function findNextExam(packages: OwnedPackage[], examsByPackage: Record<string, PackageExam[] | undefined>) {
+  for (const pkg of packages) {
+    const exams = examsByPackage[pkg.id];
+    const exam = exams?.find((item) => !item.user_exam_id && item.exam_type !== "cbt");
+    if (exam) return { pkg, exam };
+  }
+  return null;
 }
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);
@@ -82,11 +96,11 @@ function CBTLookupPanel({ token, onToken, onLookup }: { token: string; onToken: 
   </div>;
 }
 function CBTResultPanel({ packages, onSelect, onReview }: { packages: CBTLookupPackage[]; onSelect: (examID: string) => void; onReview: (attemptID: string) => void }) {
-  if (packages.length === 0) return <div className="card message-box"><p className="empty-state">Tidak ada paket ujian aktif yang cocok dengan token tersebut.</p></div>;
+  if (packages.length === 0) return <EmptyState icon="search" title="Token tidak cocok" description="Tidak ada paket ujian aktif yang cocok dengan token tersebut. Periksa kembali token dari gurumu, lalu coba lagi."/>;
   return <div className="package-exams">{packages.map((item) => <article className="card package-card owned cbt-result-card" key={item.id}>
     <span className="discount">PAKET CBT</span><h3>{item.title}</h3><p>{item.kode} · {item.jenjang}{item.price === 0 ? " · Gratis" : ""}</p>
     {item.exams.length === 0
-      ? <p className="empty-state">Belum ada ujian aktif di paket ini.</p>
+      ? <EmptyState variant="plain" icon="exam" title="Belum ada ujian aktif" description="Paket ini belum memiliki ujian yang bisa dikerjakan."/>
       : <div className="package-exams">{item.exams.map((exam) => <div className="exam-row" key={exam.exam_id}><div className="exam-info"><strong>{exam.title}</strong><span>{exam.total_questions} soal · {exam.duration_minutes} menit · Syarat lulus {exam.passing_score.toFixed(0)}</span></div>{exam.submitted
         ? exam.score_released === false
           ? <span className="exam-score">Menunggu nilai dirilis</span>
@@ -125,16 +139,22 @@ function DashboardContent() {
   const [cbtToken, setCbtToken] = useState("");
   const [cbtResults, setCbtResults] = useState<CBTLookupPackage[] | null>(null);
   const [cbtSearching, setCbtSearching] = useState(false);
+  const [userLoading, setUserLoading] = useState(true);
+  const [packagesLoading, setPackagesLoading] = useState(true);
+  const [myPackagesLoading, setMyPackagesLoading] = useState(true);
+  const [toast, setToast] = useState<ToastState>(null);
+  const closeToast = useCallback(() => setToast(null), []);
   const catalogPackages = user ? packages.filter((item) => item.jenjang === user.school_level && item.exam_type !== "cbt") : [];
+  const nextExam = findNextExam(myPackages, examsByPackage);
 
   useEffect(() => {
     if (!tokenStore.hasToken()) {
       router.replace("/login");
       return;
     }
-    api.currentUser().then((current) => { setUser(current); setRankingLevel(current.school_level); }).catch(() => undefined);
-    api.packages().then((response) => setPackages(response.data)).catch((reason) => setError(reason instanceof Error ? reason.message : "Katalog gagal dimuat."));
-    api.packagesMine().then(setMyPackages).catch(() => undefined);
+    api.currentUser().then((current) => { setUser(current); setRankingLevel(current.school_level); }).catch(() => undefined).finally(() => setUserLoading(false));
+    api.packages().then((response) => setPackages(response.data)).catch((reason) => setError(reason instanceof Error ? reason.message : "Katalog gagal dimuat.")).finally(() => setPackagesLoading(false));
+    api.packagesMine().then(setMyPackages).catch(() => undefined).finally(() => setMyPackagesLoading(false));
     api.pricingPolicy().then(setPricingPolicy).catch(() => undefined);
     api.siteSettings().then(setSiteSettings).catch(()=>undefined);
   }, [router]);
@@ -179,8 +199,9 @@ function DashboardContent() {
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(url);
+      setToast({ message: "Invoice berhasil diunduh.", tone: "success" });
     } catch (reason) {
-      setError(reason instanceof APIError ? reason.message : "Invoice gagal diunduh.");
+      setToast({ message: reason instanceof APIError ? reason.message : "Invoice gagal diunduh.", tone: "error" });
     }
   }
 
@@ -197,7 +218,7 @@ function DashboardContent() {
       api.pendingTransactions().then(setPendingPayments).catch(() => undefined);
     } catch (reason) {
       paymentWindow?.close();
-      setError(reason instanceof APIError ? reason.message : "Checkout gagal dibuat.");
+      setToast({ message: reason instanceof APIError ? reason.message : "Checkout gagal dibuat.", tone: "error" });
     } finally { setLoading(false); }
   }
 
@@ -215,7 +236,7 @@ function DashboardContent() {
   function lookupCBT() {
     if (cbtToken.trim().length < 4 || cbtSearching) return;
     setCbtSearching(true);
-    api.cbtLookup(cbtToken.trim()).then((results) => { setCbtResults(results); setError(""); }).catch((reason) => setError(reason instanceof Error ? reason.message : "Pencarian token gagal.")).finally(() => setCbtSearching(false));
+    api.cbtLookup(cbtToken.trim()).then((results) => { setCbtResults(results); setError(""); }).catch((reason) => setToast({ message: reason instanceof Error ? reason.message : "Pencarian token gagal.", tone: "error" })).finally(() => setCbtSearching(false));
   }
 
   async function claimFree() {
@@ -225,12 +246,21 @@ function DashboardContent() {
     try {
       await api.claimFreePackage(selected.id);
       setSelected(undefined);
+      setToast({ message: "Paket gratis berhasil diambil. Selamat belajar!", tone: "success" });
       api.packagesMine().then(setMyPackages).catch(() => undefined);
     } catch (reason) {
-      setError(reason instanceof APIError ? reason.message : "Gagal mengambil paket gratis.");
+      setToast({ message: reason instanceof APIError ? reason.message : "Gagal mengambil paket gratis.", tone: "error" });
     } finally { setLoading(false); }
   }
 
+  if (userLoading) {
+    return <main className="student-shell"><div className="container"><section className="dashboard" aria-busy="true" aria-label="Memuat dashboard">
+      <div className="dashboard-skeleton-head"><Skeleton className="skeleton-title"/><Skeleton className="skeleton-subtitle"/></div>
+      <Skeleton className="skeleton-hero"/>
+      <div className="section-heading"><div><Skeleton className="skeleton-eyebrow"/><Skeleton className="skeleton-title"/></div></div>
+      <SkeletonOwnedGrid count={2}/>
+    </section></div></main>;
+  }
   if (user?.role === "admin" || user?.role === "owner" || user?.role === "finance") {
     return <AdminDashboard user={user} onLogout={() => void logout()} loggingOut={loggingOut} onUserUpdate={setUser}/>;
   }
@@ -252,15 +282,24 @@ function DashboardContent() {
 
       {activeView === "belajar" && <>
         <div className="panel-hero"><HeroSlider onStart={() => router.push("/dashboard?view=katalog")} compact slides={siteSettings?.hero_slides} intervalMS={siteSettings?.hero_interval_ms}/></div>
+        {nextExam && <section className="resume-banner" aria-label="Ujian berikutnya">
+          <span className="resume-banner-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h14v17H5z"/><path d="M9 4.5V3h6v1.5M9 9h6M9 13h6"/><path d="m10.5 17 1.8 1.8L15.5 15"/></svg></span>
+          <div className="resume-banner-copy"><p className="eyebrow">Ujian berikutnya</p><strong>{nextExam.exam.title}</strong><span>{nextExam.pkg.title} · {nextExam.exam.total_questions} soal · {nextExam.exam.duration_minutes} menit</span></div>
+          <button className="button" type="button" onClick={() => router.push(`/cbt/${nextExam.exam.id}`)}>Lanjutkan ujian</button>
+        </section>}
         <section className="dashboard-section panel-view">
           <div className="section-heading"><div><p className="eyebrow">Belajar saya</p><h2>Paket belajar aktif</h2></div></div>
-          {myPackages.length === 0 ? <div className="card empty-state">Kamu belum memiliki paket belajar. Jelajahi katalog untuk mulai berlatih.</div> : <OwnedPackageGrid items={myPackages} examsByPackage={examsByPackage} onStart={(examID) => router.push(`/cbt/${examID}`)} onViewResult={(attemptID) => router.push(`/dashboard/results/${attemptID}`)} />}
+          {myPackagesLoading && myPackages.length === 0
+            ? <SkeletonOwnedGrid count={2}/>
+            : myPackages.length === 0
+              ? <EmptyState icon="book" title="Belum ada paket belajar" description="Kamu belum memiliki paket belajar. Jelajahi katalog untuk mulai berlatih dengan soal dan pembahasan." action={{ label: "Jelajahi katalog", href: "/dashboard?view=katalog" }}/>
+              : <OwnedPackageGrid items={myPackages} examsByPackage={examsByPackage} onStart={(examID) => router.push(`/cbt/${examID}`)} onViewResult={(attemptID) => router.push(`/dashboard/results/${attemptID}`)} />}
         </section>
         <VideoSection videos={siteSettings?.youtube_videos ?? []} eyebrow="Video" title={siteSettings?.platform_name?`Tonton panduan belajar ${siteSettings.platform_name}`:"Tonton panduan belajar"} lead="Pelajari alur tryout, analisis nilai, dan tips biar makin siap."/>
         <section className="dashboard-section panel-view">
           <div className="section-heading"><div><p className="eyebrow">Pembelian</p><h2>Riwayat transaksi</h2></div></div>
           {myTransactions.length === 0 && pendingPayments.length === 0
-            ? <div className="card empty-state">Belum ada pembelian. Unduh invoice tersedia di sini setelah pembayaran berhasil.</div>
+            ? <EmptyState icon="cart" title="Belum ada transaksi" description="Pembelian paket dan invoice akan muncul di sini setelah kamu menyelesaikan pembayaran." action={{ label: "Lihat katalog", href: "/dashboard?view=katalog" }}/>
             : <div className="card transactions-table-card"><div className="transactions-table-wrap"><table className="transactions-table"><thead><tr><th>Invoice</th><th>Paket</th><th>Tanggal</th><th>Total</th><th>Status</th><th></th></tr></thead><tbody>
               {pendingPayments.map((item) => <tr key={item.id}><td><strong>{item.invoice_number}</strong></td><td>{item.package_title}</td><td>{item.expires_at ? `Sampai ${new Date(item.expires_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : "Menunggu"}</td><td>{rupiah.format(item.amount)}</td><td><span className="status-pill pending">Menunggu pembayaran</span></td><td><button type="button" className="button small-btn" onClick={() => resumePayment(item)}>Lanjutkan bayar</button></td></tr>)}
               {myTransactions.map((item) => <tr key={item.id}><td><strong>{item.invoice_number}</strong></td><td>{item.package_title}</td><td>{new Date(item.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td><td>{rupiah.format(item.amount)}</td><td><span className={`status-pill ${item.status}`}>{item.status === "paid" ? "Lunas" : "Direfund"}</span></td><td><button type="button" className="button secondary small-btn" onClick={() => void downloadInvoice(item.id)}>Unduh invoice</button></td></tr>)}
@@ -272,10 +311,12 @@ function DashboardContent() {
         <div className="section-heading"><div><p className="eyebrow">Daftar katalog</p><h2>Paket jenjang {user?.school_level === "SMA" ? "SMA / SMK" : user?.school_level ?? "siswa"}</h2></div></div>
         {pricingPolicy?.account_active === false && <p className="error">Pembelian akun ini sedang ditahan oleh admin. Hubungi pengelola untuk informasi lebih lanjut.</p>}
         {!user
-          ? <div className="card empty-state">Memuat katalog sesuai jenjang...</div>
-          : catalogPackages.length === 0
-            ? <div className="card empty-state">Belum ada paket aktif untuk jenjang {user.school_level === "SMA" ? "SMA / SMK" : user.school_level}.</div>
-            : <PackageGrid items={catalogPackages} ownedItems={myPackages} onBuy={openPackage} policy={pricingPolicy} />}
+          ? <SkeletonPackageGrid count={3}/>
+          : packagesLoading && catalogPackages.length === 0
+            ? <SkeletonPackageGrid count={3}/>
+            : catalogPackages.length === 0
+              ? <EmptyState icon="catalog" title={`Belum ada paket aktif untuk jenjang ${user.school_level === "SMA" ? "SMA / SMK" : user.school_level}`} description="Paket baru akan tampil otomatis di sini setelah dipublikasikan oleh pengelola." action={{ label: "Lihat ranking", href: "/dashboard?view=ranking" }}/>
+              : <PackageGrid items={catalogPackages} ownedItems={myPackages} onBuy={openPackage} policy={pricingPolicy} />}
       </section>}
 
       {activeView === "ranking" && <section className="dashboard-section panel-view">
@@ -289,12 +330,12 @@ function DashboardContent() {
           <button className={rankingMode === "activity" ? "active" : ""} onClick={() => setRankingMode("activity")}>Aktivitas</button>
         </div>
         <div className="card ranking-card">
-          {ranking.length === 0 ? <p className="empty-state">Belum ada hasil ujian yang dapat diperingkat.</p> : <div className="ranking-table-wrap"><table className="ranking-table"><thead><tr><th>Peringkat</th><th>Nama pengguna</th><th>Jenjang</th><th>Ujian Selesai</th><th>Persentil</th><th>Terbaik</th><th>Waktu</th><th>Tanggal</th></tr></thead><tbody>{ranking.map((entry) => <tr key={`${entry.rank}-${entry.display_name}`} className={entry.is_current_user ? "current-user" : ""}><td><span className={`rank-badge rank-${entry.rank}`}>{entry.rank}</span></td><td>{entry.display_name}{entry.is_current_user && <small> Anda</small>}</td><td>{entry.school_level}</td><td><strong>{entry.exams_done}</strong></td><td><strong>{entry.score.toFixed(1)}%</strong></td><td>{entry.best_percentile.toFixed(1)}%</td><td>{formatDuration(entry.duration_seconds)}</td><td>{new Date(entry.finished_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td></tr>)}</tbody></table></div>}
+          {ranking.length === 0 ? <EmptyState variant="plain" icon="ranking" title="Ranking belum tersedia" description={`Belum ada hasil ujian jenjang ${rankingLevel} yang bisa diperingkat. Selesaikan satu ujian untuk masuk peringkat.`}/> : <div className="ranking-table-wrap"><table className="ranking-table"><thead><tr><th>Peringkat</th><th>Nama pengguna</th><th>Jenjang</th><th>Ujian Selesai</th><th>Persentil</th><th>Terbaik</th><th>Waktu</th><th>Tanggal</th></tr></thead><tbody>{ranking.map((entry) => <tr key={`${entry.rank}-${entry.display_name}`} className={entry.is_current_user ? "current-user" : ""}><td><span className={`rank-badge rank-${entry.rank}`}>{entry.rank}</span></td><td>{entry.display_name}{entry.is_current_user && <small> Anda</small>}</td><td>{entry.school_level}</td><td><strong>{entry.exams_done}</strong></td><td><strong>{entry.score.toFixed(1)}%</strong></td><td>{entry.best_percentile.toFixed(1)}%</td><td>{formatDuration(entry.duration_seconds)}</td><td>{new Date(entry.finished_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td></tr>)}</tbody></table></div>}
         </div>
       </section>}
 
       {activeView === "video" && ((siteSettings?.youtube_videos ?? []).length === 0
-          ? <section className="dashboard-section panel-view"><div className="section-heading"><div><p className="eyebrow">Video</p><h2>Video panduan & promosi</h2></div></div><div className="card empty-state">Belum ada video yang dipublikasikan oleh pengelola.</div></section>
+          ? <section className="dashboard-section panel-view"><div className="section-heading"><div><p className="eyebrow">Video</p><h2>Video panduan & promosi</h2></div></div><EmptyState icon="video" title="Belum ada video" description="Pengelola belum mempublikasikan video panduan atau promosi. Coba cek lagi nanti."/></section>
           : <section className="dashboard-section panel-view"><VideoSection videos={siteSettings?.youtube_videos ?? []} eyebrow="Video" title="Video panduan & promosi" lead="Pelajari alur tryout, analisis nilai, dan tips biar makin siap."/></section>)}
 
       {activeView === "profil" && <section className="dashboard-section panel-view">
@@ -305,7 +346,7 @@ function DashboardContent() {
       {activeView === "cbt" && <section className="dashboard-section panel-view">
         <div className="section-heading"><div><p className="eyebrow">Ujian CBT</p><h2>Masukkan token ujian</h2></div></div>
         <CBTLookupPanel token={cbtToken} onToken={setCbtToken} onLookup={lookupCBT}/>
-        {cbtSearching && <div className="card empty-state">Mencari ujian...</div>}
+        {cbtSearching && <div className="card"><SkeletonExamRows count={3}/></div>}
         {cbtResults !== null && <CBTResultPanel packages={cbtResults} onSelect={(examID) => router.push(`/cbt/${examID}?token=${cbtToken.trim()}`)} onReview={(attemptID) => router.push(`/dashboard/results/${attemptID}`)}/>}
       </section>}
 
@@ -324,5 +365,8 @@ function DashboardContent() {
         <p className="muted">Punya kode rujukan dari teman? Masukkan di sini agar temanmu mendapat komisi.</p>
         <p className="muted">Jendela pembayaran akan dibuka setelah invoice dibuat.</p><button className="button full" disabled={loading} onClick={() => void checkout()}>{loading ? "Membuat invoice..." : "Lanjut ke pembayaran"}</button>
       </section></div>)}
-  </div></main>;
+  </div>
+  <StudentBottomNav active={activeView}/>
+  <Toast toast={toast} onClose={closeToast}/>
+  </main>;
 }
