@@ -188,7 +188,7 @@ export default function QuestionBankTools({
       "Isi soal, minimal dua pilihan, lalu kunci_jawaban. Gunakan nomor pilihan: 1, 2, 3, atau 4.",
       "Untuk pilihan majemuk, isi lebih dari satu kunci dengan koma. Contoh: 1,3.",
       "Untuk esai, isi soal saja dan kosongkan semua pilihan serta kunci jawaban.",
-      "Butuh bab, pembahasan, gambar, atau Benar/Salah? Gunakan menu 'Download Soal Lengkap' sebagai format lanjutan.",
+      "Butuh bab, pembahasan, gambar, atau Benar/Salah? Gunakan tombol 'Unduh Soal Lengkap' sebagai format lanjutan.",
     ].forEach((text,rowIndex)=>{
       const row=guideSheet.addRow([text]);
       if(rowIndex===0)row.getCell(1).font={bold:true,size:16};
@@ -429,7 +429,7 @@ export default function QuestionBankTools({
       <button className="button secondary" type="button" disabled={!questions.length} onClick={()=>{setIndex(0);setPreview(true)}}>Preview Tes</button>
       <button className="button secondary" type="button" disabled={!questions.length} onClick={printPDF}>Cetak / Simpan PDF</button>
       <button className="button secondary" type="button" disabled={!examId||!onImportQuestion} onClick={downloadSimpleTemplate}>Unduh Template Mudah</button>
-      <button className="button secondary" type="button" disabled={!questions.length} onClick={downloadExcel}>Download Soal Lengkap</button>
+      <button className="button secondary" type="button" disabled={!questions.length} onClick={downloadExcel}>Unduh Soal Lengkap</button>
       <input ref={fileRef} type="file" accept=".xlsx" className="hidden-file-input" onChange={handleImportFile}/>
       <button className="button secondary" type="button" disabled={!examId||!onImportQuestion||importing} onClick={()=>fileRef.current?.click()}>{importing?"Mengimpor...":"Import Soal"}</button>
       <span>{questions.length} soal siap ditampilkan</span>
