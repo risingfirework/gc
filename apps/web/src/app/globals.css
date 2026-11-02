@@ -688,3 +688,9 @@ html{scroll-behavior:smooth}
 @media(max-width:760px){
   .student-shell .result-page{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
 }
+
+/* Landing mobile: beri jarak dots dari judul agar tidak menimpa teks */
+@media(max-width:760px){
+  .landing .hero-dots{margin-top:12px}
+  .landing .hero-caption{padding:0 18px}
+}
