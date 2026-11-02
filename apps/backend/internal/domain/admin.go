@@ -448,6 +448,7 @@ type AdminRepository interface {
 	CreateUser(ctx context.Context, user User) (*UserResponse, error)
 	UpdateUser(ctx context.Context, userID, role, schoolLevel string) (*UserResponse, error)
 	DeleteUser(ctx context.Context, userID string) error
+	UpdateUserPassword(ctx context.Context, userID string, passwordHash string) error
 	CreatePackage(ctx context.Context, input AdminPackageRequest) (*AdminPackage, error)
 	CreatePackageBundle(ctx context.Context, input PackageBundle) (*AdminPackage, error)
 	GetPackage(ctx context.Context, id string) (*AdminPackage, error)
@@ -558,4 +559,5 @@ type AdminService interface {
 	RejectTeacher(ctx context.Context, actorID, actorEmail, userID, reason string) error
 	CheckTeacherSIMPKB(ctx context.Context, userID string) error
 	SIMPKBWorkerTick(ctx context.Context) error
+	ResetPassword(ctx context.Context, actorID, actorEmail, userID string) (*UserResponse, error)
 }

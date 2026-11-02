@@ -557,6 +557,31 @@ func (s *AdminService) DeleteUser(ctx context.Context, actorID, actorEmail, user
 	s.audit(ctx, actorID, actorEmail, "delete_user", "user", userID, map[string]any{"role": current})
 	return nil
 }
+
+func (s *AdminService) ResetPassword(ctx context.Context, actorID, actorEmail, userID string) (*domain.UserResponse, error) {
+	if !validUUID(userID) {
+		return nil, domain.ErrInvalidInput
+	}
+	// Generate a random 12-char password (letters+digits only, safe for CLI)
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	newPassword := make([]byte, 12)
+	if _, err := rand.Read(newPassword); err != nil {
+		return nil, fmt.Errorf("generate password: %w", err)
+	}
+	for i, b := range newPassword {
+		newPassword[i] = letters[b%byte(letters[len(letters)-1]+1)]
+	}
+	passwordStr := string(newPassword)
+	hash, err := bcrypt.GenerateFromPassword([]byte(passwordStr), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("hash password: %w", err)
+	}
+	if err = s.repository.UpdateUserPassword(ctx, userID, string(hash)); err != nil {
+		return nil, fmt.Errorf("update user password: %w", err)
+	}
+	s.audit(ctx, actorID, actorEmail, "reset_password", "user", userID, map[string]any{"new_password": "<redacted>"})
+	return &domain.UserResponse{ID: userID, Email: "", Name: "", Role: "", SchoolLevel: "", TOTPEnabled: false}, nil
+}
 func validateAdminPackage(input domain.AdminPackageRequest) error {
 	if strings.TrimSpace(input.Title) == "" || len(input.Title) > 200 ||
 		input.Price < 0 || input.ValidityDays < 1 ||

@@ -205,6 +205,7 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 				router.Post("/users", adminHandler.CreateUser)
 				router.Patch("/users/{id}", adminHandler.UpdateUser)
 				router.Delete("/users/{id}", adminHandler.DeleteUser)
+	router.Post("/users/{id}/reset-password", adminHandler.ResetPassword)
 				router.Get("/audit", adminHandler.AuditLogList)
 				if payment != nil {
 					// Integrasi pembayaran: hanya owner yang boleh melihat/mengubah

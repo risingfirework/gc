@@ -266,6 +266,18 @@ func (r *AdminRepository) UpdateUser(ctx context.Context, userID, role, schoolLe
 	return &user, nil
 }
 
+func (r *AdminRepository) UpdateUserPassword(ctx context.Context, userID string, passwordHash string) error {
+	const query = `UPDATE users SET password_hash=$2, updated_at=NOW() WHERE id=$1`
+	commandTag, err := r.db.Exec(ctx, query, userID, passwordHash)
+	if err != nil {
+		return fmt.Errorf("update user password: %w", err)
+	}
+	if commandTag.RowsAffected() == 0 {
+		return domain.ErrUserNotFound
+	}
+	return nil
+}
+
 func (r *AdminRepository) DeleteUser(ctx context.Context, userID string) error {
 	return r.deleteByID(ctx, `DELETE FROM users WHERE id=$1`, userID, domain.ErrUserNotFound)
 }

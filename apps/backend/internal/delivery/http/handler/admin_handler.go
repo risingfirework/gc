@@ -596,3 +596,23 @@ func actorFromContext(r *http.Request) (id, email string) {
 	}
 	return claims.UserID, claims.Email
 }
+
+// ResetPassword mengatur ulang kata sandi pengguna dari panel admin.
+// Hanya boleh digunakan oleh owner atau admin.
+func (h *AdminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		UserID string `json:"user_id" validate:"required,uuid"`
+	}
+	if decodeJSON(w, r, &input) != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON request")
+		return
+	}
+	actorID, actorEmail := actorFromContext(r)
+	result, err := h.service.ResetPassword(r.Context(), actorID, actorEmail, input.UserID)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "admin reset password", "error", err)
+		writeError(w, http.StatusInternalServerError, "gagal mereset kata sandi")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"message": "kata sandi pengguna direset secara berhasil", "user": result})
+}
