@@ -95,6 +95,41 @@ APP_RELEASE=2026.09.26-1
 Pastikan domain pengirim punya record **SPF** dan **DKIM** di DNS. Tanpa keduanya,
 email reset kata sandi sering masuk folder spam atau ditolak penerima.
 
+### Contoh: Resend
+
+1. Daftar di <https://resend.com>, tambahkan domain `siap-siap.my.id`, lalu salin
+   record SPF/DKIM yang ditampilkan ke DNS (di sini NS-nya SumoPod).
+2. Tunggu status domain **Verified**, lalu buat API key dengan permission *Sending access*.
+3. Di VPS, jalankan skrip pembantu (input API key tidak ditampilkan):
+
+   ```
+   cd ~/tka
+   SMTP_HOST=smtp.resend.com SMTP_USERNAME=resend \
+   SMTP_FROM=no-reply@siap-siap.my.id \
+   sh scripts/configure-smtp.sh
+   ```
+
+   Skrip menulis `secrets/smtp_password.txt`, memperbarui `.env.production`
+   (dengan backup), dan me-restart layanan `api`.
+4. Verifikasi log startup memuat `email reset kata sandi aktif`:
+
+   ```
+   docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=40 api
+   ```
+
+5. Uji dari mesin lain. `202` berarti email terkirim, `502` gagal kirim,
+   `503` berarti SMTP masih belum aktif:
+
+   ```
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+     https://siap-siap.my.id/api/v1/auth/forgot-password \
+     -H 'Content-Type: application/json' \
+     -d '{"email":"email-akun-anda@contoh.com"}'
+   ```
+
+> Pembatasan: satu permintaan reset per email per 60 detik. Jika pengujian
+> diulang terlalu cepat, API bisa menjawab `202` tanpa mengirim email baru.
+
 Catatan tentang perilaku runtime:
 - `SentryDSN` kosong → Sentry tidak diinisialisasi (aman).
 - `SMTPHost` kosong → outbound email nonaktif (aman). Di production, halaman

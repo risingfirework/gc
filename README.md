@@ -131,8 +131,10 @@ berisi akun apa pun; buat owner pertama kali setelah stack sehat:
 CREATE_OWNER_PASSWORD='password-kuat' scripts/create-owner.sh admin@tka.example.com
 ```
 
-Jika email reset kata sandi dibutuhkan, isi `SMTP_HOST/SMTP_PORT/SMTP_USERNAME/SMTP_FROM`
-di `.env.production` dan password SMTP pada `secrets/smtp_password.txt`.
+Jika email reset kata sandi dibutuhkan, jalankan `sh scripts/configure-smtp.sh` di VPS
+(mis. dengan `SMTP_HOST=smtp.resend.com SMTP_USERNAME=resend SMTP_FROM=no-reply@domain-anda`).
+Bila `SMTP_HOST` dikosongkan, halaman lupa kata sandi di production akan menjawab `503`
+alih-alih mengaku berhasil mengirim email. Detail: `docs/deploy-vps.md`.
 
 Untuk menambah replika API di satu host gunakan `--scale backend=4`. PostgreSQL dan Redis
 tidak membuka port ke host; trafik publik hanya masuk melalui Nginx HTTPS. Compose ini
