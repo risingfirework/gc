@@ -595,7 +595,7 @@ Masukkan alasan refund (wajib):`, "");
     {removeTarget && <ConfirmModal title={removeTarget.kind==="user"?"Hapus pengguna":removeTarget.kind==="package"?"Hapus paket soal":"Hapus soal"} message={removeTarget.kind==="package"?`Paket soal "${removeTarget.label}" beserta seluruh ujian dan soal di dalamnya akan dihapus permanen.${removeTarget.isCBT?" Untuk paket CBT, data riwayat pengerjaan siswa juga akan dihapus.":""}`:removeTarget.kind==="user"?`Akun ${removeTarget.label} akan dihapus permanen beserta seluruh datanya. Tindakan ini tidak dapat dibatalkan.`:`Soal "${removeTarget.label}" akan dihapus permanen dari bank soal.`} busy={saving==="mutation"} onClose={()=>setRemoveTarget(null)} onConfirm={()=>void confirmRemove()}/>}
     {bulkDeleteTarget && <ConfirmModal title={bulkDeleteTarget.mode==="all"?"Hapus semua soal":"Hapus soal terpilih"} message={bulkDeleteTarget.mode==="all"?`Seluruh ${bulkDeleteTarget.count} soal pada paket "${selectedPackage?.title??""}" akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`:`${bulkDeleteTarget.count} soal terpilih akan dihapus permanen dari bank soal. Tindakan ini tidak dapat dibatalkan.`} busy={saving==="mutation"} onClose={()=>setBulkDeleteTarget(null)} onConfirm={()=>void confirmBulkDeleteQuestions()}/>}
     {toast&&<div className="success-toast" role="status"><span>✓</span><p>{toast}</p><button type="button" aria-label="Tutup notifikasi" onClick={()=>setToast("")}>×</button></div>}
-    {resetPassModal.open && resetPassModal.user && (
+    {resetPassModal.open && resetPassModal.user && createPortal(
       <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-pass-title" onMouseDown={(e) => { if (e.target === e.currentTarget) closeResetPasswordModal(); }}>
         <div className="modal-card" role="document" onMouseDown={(e) => e.stopPropagation()}>
           <header className="modal-header">
@@ -651,7 +651,8 @@ Masukkan alasan refund (wajib):`, "");
             </button>
           </footer>
         </div>
-      </div>
+      </div>,
+      document.body
     )}
   </div></main>;
 }
