@@ -142,6 +142,13 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
   const [removeTarget, setRemoveTarget] = useState<{ kind: "user" | "package" | "question"; id: string; label: string; isCBT?: boolean } | null>(null);
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<{ mode: "all" | "selected"; packageId: string; count: number } | null>(null);
+  const [resetPassModal, setResetPassModal] = useState<{
+    open: boolean;
+    user: User | null;
+    password: string;
+    confirm: string;
+    error: string;
+  }>({ open: false, user: null, password: "", confirm: "", error: "" });
   const [summaryWidgets, setSummaryWidgets] = useState<SummaryWidget[]>(() => {
     try {
       const saved = typeof localStorage === "undefined" ? null : JSON.parse(localStorage.getItem("tka.adminSummary.widgets") ?? "null");
@@ -385,14 +392,38 @@ Masukkan alasan refund (wajib):`, "");
     await action(() => api.rejectTeacher(item.id, reason));
     setError("");
   }
-  async function resetUserPassword(item: User) {
-    if (item.id === user.id) { setError("Tidak bisa mereset kata sandi akun sendiri."); return; }
-    const newPassword = window.prompt(`Masukkan kata sandi baru untuk ${item.email} (minimal 8 karakter):`, "");
-    if (newPassword === null || !newPassword.trim()) return;
-    if (newPassword.length < 8) { setError("Kata sandi minimal 8 karakter."); return; }
-    setSaving("mutation");
+  function openResetPasswordModal(item: User) {
+    if (item.id === user.id) {
+      setError("Tidak bisa mereset kata sandi akun sendiri.");
+      return;
+    }
+    setResetPassModal({ open: true, user: item, password: "", confirm: "", error: "" });
+  }
+
+  async function confirmResetPassword() {
+    const target = resetPassModal.user;
+    if (!target) return;
+    const pwd = resetPassModal.password.trim();
+    const cfm = resetPassModal.confirm.trim();
+
+    if (pwd.length < 8) {
+      setResetPassModal((m) => ({ ...m, error: "Kata sandi minimal 8 karakter." }));
+      return;
+    }
+    if (pwd !== cfm) {
+      setResetPassModal((m) => ({ ...m, error: "Konfirmasi kata sandi tidak sama." }));
+      return;
+    }
+
+    setResetPassModal((m) => ({ ...m, open: false }));
     setError("");
-    await action(async () => await api.adminResetPassword(item.id, newPassword));
+    setSaving("mutation");
+    await action(async () => await api.adminResetPassword(target.id, pwd));
+  }
+
+  function closeResetPasswordModal() {
+    if (saving === "mutation") return;
+    setResetPassModal({ open: false, user: null, password: "", confirm: "", error: "" });
   }
   async function checkSIMPKB(item: TeacherVerification) {
     setSaving("simpkb-check"); setError(""); setSIMPKBPreview(null);
@@ -495,7 +526,7 @@ Masukkan alasan refund (wajib):`, "");
           <div className="user-table-wrap"><table className="user-table"><thead><tr><th>Pengguna</th><th>Peran</th><th>Jenjang</th><th>Status</th><th>Terdaftar</th><th><span className="sr-only">Aksi</span></th></tr></thead><tbody>{visibleUsers.map((item)=>{
             const isCurrentUser = item.id === user.id;
             const accountActive = userFinanceById.get(item.id)?.account_status !== "hold";
-            return <tr key={item.id}><td><div className="user-cell"><span className={`user-avatar ${item.role}`}>{userInitials(item)}</span><div><strong>{item.name?.trim() || item.email.split("@")[0]}</strong><span>{item.email}</span></div>{isCurrentUser&&<span className="current-user-badge">Akun Anda</span>}</div></td><td><span className={`user-readonly-pill role-${item.role}`}><span aria-hidden="true"/>{userRoleLabel(item.role)}</span></td><td><span className="user-readonly-pill level">{item.school_level === "SMA" ? "SMA / SMK" : item.school_level}</span></td><td><span className={`user-account-status ${accountActive?"active":"inactive"}`}><span aria-hidden="true"/>{accountActive?"Aktif":"Nonaktif"}</span></td><td><div className="user-date"><strong>{new Date(item.created_at).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"})}</strong><span>{new Date(item.created_at).toLocaleDateString("id-ID",{weekday:"long"})}</span></div></td><td className="user-actions"><div className="user-row-actions"><button className={`user-status-button ${accountActive?"deactivate":"activate"}`} disabled={isCurrentUser||saving!==""} title={isCurrentUser?"Akun yang sedang digunakan harus tetap aktif":accountActive?"Nonaktifkan akun":"Aktifkan akun"} onClick={()=>void toggleUserStatus(item)}>{accountActive?"Nonaktifkan":"Aktifkan"}</button><button className="user-edit-button" disabled={saving!==""} onClick={()=>setDialog({kind:"user",item})}><span aria-hidden="true">✎</span> Edit</button><button className="user-reset-password-button" disabled={saving!==""} onClick={()=>void resetUserPassword(item)}><span aria-hidden="true">🔐</span> Reset kata sandi</button><button className="user-delete-button" aria-label={`Hapus ${item.email}`} title={isCurrentUser?"Akun yang sedang digunakan tidak dapat dihapus":"Hapus pengguna"} disabled={isCurrentUser||saving!==""} onClick={()=>void remove("user",item.id,item.email)}><span aria-hidden="true">×</span><span>Hapus</span></button></div></td></tr>;
+            return <tr key={item.id}><td><div className="user-cell"><span className={`user-avatar ${item.role}`}>{userInitials(item)}</span><div><strong>{item.name?.trim() || item.email.split("@")[0]}</strong><span>{item.email}</span></div>{isCurrentUser&&<span className="current-user-badge">Akun Anda</span>}</div></td><td><span className={`user-readonly-pill role-${item.role}`}><span aria-hidden="true"/>{userRoleLabel(item.role)}</span></td><td><span className="user-readonly-pill level">{item.school_level === "SMA" ? "SMA / SMK" : item.school_level}</span></td><td><span className={`user-account-status ${accountActive?"active":"inactive"}`}><span aria-hidden="true"/>{accountActive?"Aktif":"Nonaktif"}</span></td><td><div className="user-date"><strong>{new Date(item.created_at).toLocaleDateString("id-ID",{day:"2-digit",month:"short",year:"numeric"})}</strong><span>{new Date(item.created_at).toLocaleDateString("id-ID",{weekday:"long"})}</span></div></td><td className="user-actions"><div className="user-row-actions"><button className={`user-status-button ${accountActive?"deactivate":"activate"}`} disabled={isCurrentUser||saving!==""} title={isCurrentUser?"Akun yang sedang digunakan harus tetap aktif":accountActive?"Nonaktifkan akun":"Aktifkan akun"} onClick={()=>void toggleUserStatus(item)}>{accountActive?"Nonaktifkan":"Aktifkan"}</button><button className="user-edit-button" disabled={saving!==""} onClick={()=>setDialog({kind:"user",item})}><span aria-hidden="true">✎</span> Edit</button><button className="user-reset-password-button" disabled={saving!==""} onClick={()=>void openResetPasswordModal(item)}><span aria-hidden="true">🔐</span> Reset kata sandi</button><button className="user-delete-button" aria-label={`Hapus ${item.email}`} title={isCurrentUser?"Akun yang sedang digunakan tidak dapat dihapus":"Hapus pengguna"} disabled={isCurrentUser||saving!==""} onClick={()=>void remove("user",item.id,item.email)}><span aria-hidden="true">×</span><span>Hapus</span></button></div></td></tr>;
           })}{visibleUsers.length===0&&<tr><td colSpan={6}><div className="user-empty"><span aria-hidden="true">⌕</span><strong>Pengguna tidak ditemukan</strong><p>Ubah kata kunci atau filter untuk melihat hasil lainnya.</p><button onClick={()=>{setUserQuery("");setUserRoleFilter("all");setUserLevelFilter("all");}}>Reset filter</button></div></td></tr>}</tbody></table></div>
           <div className="pagination-row"><button className="table-action" disabled={usersPage.page<=1||saving!==""} onClick={()=>setUserPage((p)=>Math.max(1,p-1))}>‹ Sebelumnya</button><span className="muted">Hal {usersPage.page} · {usersPage.total} pengguna</span><button className="table-action" disabled={usersPage.page*usersPage.count>=usersPage.total||saving!==""} onClick={()=>setUserPage((p)=>p+1)}>Berikutnya ›</button></div>
         </div>
@@ -564,6 +595,64 @@ Masukkan alasan refund (wajib):`, "");
     {removeTarget && <ConfirmModal title={removeTarget.kind==="user"?"Hapus pengguna":removeTarget.kind==="package"?"Hapus paket soal":"Hapus soal"} message={removeTarget.kind==="package"?`Paket soal "${removeTarget.label}" beserta seluruh ujian dan soal di dalamnya akan dihapus permanen.${removeTarget.isCBT?" Untuk paket CBT, data riwayat pengerjaan siswa juga akan dihapus.":""}`:removeTarget.kind==="user"?`Akun ${removeTarget.label} akan dihapus permanen beserta seluruh datanya. Tindakan ini tidak dapat dibatalkan.`:`Soal "${removeTarget.label}" akan dihapus permanen dari bank soal.`} busy={saving==="mutation"} onClose={()=>setRemoveTarget(null)} onConfirm={()=>void confirmRemove()}/>}
     {bulkDeleteTarget && <ConfirmModal title={bulkDeleteTarget.mode==="all"?"Hapus semua soal":"Hapus soal terpilih"} message={bulkDeleteTarget.mode==="all"?`Seluruh ${bulkDeleteTarget.count} soal pada paket "${selectedPackage?.title??""}" akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`:`${bulkDeleteTarget.count} soal terpilih akan dihapus permanen dari bank soal. Tindakan ini tidak dapat dibatalkan.`} busy={saving==="mutation"} onClose={()=>setBulkDeleteTarget(null)} onConfirm={()=>void confirmBulkDeleteQuestions()}/>}
     {toast&&<div className="success-toast" role="status"><span>✓</span><p>{toast}</p><button type="button" aria-label="Tutup notifikasi" onClick={()=>setToast("")}>×</button></div>}
+    {resetPassModal.open && resetPassModal.user && (
+      <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-pass-title" onMouseDown={(e) => { if (e.target === e.currentTarget) closeResetPasswordModal(); }}>
+        <div className="modal-card" role="document" onMouseDown={(e) => e.stopPropagation()}>
+          <header className="modal-header">
+            <div>
+              <h2 id="reset-pass-title" className="modal-title">Reset Kata Sandi</h2>
+              <p className="modal-subtitle">Atur ulang kata sandi untuk <strong>{resetPassModal.user.email}</strong></p>
+            </div>
+            <button type="button" className="modal-close" onClick={closeResetPasswordModal} aria-label="Tutup" disabled={saving === "mutation"}>
+              ✕
+            </button>
+          </header>
+          <div className="modal-body">
+            <div className="form-field">
+              <label htmlFor="reset-pass-new">Kata sandi baru</label>
+              <input
+                id="reset-pass-new"
+                type="password"
+                className="input"
+                placeholder="Minimal 8 karakter"
+                value={resetPassModal.password}
+                onChange={(e) => setResetPassModal((m) => ({ ...m, password: e.target.value, error: "" }))}
+                autoFocus
+                disabled={saving === "mutation"}
+              />
+            </div>
+            <div className="form-field">
+              <label htmlFor="reset-pass-confirm">Konfirmasi kata sandi baru</label>
+              <input
+                id="reset-pass-confirm"
+                type="password"
+                className="input"
+                placeholder="Ulangi kata sandi baru"
+                value={resetPassModal.confirm}
+                onChange={(e) => setResetPassModal((m) => ({ ...m, confirm: e.target.value, error: "" }))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    confirmResetPassword();
+                  }
+                }}
+                disabled={saving === "mutation"}
+              />
+            </div>
+            {resetPassModal.error && <p className="form-error">{resetPassModal.error}</p>}
+            <p className="modal-hint">Kata sandi akan langsung diperbarui setelah dikonfirmasi.</p>
+          </div>
+          <footer className="modal-footer">
+            <button type="button" className="btn ghost" onClick={closeResetPasswordModal} disabled={saving === "mutation"}>
+              Batal
+            </button>
+            <button type="button" className="btn primary" onClick={confirmResetPassword} disabled={saving === "mutation"}>
+              {saving === "mutation" ? "Menyimpan..." : "Reset kata sandi"}
+            </button>
+          </footer>
+        </div>
+      </div>
+    )}
   </div></main>;
 }
 
