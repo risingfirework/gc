@@ -601,14 +601,15 @@ func actorFromContext(r *http.Request) (id, email string) {
 // Hanya boleh digunakan oleh owner atau admin.
 func (h *AdminHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var input struct {
-		UserID string `json:"user_id" validate:"required,uuid"`
+		UserID  string `json:"user_id" validate:"required,uuid"`
+		NewPassword string `json:"new_password" validate:"required,min=8"`
 	}
 	if decodeJSON(w, r, &input) != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON request")
 		return
 	}
 	actorID, actorEmail := actorFromContext(r)
-	result, err := h.service.ResetPassword(r.Context(), actorID, actorEmail, input.UserID)
+	result, err := h.service.ResetPassword(r.Context(), actorID, actorEmail, input.UserID, input.NewPassword)
 	if err != nil {
 		h.logger.ErrorContext(r.Context(), "admin reset password", "error", err)
 		writeError(w, http.StatusInternalServerError, "gagal mereset kata sandi")

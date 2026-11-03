@@ -280,7 +280,7 @@ export const api = {
     if (filters.q) params.set("q", filters.q);
     return (await http.get<AdminUsersPage>(`/admin/users?${params.toString()}`)).data;
   },
-  async adminResetPassword(userID: string) { return (await http.post<{message:string}>(`/admin/users/${userID}/reset-password`, {})).data; },
+  async adminResetPassword(userID: string, newPassword: string) { return (await http.post<{message:string}>(`/admin/users/${userID}/reset-password`, { new_password: newPassword })).data; },
   async adminPackages(page: number = 1, perPage: number = 25, filters: { status?: string; jenjang?: string; q?: string; examType?: string } = {}) {
     const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
     if (filters.status) params.set("status", filters.status);

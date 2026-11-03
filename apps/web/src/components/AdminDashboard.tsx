@@ -387,11 +387,12 @@ Masukkan alasan refund (wajib):`, "");
   }
   async function resetUserPassword(item: User) {
     if (item.id === user.id) { setError("Tidak bisa mereset kata sandi akun sendiri."); return; }
-    if (window.confirm(`Yakin mereset kata sandi untuk ${item.email}? Kata sandi baru akan digenerate secara random (12 karakter).`)) {
-      setSaving("mutation");
-      setError("");
-      await action(async () => await api.adminResetPassword(item.id));
-    }
+    const newPassword = window.prompt(`Masukkan kata sandi baru untuk ${item.email} (minimal 8 karakter):`, "");
+    if (newPassword === null || !newPassword.trim()) return;
+    if (newPassword.length < 8) { setError("Kata sandi minimal 8 karakter."); return; }
+    setSaving("mutation");
+    setError("");
+    await action(async () => await api.adminResetPassword(item.id, newPassword));
   }
   async function checkSIMPKB(item: TeacherVerification) {
     setSaving("simpkb-check"); setError(""); setSIMPKBPreview(null);

@@ -559,5 +559,5 @@ type AdminService interface {
 	RejectTeacher(ctx context.Context, actorID, actorEmail, userID, reason string) error
 	CheckTeacherSIMPKB(ctx context.Context, userID string) error
 	SIMPKBWorkerTick(ctx context.Context) error
-	ResetPassword(ctx context.Context, actorID, actorEmail, userID string) (*UserResponse, error)
+	ResetPassword(ctx context.Context, actorID, actorEmail, userID, newPassword string) (*UserResponse, error)
 }

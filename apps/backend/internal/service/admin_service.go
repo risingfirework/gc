@@ -558,21 +558,14 @@ func (s *AdminService) DeleteUser(ctx context.Context, actorID, actorEmail, user
 	return nil
 }
 
-func (s *AdminService) ResetPassword(ctx context.Context, actorID, actorEmail, userID string) (*domain.UserResponse, error) {
+func (s *AdminService) ResetPassword(ctx context.Context, actorID, actorEmail, userID, newPassword string) (*domain.UserResponse, error) {
 	if !validUUID(userID) {
 		return nil, domain.ErrInvalidInput
 	}
-	// Generate a random 12-char password (letters+digits only, safe for CLI)
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	newPassword := make([]byte, 12)
-	if _, err := rand.Read(newPassword); err != nil {
-		return nil, fmt.Errorf("generate password: %w", err)
+	if err := validatePassword(newPassword); err != nil {
+		return nil, err
 	}
-	for i, b := range newPassword {
-		newPassword[i] = letters[b%byte(letters[len(letters)-1]+1)]
-	}
-	passwordStr := string(newPassword)
-	hash, err := bcrypt.GenerateFromPassword([]byte(passwordStr), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, fmt.Errorf("hash password: %w", err)
 	}
