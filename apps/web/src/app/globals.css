@@ -142,6 +142,7 @@ textarea { width:100%;min-height:100px;resize:vertical;border:1px solid #cfd7e6;
 .package-form-body label:first-child{margin-top:6px}
 .package-form-body .form-grid{gap:14px}
 .package-form-actions{margin-top:18px;flex:0 0 auto}
+.ranking-table .cell-number,.user-table .cell-number{width:54px;color:var(--muted);font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
 @media(max-width:640px){.package-form-modal{padding:24px 18px 18px}.package-form-body{margin-right:-2px;padding-right:4px}}
 .checkout-modal { position:relative;width:min(480px,100%); }.modal-close{position:absolute;right:14px;top:12px;border:0;background:transparent;font-size:28px;cursor:pointer}.checkout-total{margin:22px 0;padding:18px;border-radius:14px;background:#f5f7ff}.checkout-total strong{font-size:24px}.muted{color:var(--muted);font-size:14px;line-height:1.6}
 .checkout-total span { display:grid; gap:4px; }.checkout-total span small { color:var(--success); font-weight:700; }.price-discounted { display:grid; gap:2px; }.price-discounted small { color:var(--muted); font-size:13px; font-weight:500; text-decoration:line-through; }
