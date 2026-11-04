@@ -415,9 +415,19 @@ Masukkan alasan refund (wajib):`, "");
       return;
     }
 
-    setResetPassModal({ open: false, user: null, password: "", confirm: "", error: "" });
+    setSaving("mutation");
     setError("");
-    await action(async () => await api.adminResetPassword(target.id, pwd), `Kata sandi ${target.email} berhasil direset.`);
+    try {
+      await api.adminResetPassword(target.id, pwd);
+      setResetPassModal({ open: false, user: null, password: "", confirm: "", error: "" });
+      setToast(`Kata sandi ${target.email} berhasil direset.`);
+      setRefreshKey((n) => n + 1);
+      await reload();
+    } catch (reason) {
+      setResetPassModal((m) => ({ ...m, error: reason instanceof Error ? reason.message : "Reset kata sandi gagal." }));
+    } finally {
+      setSaving("");
+    }
   }
 
   function closeResetPasswordModal() {
