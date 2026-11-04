@@ -85,6 +85,12 @@ function QuickFilterIcon({ kind }: { kind: "all" | "teacher" | "SD" | "SMP" | "S
   if (kind === "all") return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20m6-9a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Zm7-1a3 3 0 0 1 0 5.8m3 4.2v-1.5a3.5 3.5 0 0 0-2.5-3.35"/></svg>;
   return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-6 9 6-9 6-9-6Zm4 2.7V17c2.8 2 7.2 2 10 0v-4.3M21 10v6"/></svg>;
 }
+function EyeIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/></svg>;
+}
+function EyeOffIcon() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 6.1A9.7 9.7 0 0 1 12 6c6 0 9.5 6 9.5 6a16.8 16.8 0 0 1-3 3.7"/><path d="M6.4 7.9A16.6 16.6 0 0 0 2.5 12S6 18 12 18a9.4 9.4 0 0 0 3.6-.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>;
+}
 
 export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdate }: { user: User; onLogout: () => void; loggingOut: boolean; onUserUpdate?: (u: User) => void }) {
   const role = user.role;
@@ -149,6 +155,8 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
     confirm: string;
     error: string;
   }>({ open: false, user: null, password: "", confirm: "", error: "" });
+  const [resetPassVisible, setResetPassVisible] = useState(false);
+  const [resetPassConfirmVisible, setResetPassConfirmVisible] = useState(false);
   const [summaryWidgets, setSummaryWidgets] = useState<SummaryWidget[]>(() => {
     try {
       const saved = typeof localStorage === "undefined" ? null : JSON.parse(localStorage.getItem("tka.adminSummary.widgets") ?? "null");
@@ -397,6 +405,8 @@ Masukkan alasan refund (wajib):`, "");
       setError("Tidak bisa mereset kata sandi akun sendiri.");
       return;
     }
+    setResetPassVisible(false);
+    setResetPassConfirmVisible(false);
     setResetPassModal({ open: true, user: item, password: "", confirm: "", error: "" });
   }
 
@@ -419,6 +429,8 @@ Masukkan alasan refund (wajib):`, "");
     setError("");
     try {
       await api.adminResetPassword(target.id, pwd);
+      setResetPassVisible(false);
+      setResetPassConfirmVisible(false);
       setResetPassModal({ open: false, user: null, password: "", confirm: "", error: "" });
       setToast(`Kata sandi ${target.email} berhasil direset.`);
       setRefreshKey((n) => n + 1);
@@ -432,6 +444,8 @@ Masukkan alasan refund (wajib):`, "");
 
   function closeResetPasswordModal() {
     if (saving === "mutation") return;
+    setResetPassVisible(false);
+    setResetPassConfirmVisible(false);
     setResetPassModal({ open: false, user: null, password: "", confirm: "", error: "" });
   }
   async function checkSIMPKB(item: TeacherVerification) {
@@ -614,32 +628,58 @@ Masukkan alasan refund (wajib):`, "");
           <p id="reset-pass-description">Kata sandi untuk <strong>{resetPassModal.user.email}</strong> akan langsung diganti setelah dikonfirmasi.</p>
           <div className="reset-pass-fields">
             <label htmlFor="reset-pass-new">Kata sandi baru</label>
-            <input
-              id="reset-pass-new"
-              type="password"
-              placeholder="Minimal 8 karakter"
-              value={resetPassModal.password}
-              onChange={(e) => setResetPassModal((m) => ({ ...m, password: e.target.value, error: "" }))}
-              autoFocus
-              autoComplete="new-password"
-              disabled={saving === "mutation"}
-            />
+            <div className="reset-pass-input">
+              <input
+                id="reset-pass-new"
+                type={resetPassVisible ? "text" : "password"}
+                placeholder="Minimal 8 karakter"
+                value={resetPassModal.password}
+                onChange={(e) => setResetPassModal((m) => ({ ...m, password: e.target.value, error: "" }))}
+                autoFocus
+                autoComplete="new-password"
+                disabled={saving === "mutation"}
+              />
+              <button
+                type="button"
+                className="reset-pass-toggle"
+                onClick={() => setResetPassVisible((v) => !v)}
+                aria-label={resetPassVisible ? "Sembunyikan kata sandi baru" : "Tampilkan kata sandi baru"}
+                aria-pressed={resetPassVisible}
+                disabled={saving === "mutation"}
+                tabIndex={-1}
+              >
+                {resetPassVisible ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            </div>
             <label htmlFor="reset-pass-confirm">Konfirmasi kata sandi baru</label>
-            <input
-              id="reset-pass-confirm"
-              type="password"
-              placeholder="Ulangi kata sandi baru"
-              value={resetPassModal.confirm}
-              onChange={(e) => setResetPassModal((m) => ({ ...m, confirm: e.target.value, error: "" }))}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  confirmResetPassword();
-                }
-              }}
-              autoComplete="new-password"
-              disabled={saving === "mutation"}
-            />
+            <div className="reset-pass-input">
+              <input
+                id="reset-pass-confirm"
+                type={resetPassConfirmVisible ? "text" : "password"}
+                placeholder="Ulangi kata sandi baru"
+                value={resetPassModal.confirm}
+                onChange={(e) => setResetPassModal((m) => ({ ...m, confirm: e.target.value, error: "" }))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    confirmResetPassword();
+                  }
+                }}
+                autoComplete="new-password"
+                disabled={saving === "mutation"}
+              />
+              <button
+                type="button"
+                className="reset-pass-toggle"
+                onClick={() => setResetPassConfirmVisible((v) => !v)}
+                aria-label={resetPassConfirmVisible ? "Sembunyikan konfirmasi kata sandi" : "Tampilkan konfirmasi kata sandi"}
+                aria-pressed={resetPassConfirmVisible}
+                disabled={saving === "mutation"}
+                tabIndex={-1}
+              >
+                {resetPassConfirmVisible ? <EyeOffIcon /> : <EyeIcon />}
+              </button>
+            </div>
           </div>
           {resetPassModal.error && <p className="form-error">{resetPassModal.error}</p>}
           <div className="logout-modal-note"><span aria-hidden="true">i</span><p>Pastikan kata sandi baru sudah dicatat dan dibagikan ke pengguna melalui kanal yang aman.</p></div>
