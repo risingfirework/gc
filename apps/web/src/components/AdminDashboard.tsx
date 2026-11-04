@@ -415,10 +415,9 @@ Masukkan alasan refund (wajib):`, "");
       return;
     }
 
-    setResetPassModal((m) => ({ ...m, open: false }));
+    setResetPassModal({ open: false, user: null, password: "", confirm: "", error: "" });
     setError("");
-    setSaving("mutation");
-    await action(async () => await api.adminResetPassword(target.id, pwd));
+    await action(async () => await api.adminResetPassword(target.id, pwd), `Kata sandi ${target.email} berhasil direset.`);
   }
 
   function closeResetPasswordModal() {
