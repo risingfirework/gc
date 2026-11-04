@@ -109,7 +109,7 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
   const [usersPage, setUsersPage] = useState<AdminUsersPage>({ items: [], page: 1, count: 25, total: 0, summary: { total: 0, students: 0, teachers: 0, admins: 0 } });
   const [packagesPage, setPackagesPage] = useState<AdminPackagesPage>({ items: [], page: 1, count: 12, total: 0, counts: { active: 0, inactive: 0, active_teacher: 0, inactive_teacher: 0 } });
   const [pkgExamsPage, setPkgExamsPage] = useState<AdminPage<AdminExam>>({ items: [], page: 1, count: 25, total: 0 });
-  const [pkgQuestionsPage, setPkgQuestionsPage] = useState<AdminPage<AdminQuestion>>({ items: [], page: 1, count: 25, total: 0 });
+  const [pkgQuestionsPage, setPkgQuestionsPage] = useState<AdminPage<AdminQuestion>>({ items: [], page: 1, count: 10, total: 0 });
   const [rankingPageData, setRankingPageData] = useState<AdminPage<GlobalRanking>>({ items: [], page: 1, count: 50, total: 0 });
   const [userPage, setUserPage] = useState(1);
   const [packagePage, setPackagePage] = useState(1);
@@ -238,7 +238,7 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
   }, [selectedPackageId, refreshKey, pkgExamPage]);
   useEffect(() => {
     if (!selectedPackageId) return;
-    api.adminQuestions(selectedPackageId, pkgQuestionPage, 25).then(setPkgQuestionsPage).catch((reason) => setError(reason instanceof Error ? reason.message : "Bank soal gagal dimuat."));
+    api.adminQuestions(selectedPackageId, pkgQuestionPage, 10).then(setPkgQuestionsPage).catch((reason) => setError(reason instanceof Error ? reason.message : "Bank soal gagal dimuat."));
   }, [selectedPackageId, refreshKey, pkgQuestionPage]);
   useEffect(() => {
     const tasks: Promise<unknown>[] = [];
