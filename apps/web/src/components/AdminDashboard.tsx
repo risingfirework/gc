@@ -596,61 +596,49 @@ Masukkan alasan refund (wajib):`, "");
     {bulkDeleteTarget && <ConfirmModal title={bulkDeleteTarget.mode==="all"?"Hapus semua soal":"Hapus soal terpilih"} message={bulkDeleteTarget.mode==="all"?`Seluruh ${bulkDeleteTarget.count} soal pada paket "${selectedPackage?.title??""}" akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.`:`${bulkDeleteTarget.count} soal terpilih akan dihapus permanen dari bank soal. Tindakan ini tidak dapat dibatalkan.`} busy={saving==="mutation"} onClose={()=>setBulkDeleteTarget(null)} onConfirm={()=>void confirmBulkDeleteQuestions()}/>}
     {toast&&<div className="success-toast" role="status"><span>✓</span><p>{toast}</p><button type="button" aria-label="Tutup notifikasi" onClick={()=>setToast("")}>×</button></div>}
     {resetPassModal.open && resetPassModal.user && createPortal(
-      <div className="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reset-pass-title" onMouseDown={(e) => { if (e.target === e.currentTarget) closeResetPasswordModal(); }}>
-        <div className="modal-card" role="document" onMouseDown={(e) => e.stopPropagation()}>
-          <header className="modal-header">
-            <div>
-              <h2 id="reset-pass-title" className="modal-title">Reset Kata Sandi</h2>
-              <p className="modal-subtitle">Atur ulang kata sandi untuk <strong>{resetPassModal.user.email}</strong></p>
-            </div>
-            <button type="button" className="modal-close" onClick={closeResetPasswordModal} aria-label="Tutup" disabled={saving === "mutation"}>
-              ✕
-            </button>
-          </header>
-          <div className="modal-body">
-            <div className="form-field">
-              <label htmlFor="reset-pass-new">Kata sandi baru</label>
-              <input
-                id="reset-pass-new"
-                type="password"
-                className="input"
-                placeholder="Minimal 8 karakter"
-                value={resetPassModal.password}
-                onChange={(e) => setResetPassModal((m) => ({ ...m, password: e.target.value, error: "" }))}
-                autoFocus
-                disabled={saving === "mutation"}
-              />
-            </div>
-            <div className="form-field">
-              <label htmlFor="reset-pass-confirm">Konfirmasi kata sandi baru</label>
-              <input
-                id="reset-pass-confirm"
-                type="password"
-                className="input"
-                placeholder="Ulangi kata sandi baru"
-                value={resetPassModal.confirm}
-                onChange={(e) => setResetPassModal((m) => ({ ...m, confirm: e.target.value, error: "" }))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    confirmResetPassword();
-                  }
-                }}
-                disabled={saving === "mutation"}
-              />
-            </div>
-            {resetPassModal.error && <p className="form-error">{resetPassModal.error}</p>}
-            <p className="modal-hint">Kata sandi akan langsung diperbarui setelah dikonfirmasi.</p>
+      <div className="logout-modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) closeResetPasswordModal(); }}>
+        <section className="logout-modal" role="dialog" aria-modal="true" aria-labelledby="reset-pass-title" aria-describedby="reset-pass-description">
+          <button type="button" className="logout-modal-close" aria-label="Tutup reset kata sandi" disabled={saving === "mutation"} onClick={closeResetPasswordModal}>×</button>
+          <div className="logout-modal-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 11V8a5 5 0 0 1 10 0v3"/><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M12 15v2"/></svg></div>
+          <p className="eyebrow">Reset kata sandi</p>
+          <h2 id="reset-pass-title">Atur kata sandi baru?</h2>
+          <p id="reset-pass-description">Kata sandi untuk <strong>{resetPassModal.user.email}</strong> akan langsung diganti setelah dikonfirmasi.</p>
+          <div className="reset-pass-fields">
+            <label htmlFor="reset-pass-new">Kata sandi baru</label>
+            <input
+              id="reset-pass-new"
+              type="password"
+              placeholder="Minimal 8 karakter"
+              value={resetPassModal.password}
+              onChange={(e) => setResetPassModal((m) => ({ ...m, password: e.target.value, error: "" }))}
+              autoFocus
+              autoComplete="new-password"
+              disabled={saving === "mutation"}
+            />
+            <label htmlFor="reset-pass-confirm">Konfirmasi kata sandi baru</label>
+            <input
+              id="reset-pass-confirm"
+              type="password"
+              placeholder="Ulangi kata sandi baru"
+              value={resetPassModal.confirm}
+              onChange={(e) => setResetPassModal((m) => ({ ...m, confirm: e.target.value, error: "" }))}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  confirmResetPassword();
+                }
+              }}
+              autoComplete="new-password"
+              disabled={saving === "mutation"}
+            />
           </div>
-          <footer className="modal-footer">
-            <button type="button" className="btn ghost" onClick={closeResetPasswordModal} disabled={saving === "mutation"}>
-              Batal
-            </button>
-            <button type="button" className="btn primary" onClick={confirmResetPassword} disabled={saving === "mutation"}>
-              {saving === "mutation" ? "Menyimpan..." : "Reset kata sandi"}
-            </button>
-          </footer>
-        </div>
+          {resetPassModal.error && <p className="form-error">{resetPassModal.error}</p>}
+          <div className="logout-modal-note"><span aria-hidden="true">i</span><p>Pastikan kata sandi baru sudah dicatat dan dibagikan ke pengguna melalui kanal yang aman.</p></div>
+          <div className="logout-modal-actions">
+            <button type="button" className="logout-cancel" disabled={saving === "mutation"} onClick={closeResetPasswordModal}>Batal</button>
+            <button type="button" className="logout-confirm" disabled={saving === "mutation"} onClick={confirmResetPassword}>{saving === "mutation" ? <><span className="logout-spinner"/>Menyimpan...</> : "Reset kata sandi"}</button>
+          </div>
+        </section>
       </div>,
       document.body
     )}
