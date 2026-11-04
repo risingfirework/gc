@@ -132,6 +132,17 @@ textarea { width:100%;min-height:100px;resize:vertical;border:1px solid #cfd7e6;
 .reset-pass-toggle:disabled{opacity:.5;cursor:not-allowed}
 .reset-pass-toggle svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .logout-modal .form-error{margin:10px 0 0;color:#c43e2f;font-size:12px;font-weight:700}
+.package-form-modal{width:min(760px,100%);max-height:min(90vh,900px);display:flex;flex-direction:column;padding:28px 30px 24px}
+.package-form-modal .eyebrow{color:#00897b}
+.package-modal-icon{background:linear-gradient(145deg,#e7fbf7,#d6f4ee);color:#00a894;box-shadow:0 10px 25px rgba(0,168,148,.14)}
+.package-form-body{flex:1;min-height:0;overflow-y:auto;margin:10px -6px 0 0;padding:2px 10px 2px 2px;overscroll-behavior:contain}
+.package-form-body::-webkit-scrollbar{width:8px}
+.package-form-body::-webkit-scrollbar-thumb{background:#d3dae6;border-radius:999px}
+.package-form-body::-webkit-scrollbar-track{background:transparent}
+.package-form-body label:first-child{margin-top:6px}
+.package-form-body .form-grid{gap:14px}
+.package-form-actions{margin-top:18px;flex:0 0 auto}
+@media(max-width:640px){.package-form-modal{padding:24px 18px 18px}.package-form-body{margin-right:-2px;padding-right:4px}}
 .checkout-modal { position:relative;width:min(480px,100%); }.modal-close{position:absolute;right:14px;top:12px;border:0;background:transparent;font-size:28px;cursor:pointer}.checkout-total{margin:22px 0;padding:18px;border-radius:14px;background:#f5f7ff}.checkout-total strong{font-size:24px}.muted{color:var(--muted);font-size:14px;line-height:1.6}
 .checkout-total span { display:grid; gap:4px; }.checkout-total span small { color:var(--success); font-weight:700; }.price-discounted { display:grid; gap:2px; }.price-discounted small { color:var(--muted); font-size:13px; font-weight:500; text-decoration:line-through; }
 .cbt-lookup-card{padding:22px 26px;max-width:520px}.cbt-lookup-card h3{margin:8px 0 6px;font-size:18px}.cbt-token-row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}.cbt-token-row input{flex:1 1 200px;padding:12px 14px;border-radius:12px;border:1px solid #dfe2eb;font-size:15px;letter-spacing:.5px;text-transform:uppercase}.cbt-token-row button{flex:0 0 auto;white-space:nowrap}
