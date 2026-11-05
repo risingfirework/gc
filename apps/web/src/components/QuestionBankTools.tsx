@@ -197,6 +197,7 @@ export default function QuestionBankTools({
 
     const dataSheet=wb.addWorksheet("Bank Soal",{views:[{state:"frozen",ySplit:1}]});
     dataSheet.columns=[
+      {header:"bab",key:"bab",width:20},
       {header:"soal",key:"soal",width:50},
       {header:"pilihan_1",key:"pilihan_1",width:28},
       {header:"pilihan_2",key:"pilihan_2",width:28},
@@ -213,8 +214,8 @@ export default function QuestionBankTools({
     exampleSheet.columns=dataSheet.columns.map(column=>({header:column.header,key:column.key,width:column.width}));
     exampleSheet.getRow(1).font={bold:true,color:{argb:"FFFFFF"}};
     exampleSheet.getRow(1).fill={type:"pattern",pattern:"solid",fgColor:{argb:"70AD47"}};
-    exampleSheet.addRow({soal:"Hasil dari 2 + 3 adalah ...",pilihan_1:"4",pilihan_2:"5",pilihan_3:"6",pilihan_4:"7",kunci_jawaban:"2"});
-    exampleSheet.addRow({soal:"Pilih bilangan genap.",pilihan_1:"2",pilihan_2:"3",pilihan_3:"4",pilihan_4:"5",kunci_jawaban:"1,3"});
+    exampleSheet.addRow({bab:"Aritmatika",soal:"Hasil dari 2 + 3 adalah ...",pilihan_1:"4",pilihan_2:"5",pilihan_3:"6",pilihan_4:"7",kunci_jawaban:"2"});
+    exampleSheet.addRow({bab:"Bilangan",soal:"Pilih bilangan genap.",pilihan_1:"2",pilihan_2:"3",pilihan_3:"4",pilihan_4:"5",kunci_jawaban:"1,3"});
 
     const buffer=await wb.xlsx.writeBuffer();
     const blob=new Blob([buffer],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
