@@ -256,13 +256,16 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
     return answer !== "";
   };
   const answeredCount = exam.questions.filter(isAnswered).length;
+  const doubtfulCount = exam.questions.filter((item) => doubtful.has(item.id)).length;
+  const unansweredCount = Math.max(0, exam.questions.length - answeredCount);
+  const timerState = remainingSeconds <= 120 ? "critical" : remainingSeconds <= 600 ? "warn" : "";
   return <main className="cbt-page">
     {!online && <div className="connection-banner offline">Offline — jawaban ditahan di perangkat dan dikirim otomatis saat tersambung.</div>}
     {online && autoSaveState === "saved" && <div className="connection-banner saved">Jawaban tersimpan</div>}
     <div className="container">
       <header className="exam-header">
         <div><div className="brand"><BrandLogo logoDataURL={settings?.logo_data_url}/>{settings?.platform_name??""}</div><p>{exam.title}</p></div>
-        <div className="timer-box"><small>Sisa waktu server</small><strong>{formattedTime}</strong></div>
+        <div className={`timer-box ${timerState}`} aria-live="polite"><small>{timerState === "critical" ? "Waktu hampir habis" : timerState === "warn" ? "Perhatikan sisa waktu" : "Sisa waktu server"}</small><strong>{formattedTime}</strong></div>
       </header>
       {error && <div className="error exam-error">{error}<button onClick={() => void submitAttempt(false)} disabled={!online || submitting}>Coba submit lagi</button></div>}
       <div className="exam-shell">
@@ -276,24 +279,37 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
           {question.question_type === "category" && <><p className="answer-instruction">Tentukan kategori untuk setiap pernyataan.</p><div className="category-answer-table">{question.options.map((option) => { const selected = Object.fromEntries((answers[question.id] ?? "").split(";").map((part) => part.split("=", 2)).filter((part) => part.length === 2))[option.key]; return <div className="category-answer-row" key={option.key}><div><b>{option.key}</b><span><RichText content={option.content}/><QuestionImage src={option.image_url} alt={`Gambar pernyataan ${option.key}`}/></span></div><div>{question.category_labels.map((label) => <button type="button" className={selected === label ? "selected" : ""} onClick={() => selectCategoryAnswer(question.id, option.key, label)} key={label}>{label}</button>)}</div></div>; })}</div></>}
           <footer className="exam-actions">
             <button className="button secondary" disabled={index === 0} onClick={() => setIndex((value) => value - 1)}>Sebelumnya</button>
-            <button className={`doubt-button ${doubtful.has(question.id) ? "active" : ""}`} onClick={() => toggleDoubtful(question.id)}>⚑ {doubtful.has(question.id) ? "Batalkan ragu" : "Ragu-ragu"}</button>
+            <button type="button" className={`doubt-button ${doubtful.has(question.id) ? "active" : ""}`} aria-pressed={doubtful.has(question.id)} onClick={() => toggleDoubtful(question.id)}>⚑ {doubtful.has(question.id) ? "Batalkan Ragu-ragu" : "Ragu-ragu"}</button>
             {index < exam.questions.length - 1
-              ? <button className="button" onClick={() => setIndex((value) => value + 1)}>Selanjutnya</button>
-              : <button className="button submit-button" disabled={submitting || confirmSubmit} onClick={() => setConfirmSubmit(true)}>{submitting ? "Mengirim..." : "Submit ujian"}</button>}
+              ? <button className="button" onClick={() => setIndex((value) => value + 1)}>Berikutnya</button>
+              : <button className="button submit-button" disabled={submitting || confirmSubmit} onClick={() => setConfirmSubmit(true)}>{submitting ? "Mengirim..." : "Selesai Ujian"}</button>}
           </footer>
         </section>
-        <aside className="card question-panel">
-          <div className="panel-summary"><strong>{answeredCount}/{exam.questions.length}</strong><span>soal dijawab</span></div>
-          <div className="numbers">{exam.questions.map((item, itemIndex) => {
+        <aside className="card question-panel" aria-label="Navigasi soal">
+          <div className="panel-summary-cat">
+            <div className="panel-count done"><strong>{answeredCount}</strong><span>Terjawab</span></div>
+            <div className="panel-count doubtful"><strong>{doubtfulCount}</strong><span>Ragu-ragu</span></div>
+            <div className="panel-count empty"><strong>{unansweredCount}</strong><span>Belum</span></div>
+          </div>
+          <p className="panel-total">Total {exam.questions.length} soal</p>
+          <div className="numbers" role="navigation" aria-label="Nomor soal">{exam.questions.map((item, itemIndex) => {
             const status = doubtful.has(item.id) ? "doubtful" : isAnswered(item) ? "done" : "empty";
-            return <button type="button" aria-label={`Soal ${itemIndex + 1}, ${status}`} className={`number ${status} ${itemIndex === index ? "current" : ""}`} onClick={() => setIndex(itemIndex)} key={item.id}>{itemIndex + 1}</button>;
+            const statusText = status === "doubtful" ? "ragu-ragu" : status === "done" ? "terjawab" : "belum dijawab";
+            return <button type="button" aria-label={`Soal ${itemIndex + 1}, ${statusText}${itemIndex === index ? ", sedang dibuka" : ""}`} aria-current={itemIndex === index ? "true" : undefined} className={`number ${status} ${itemIndex === index ? "current" : ""}`} onClick={() => setIndex(itemIndex)} key={item.id}>{itemIndex + 1}</button>;
           })}</div>
-          <div className="legend"><span><i className="done"/>Dijawab</span><span><i className="doubtful"/>Ragu-ragu</span><span><i/>Belum</span></div>
+          <div className="legend" aria-label="Keterangan status soal"><span><i className="done" aria-hidden="true"/>Terjawab</span><span><i className="doubtful" aria-hidden="true"/>Ragu-ragu</span><span><i aria-hidden="true"/>Belum</span></div>
+          <button type="button" className="button submit-button panel-finish" disabled={submitting || confirmSubmit} onClick={() => setConfirmSubmit(true)}>{submitting ? "Mengirim..." : "Selesai Ujian"}</button>
           <p className="security-note">Mode ujian aktif · {violations.length} aktivitas keluar halaman tercatat</p>
         </aside>
       </div>
     </div>
-    {confirmSubmit && createPortal(<div className="verify-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) setConfirmSubmit(false); }}><section className="verify-modal" role="dialog" aria-modal="true" aria-labelledby="submit-exam-title" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="verify-modal-close" disabled={submitting} onClick={() => setConfirmSubmit(false)}>×</button><div className="verify-modal-icon verify-modal-icon--success" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg></div><p className="eyebrow">Akhiri ujian</p><h2 id="submit-exam-title">Kumpulkan ujian sekarang?</h2><p className="muted">{answeredCount === exam.questions.length ? `Semua ${answeredCount} soal sudah terjawab. Setelah dikumpulkan, jawaban tidak dapat diubah.` : `${answeredCount} dari ${exam.questions.length} soal terjawab${exam.questions.length - answeredCount > 0 ? `, ${exam.questions.length - answeredCount} soal masih kosong` : ""}. Setelah dikumpulkan, jawaban tidak dapat diubah.`}</p><div className="verify-modal-actions"><button type="button" className="verify-cancel" disabled={submitting} onClick={() => setConfirmSubmit(false)}>Batal</button><button type="button" className="verify-confirm-approve" disabled={submitting} onClick={() => { setConfirmSubmit(false); void submitAttempt(false); }}>{submitting ? "Mengirim..." : "Ya, kumpulkan"}</button></div></section></div>, document.body)}
+    {confirmSubmit && createPortal(<div className="verify-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !submitting) setConfirmSubmit(false); }}><section className="verify-modal submit-summary-modal" role="dialog" aria-modal="true" aria-labelledby="submit-exam-title" onMouseDown={(event) => event.stopPropagation()}><button type="button" className="verify-modal-close" disabled={submitting} onClick={() => setConfirmSubmit(false)}>×</button><p className="eyebrow">Selesai Ujian</p><h2 id="submit-exam-title">Periksa status pengerjaan Anda</h2><p className="muted">Pastikan jawaban sudah sesuai sebelum dikumpulkan. Setelah dikumpulkan, jawaban tidak dapat diubah.</p><div className="submit-summary-grid" aria-label="Ringkasan status soal">
+            <div className="submit-summary-item done"><strong>{answeredCount}</strong><span>Terjawab</span></div>
+            <div className="submit-summary-item empty"><strong>{unansweredCount}</strong><span>Belum terjawab</span></div>
+            <div className="submit-summary-item doubtful"><strong>{doubtfulCount}</strong><span>Ragu-ragu</span></div>
+          </div>
+          {unansweredCount > 0 && <p className="submit-summary-warning">Masih ada {unansweredCount} soal belum terjawab. Anda tetap dapat mengumpulkan ujian sekarang.</p>}
+          <div className="verify-modal-actions"><button type="button" className="verify-cancel" disabled={submitting} onClick={() => setConfirmSubmit(false)}>Kembali ke ujian</button><button type="button" className="verify-confirm-approve" disabled={submitting} onClick={() => { setConfirmSubmit(false); void submitAttempt(false); }}>{submitting ? "Mengirim..." : "Ya, kumpulkan ujian"}</button></div></section></div>, document.body)}
     {screenLocked && createPortal(<div className="screen-lock-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="screen-lock-title" onContextMenu={(event) => event.preventDefault()}><section className="screen-lock-card"><svg className="screen-lock-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 9V7a5 5 0 0 0-10 0v2H5v12h14V9h-2Zm-8-2a3 3 0 0 1 6 0v2H9V7Z"/></svg><h2 id="screen-lock-title">Layar terkunci</h2><p>Anda terdeteksi meninggalkan halaman ujian. Layar akan terbuka otomatis, atau hubungi pengawas untuk dibuka.</p><div className="screen-lock-countdown" aria-live="assertive">{screenLockSeconds}</div><small>Pelanggaran tercatat: {screenLockViolations}</small></section></div>, document.body)}
   </main>;
 }
