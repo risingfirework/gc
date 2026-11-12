@@ -25,6 +25,9 @@ type Props={
     stimulus_text:string;
     question_image_url:string;
     stimulus_image_url:string;
+    question_audio_url?:string;
+    question_video_url?:string;
+    explanation_video_url?:string;
     category_labels:string[];
     options:{key:string;content:string;image_url?:string}[];
     correct_answer:string;
@@ -333,6 +336,9 @@ export default function QuestionBankTools({
         chapter_name:string;
         content_text:string;
         question_image_url:string;
+        question_audio_url:string;
+        question_video_url:string;
+        explanation_video_url:string;
         options:{key:string;content:string;image_url?:string}[];
         category_labels:string[];
         correct_answer:string;
@@ -410,6 +416,9 @@ export default function QuestionBankTools({
             stimulus_text:"",
             question_image_url:row.question_image_url,
             stimulus_image_url:"",
+            question_audio_url:row.question_audio_url||undefined,
+            question_video_url:row.question_video_url||undefined,
+            explanation_video_url:row.explanation_video_url||undefined,
             category_labels:row.category_labels,
             options:row.options,
             correct_answer:row.correct_answer,
