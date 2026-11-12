@@ -338,24 +338,27 @@ type AuditLogEntry struct {
 }
 
 type AdminQuestion struct {
-	ID               string           `json:"id"`
-	ExamID           string           `json:"exam_id"`
-	ExamTitle        string           `json:"exam_title"`
-	SubjectName      string           `json:"subject_name"`
-	ChapterName      string           `json:"chapter_name"`
-	ContentText      string           `json:"content_text"`
-	QuestionType     string           `json:"question_type"`
-	PresentationType string           `json:"presentation_type"`
-	GroupCode        string           `json:"group_code"`
-	StimulusText     string           `json:"stimulus_text"`
-	QuestionImageURL string           `json:"question_image_url"`
-	StimulusImageURL string           `json:"stimulus_image_url"`
-	CategoryLabels   []string         `json:"category_labels"`
-	Options          []QuestionOption `json:"options"`
-	CorrectAnswer    string           `json:"correct_answer"`
-	ScoreWeight      float64          `json:"score_weight"`
-	Explanation      string           `json:"explanation_text"`
-	Status           string           `json:"status"`
+	ID                  string           `json:"id"`
+	ExamID              string           `json:"exam_id"`
+	ExamTitle           string           `json:"exam_title"`
+	SubjectName         string           `json:"subject_name"`
+	ChapterName         string           `json:"chapter_name"`
+	ContentText         string           `json:"content_text"`
+	QuestionType        string           `json:"question_type"`
+	PresentationType    string           `json:"presentation_type"`
+	GroupCode           string           `json:"group_code"`
+	StimulusText        string           `json:"stimulus_text"`
+	QuestionImageURL    string           `json:"question_image_url"`
+	StimulusImageURL    string           `json:"stimulus_image_url"`
+	QuestionAudioURL    string           `json:"question_audio_url"`
+	QuestionVideoURL    string           `json:"question_video_url"`
+	CategoryLabels      []string         `json:"category_labels"`
+	Options             []QuestionOption `json:"options"`
+	CorrectAnswer       string           `json:"correct_answer"`
+	ScoreWeight         float64          `json:"score_weight"`
+	Explanation         string           `json:"explanation_text"`
+	ExplanationVideoURL string           `json:"explanation_video_url"`
+	Status              string           `json:"status"`
 }
 
 type AdminDashboard struct {
@@ -415,22 +418,25 @@ type AdminExamRequest struct {
 }
 
 type AdminQuestionRequest struct {
-	ExamID           string           `json:"exam_id"`
-	SubjectName      string           `json:"subject_name"`
-	ChapterName      string           `json:"chapter_name"`
-	ContentText      string           `json:"content_text"`
-	QuestionType     string           `json:"question_type"`
-	PresentationType string           `json:"presentation_type"`
-	GroupCode        string           `json:"group_code"`
-	StimulusText     string           `json:"stimulus_text"`
-	QuestionImageURL string           `json:"question_image_url"`
-	StimulusImageURL string           `json:"stimulus_image_url"`
-	CategoryLabels   []string         `json:"category_labels"`
-	Options          []QuestionOption `json:"options"`
-	CorrectAnswer    string           `json:"correct_answer"`
-	ScoreWeight      float64          `json:"score_weight"`
-	Explanation      string           `json:"explanation_text"`
-	Status           string           `json:"status"`
+	ExamID              string           `json:"exam_id"`
+	SubjectName         string           `json:"subject_name"`
+	ChapterName         string           `json:"chapter_name"`
+	ContentText         string           `json:"content_text"`
+	QuestionType        string           `json:"question_type"`
+	PresentationType    string           `json:"presentation_type"`
+	GroupCode           string           `json:"group_code"`
+	StimulusText        string           `json:"stimulus_text"`
+	QuestionImageURL    string           `json:"question_image_url"`
+	StimulusImageURL    string           `json:"stimulus_image_url"`
+	QuestionAudioURL    string           `json:"question_audio_url"`
+	QuestionVideoURL    string           `json:"question_video_url"`
+	CategoryLabels      []string         `json:"category_labels"`
+	Options             []QuestionOption `json:"options"`
+	CorrectAnswer       string           `json:"correct_answer"`
+	ScoreWeight         float64          `json:"score_weight"`
+	Explanation         string           `json:"explanation_text"`
+	ExplanationVideoURL string           `json:"explanation_video_url"`
+	Status              string           `json:"status"`
 }
 
 // PackageBundle adalah pembuatan satu paket sekaligus ujian pertama dan

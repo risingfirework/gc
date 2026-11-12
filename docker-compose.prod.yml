@@ -109,6 +109,9 @@ services:
     image: ${BACKEND_IMAGE:-tka/backend:local}
     restart: unless-stopped
     environment:
+      MEDIA_DIR: /data/media
+    volumes:
+      - media_data:/data/media:rw
       APP_PORT: "8080"
       DATABASE_URL_FILE: /run/secrets/database_url
       REDIS_CLUSTER_ADDRS: redis-node-1:6379,redis-node-2:6379,redis-node-3:6379,redis-node-4:6379,redis-node-5:6379,redis-node-6:6379
@@ -258,3 +261,4 @@ volumes:
   redis_node_4:
   redis_node_5:
   redis_node_6:
+  media_data:

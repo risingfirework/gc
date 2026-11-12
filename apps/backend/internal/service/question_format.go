@@ -25,6 +25,9 @@ func normalizeQuestion(input domain.AdminQuestionRequest) domain.AdminQuestionRe
 	input.StimulusText = ""
 	input.QuestionImageURL = strings.TrimSpace(input.QuestionImageURL)
 	input.StimulusImageURL = ""
+	input.QuestionAudioURL = strings.TrimSpace(input.QuestionAudioURL)
+	input.QuestionVideoURL = strings.TrimSpace(input.QuestionVideoURL)
+	input.ExplanationVideoURL = strings.TrimSpace(input.ExplanationVideoURL)
 	for index := range input.Options {
 		input.Options[index].Key = strings.ToUpper(strings.TrimSpace(input.Options[index].Key))
 		input.Options[index].Content = strings.TrimSpace(input.Options[index].Content)
@@ -52,8 +55,24 @@ func validQuestionImage(value string) bool {
 			return true
 		}
 	}
+	return validMediaReference(value)
+}
+
+// validQuestionMediaURL menerima tautan https eksternal atau media yang
+// diunggah ke server dengan path /api/v1/media/{uuid}.
+func validQuestionMediaURL(value string) bool {
+	return value == "" || validMediaReference(value)
+}
+
+func validMediaReference(value string) bool {
+	if len(value) > 2048 {
+		return false
+	}
+	if strings.HasPrefix(value, "/api/v1/media/") {
+		return validUUID(strings.TrimPrefix(value, "/api/v1/media/"))
+	}
 	parsed, err := url.ParseRequestURI(value)
-	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && len(value) <= 2048
+	return err == nil && parsed.Scheme == "https" && parsed.Host != ""
 }
 
 func canonicalAnswer(questionType string, options []domain.QuestionOption, labels []string, answer string, allowPartial bool) (string, bool) {

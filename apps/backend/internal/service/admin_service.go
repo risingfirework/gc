@@ -810,7 +810,7 @@ func validateAdminQuestion(input domain.AdminQuestionRequest) error {
 }
 func validateQuestionFields(input domain.AdminQuestionRequest) error {
 	isEssay := input.QuestionType == domain.QuestionTypeEssay
-	if strings.TrimSpace(input.SubjectName) == "" || (strings.TrimSpace(input.ContentText) == "" && input.QuestionImageURL == "") || input.ScoreWeight <= 0 || !validAdminStatus(input.Status) || !validQuestionImage(input.QuestionImageURL) || !validQuestionImage(input.StimulusImageURL) {
+	if strings.TrimSpace(input.SubjectName) == "" || (strings.TrimSpace(input.ContentText) == "" && input.QuestionImageURL == "" && input.QuestionAudioURL == "" && input.QuestionVideoURL == "") || input.ScoreWeight <= 0 || !validAdminStatus(input.Status) || !validQuestionImage(input.QuestionImageURL) || !validQuestionImage(input.StimulusImageURL) || !validQuestionMediaURL(input.QuestionAudioURL) || !validQuestionMediaURL(input.QuestionVideoURL) || !validQuestionMediaURL(input.ExplanationVideoURL) {
 		return domain.ErrInvalidInput
 	}
 	if input.PresentationType != domain.PresentationTypeSingle {

@@ -255,6 +255,9 @@ export default function QuestionBankTools({
       {header:"gambar_soal",key:"gambar_soal",width:28},
       {header:"kategori",key:"kategori",width:16},
       {header:"gambar_pilihan_1",key:"gambar_pilihan_1",width:26},{header:"gambar_pilihan_2",key:"gambar_pilihan_2",width:26},{header:"gambar_pilihan_3",key:"gambar_pilihan_3",width:26},{header:"gambar_pilihan_4",key:"gambar_pilihan_4",width:26},{header:"gambar_pilihan_5",key:"gambar_pilihan_5",width:26},
+      {header:"question_audio_url",key:"question_audio_url",width:30},
+      {header:"question_video_url",key:"question_video_url",width:30},
+      {header:"explanation_video_url",key:"explanation_video_url",width:34},
     ];
     const headerRow=dataSheet.getRow(1);
     headerRow.font={bold:true,color:{argb:"FFFFFF"}};
@@ -379,6 +382,9 @@ export default function QuestionBankTools({
           chapter_name:val(row,colMap["bab"]??0),
           content_text:contentText,
           question_image_url:val(row,colMap["gambar_soal"]??0),
+          question_audio_url:val(row,colMap["question_audio_url"]??0),
+          question_video_url:val(row,colMap["question_video_url"]??0),
+          explanation_video_url:val(row,colMap["explanation_video_url"]??0),
           options,
           category_labels,
           correct_answer:normalized.correct_answer,

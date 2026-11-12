@@ -54,6 +54,7 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 		       COALESCE(q.group_code,''), q.stimulus_text, q.question_image_url, q.stimulus_image_url,
 		       q.category_labels_json, q.options_json, q.correct_answer, q.score_weight,
 		       q.explanation_text, q.explanation_video_url,
+		       q.question_audio_url, q.question_video_url,
 		       ua.selected_option, COALESCE(ua.is_correct, false)
 		FROM questions q
 		LEFT JOIN user_answers ua ON ua.question_id = q.id AND ua.user_exam_id = $1
@@ -74,7 +75,7 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 	for rows.Next() {
 		var review domain.AnswerReview
 		var rawOptions, rawCategoryLabels []byte
-		if err := rows.Scan(&review.QuestionID, &review.SubjectName, &review.ChapterName, &review.ContentText, &review.QuestionType, &review.PresentationType, &review.GroupCode, &review.StimulusText, &review.QuestionImageURL, &review.StimulusImageURL, &rawCategoryLabels, &rawOptions, &review.CorrectAnswer, &review.ScoreWeight, &review.ExplanationText, &review.ExplanationVideoURL, &review.SelectedOption, &review.IsCorrect); err != nil {
+		if err := rows.Scan(&review.QuestionID, &review.SubjectName, &review.ChapterName, &review.ContentText, &review.QuestionType, &review.PresentationType, &review.GroupCode, &review.StimulusText, &review.QuestionImageURL, &review.StimulusImageURL, &rawCategoryLabels, &rawOptions, &review.CorrectAnswer, &review.ScoreWeight, &review.ExplanationText, &review.ExplanationVideoURL, &review.QuestionAudioURL, &review.QuestionVideoURL, &review.SelectedOption, &review.IsCorrect); err != nil {
 			return nil, fmt.Errorf("scan result detail: %w", err)
 		}
 		if err := json.Unmarshal(rawCategoryLabels, &review.CategoryLabels); err != nil {

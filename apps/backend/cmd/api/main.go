@@ -151,6 +151,20 @@ func main() {
 	affiliateService := service.NewAffiliateService(postgresrepo.NewAffiliateRepository(db), postgresrepo.NewTeacherRepository(db), cfg.PublicWebURL)
 	testimonialService := service.NewTestimonialService(postgresrepo.NewTestimonialRepository(db))
 	notificationService := domain.NewNotificationService(postgresrepo.NewNotificationRepository(db))
+	mediaService := service.NewMediaService(
+		postgresrepo.NewMediaRepository(db),
+		cfg.MediaDir,
+		cfg.MediaMaxImageBytes,
+		cfg.MediaMaxAudioBytes,
+		cfg.MediaMaxVideoBytes,
+	)
+	mediaMaxUploadBytes := cfg.MediaMaxVideoBytes
+	if cfg.MediaMaxImageBytes > mediaMaxUploadBytes {
+		mediaMaxUploadBytes = cfg.MediaMaxImageBytes
+	}
+	if cfg.MediaMaxAudioBytes > mediaMaxUploadBytes {
+		mediaMaxUploadBytes = cfg.MediaMaxAudioBytes
+	}
 
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -210,7 +224,7 @@ func main() {
 				TrustProxy:               cfg.TrustProxy,
 				ViewRateLimit:            cfg.PaymentViewRateLimit,
 				ViewRateWindow:           cfg.PaymentViewRateWindow,
-				Admin:                    adminService, Teacher: teacherService, Testimonial: testimonialService, Notification: notificationService, Affiliate: affiliateService, CBTAccess: cbtAccessService,
+				Admin:                    adminService, Teacher: teacherService, Testimonial: testimonialService, Notification: notificationService, Affiliate: affiliateService, CBTAccess: cbtAccessService, Media: mediaService, MediaMaxUploadBytes: mediaMaxUploadBytes,
 				Readiness: func(ctx context.Context) error {
 					if err := db.Ping(ctx); err != nil {
 						return fmt.Errorf("postgres: %w", err)
@@ -222,9 +236,11 @@ func main() {
 				},
 			}),
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		// Unggah media dapat berukuran besar; batas baca diperpanjang dan
+		// batas tulis dibuat tanpa timeout agar streaming video tidak terputus.
+		ReadTimeout:  5 * time.Minute,
+		WriteTimeout: 0,
+		IdleTimeout:  60 * time.Second,
 		ErrorLog:          log.New(os.Stderr, "http: ", log.LstdFlags),
 	}
 

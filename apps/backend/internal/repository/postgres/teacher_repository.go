@@ -683,7 +683,7 @@ func (r *TeacherRepository) CreateQuestion(ctx context.Context, publisherID stri
 	if err != nil {
 		return nil, fmt.Errorf("encode category labels: %w", err)
 	}
-	const query = `WITH allowed AS (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE e.id=$17 AND p.publisher_id=$18), changed AS (INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status,chapter_name) SELECT $1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16 FROM allowed RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name FROM changed c JOIN exams e ON e.id=c.exam_id`
+	const query = `WITH allowed AS (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE e.id=$17 AND p.publisher_id=$18), changed AS (INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status,chapter_name,explanation_video_url,question_audio_url,question_video_url) SELECT $1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NULLIF($17,''),$18,$19 FROM allowed RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name,COALESCE(c.explanation_video_url,''),c.question_audio_url,c.question_video_url FROM changed c JOIN exams e ON e.id=c.exam_id`
 	item, err := r.teacherQuestionRow(ctx, query, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ChapterName, input.ExamID, publisherID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound
@@ -710,7 +710,7 @@ func (r *TeacherRepository) teacherQuestionRow(ctx context.Context, query string
 	var item domain.AdminQuestion
 	var rawOptions []byte
 	var rawCategoryLabels []byte
-	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status, &item.ChapterName)
+	err := r.db.QueryRow(ctx, query, args...).Scan(&item.ID, &item.ExamID, &item.ExamTitle, &item.SubjectName, &item.ContentText, &item.QuestionType, &item.PresentationType, &item.GroupCode, &item.StimulusText, &item.QuestionImageURL, &item.StimulusImageURL, &rawCategoryLabels, &rawOptions, &item.CorrectAnswer, &item.ScoreWeight, &item.Explanation, &item.Status, &item.ChapterName, &item.ExplanationVideoURL, &item.QuestionAudioURL, &item.QuestionVideoURL)
 	if err != nil {
 		return nil, adminMutationError(err)
 	}

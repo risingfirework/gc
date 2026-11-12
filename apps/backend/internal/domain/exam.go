@@ -47,6 +47,8 @@ type Question struct {
 	StimulusText        string
 	QuestionImageURL    string
 	StimulusImageURL    string
+	QuestionAudioURL    string
+	QuestionVideoURL    string
 	CategoryLabels      []string
 	Options             []QuestionOption
 	CorrectAnswer       string
@@ -69,6 +71,8 @@ type QuestionResponse struct {
 	StimulusText     string           `json:"stimulus_text,omitempty"`
 	QuestionImageURL string           `json:"question_image_url,omitempty"`
 	StimulusImageURL string           `json:"stimulus_image_url,omitempty"`
+	QuestionAudioURL string           `json:"question_audio_url,omitempty"`
+	QuestionVideoURL string           `json:"question_video_url,omitempty"`
 	CategoryLabels   []string         `json:"category_labels,omitempty"`
 	Options          []QuestionOption `json:"options"`
 }

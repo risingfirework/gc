@@ -56,6 +56,10 @@ type Config struct {
 	PaymentViewRateWindow    time.Duration
 	SIMPKBCheckURL           string
 	SIMPKBCheckInterval      time.Duration
+	MediaDir                 string
+	MediaMaxImageBytes       int64
+	MediaMaxAudioBytes       int64
+	MediaMaxVideoBytes       int64
 }
 
 func Load() (Config, error) {
@@ -168,6 +172,18 @@ func Load() (Config, error) {
 	if err != nil || simpkbCheckInterval <= 0 {
 		return Config{}, fmt.Errorf("SIMPKB_CHECK_INTERVAL must be a positive duration")
 	}
+	mediaMaxImageBytes, err := strconv.ParseInt(value("MEDIA_MAX_IMAGE_BYTES", "8388608"), 10, 64)
+	if err != nil || mediaMaxImageBytes <= 0 {
+		return Config{}, fmt.Errorf("MEDIA_MAX_IMAGE_BYTES must be a positive integer")
+	}
+	mediaMaxAudioBytes, err := strconv.ParseInt(value("MEDIA_MAX_AUDIO_BYTES", "26214400"), 10, 64)
+	if err != nil || mediaMaxAudioBytes <= 0 {
+		return Config{}, fmt.Errorf("MEDIA_MAX_AUDIO_BYTES must be a positive integer")
+	}
+	mediaMaxVideoBytes, err := strconv.ParseInt(value("MEDIA_MAX_VIDEO_BYTES", "104857600"), 10, 64)
+	if err != nil || mediaMaxVideoBytes <= 0 {
+		return Config{}, fmt.Errorf("MEDIA_MAX_VIDEO_BYTES must be a positive integer")
+	}
 
 	cfg := Config{
 		AppPort:       strings.TrimPrefix(value("APP_PORT", "8080"), ":"),
@@ -209,6 +225,10 @@ func Load() (Config, error) {
 		PaymentViewRateWindow:    paymentViewRateWindow,
 		SIMPKBCheckURL:           strings.TrimSpace(value("SIMPKB_CHECK_URL", "http://simpkb-check:8080")),
 		SIMPKBCheckInterval:      simpkbCheckInterval,
+		MediaDir:                 strings.TrimSpace(value("MEDIA_DIR", "data/media")),
+		MediaMaxImageBytes:       mediaMaxImageBytes,
+		MediaMaxAudioBytes:       mediaMaxAudioBytes,
+		MediaMaxVideoBytes:       mediaMaxVideoBytes,
 	}
 	if clusterAddrs := strings.TrimSpace(os.Getenv("REDIS_CLUSTER_ADDRS")); clusterAddrs != "" {
 		for _, address := range strings.Split(clusterAddrs, ",") {

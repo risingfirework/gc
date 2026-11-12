@@ -16,6 +16,7 @@ func displayQuestion(question domain.Question, mapping *domain.UserExamShuffle) 
 		QuestionType: question.QuestionType, PresentationType: question.PresentationType,
 		GroupCode: question.GroupCode, StimulusText: question.StimulusText,
 		QuestionImageURL: question.QuestionImageURL, StimulusImageURL: question.StimulusImageURL,
+		QuestionAudioURL: question.QuestionAudioURL, QuestionVideoURL: question.QuestionVideoURL,
 		CategoryLabels: question.CategoryLabels, Options: question.Options,
 	}
 	order, permutation := completeOptionPermutation(question, mapping.OptionOrder[question.ID])

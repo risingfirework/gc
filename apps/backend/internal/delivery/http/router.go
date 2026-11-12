@@ -36,6 +36,8 @@ type RouterOptions struct {
 	Admin                    domain.AdminService
 	Teacher                  domain.TeacherService
 	CBTAccess                domain.CBTAccessService
+	Media                    domain.MediaService
+	MediaMaxUploadBytes      int64
 	Testimonial              domain.TestimonialService
 	Notification             domain.NotificationService
 	Affiliate                domain.AffiliateService
@@ -57,7 +59,7 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 		sentryMiddleware := sentryhttp.New(sentryhttp.Options{Repanic: true, WaitForDelivery: false})
 		router.Use(sentryMiddleware.Handle)
 	}
-	router.Use(chimiddleware.Timeout(15 * time.Second))
+	router.Use(timeoutExcept(15*time.Second, 10*time.Minute, "/api/v1/media"))
 	router.Use(securityHeaders)
 	router.Use(cors(allowedOrigin))
 	if opts.Metrics != nil {
@@ -238,6 +240,18 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 			})
 		})
 	}
+	if opts.Media != nil {
+		mediaHandler := handler.NewMediaHandler(opts.Media, logger, opts.MediaMaxUploadBytes)
+		// Media dipublikasikan dengan ID UUID yang tidak dapat ditebak agar
+		// elemen <img>/<video> dapat memuatnya tanpa header Authorization.
+		router.Get("/api/v1/media/{id}", mediaHandler.Get)
+		router.Group(func(router chi.Router) {
+			router.Use(middleware.RequireAuth(auth))
+			router.Use(middleware.RequireTeacher)
+			router.Post("/api/v1/media", mediaHandler.Upload)
+			router.Delete("/api/v1/media/{id}", mediaHandler.Delete)
+		})
+	}
 	if opts.Affiliate != nil {
 		affiliateHandler := handler.NewAffiliateHandler(opts.Affiliate, logger)
 		router.Route("/api/v1/affiliate", func(router chi.Router) {
@@ -331,6 +345,22 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// timeoutExcept memakai batas waktu lebih panjang untuk unggah/unduh media
+// tanpa melonggarkan batas seluruh endpoint lain.
+func timeoutExcept(defaultTimeout, mediaTimeout time.Duration, mediaPrefix string) func(http.Handler) http.Handler {
+	defaultMiddleware := chimiddleware.Timeout(defaultTimeout)
+	mediaMiddleware := chimiddleware.Timeout(mediaTimeout)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if strings.HasPrefix(r.URL.Path, mediaPrefix) {
+				mediaMiddleware(next).ServeHTTP(w, r)
+				return
+			}
+			defaultMiddleware(next).ServeHTTP(w, r)
+		})
+	}
 }
 
 func defaultInt(value, fallback int) int {
