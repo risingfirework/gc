@@ -110,8 +110,6 @@ services:
     restart: unless-stopped
     environment:
       MEDIA_DIR: /data/media
-    volumes:
-      - media_data:/data/media:rw
       APP_PORT: "8080"
       DATABASE_URL_FILE: /run/secrets/database_url
       REDIS_CLUSTER_ADDRS: redis-node-1:6379,redis-node-2:6379,redis-node-3:6379,redis-node-4:6379,redis-node-5:6379,redis-node-6:6379
@@ -141,6 +139,8 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       SIMPKB_CHECK_URL: ${SIMPKB_CHECK_URL:-http://simpkb-check:8080}
       SIMPKB_CHECK_INTERVAL: ${SIMPKB_CHECK_INTERVAL:-5m}
+    volumes:
+      - media_data:/data/media:rw
     secrets: [database_url, redis_password, jwt_secret, payment_webhook_secret, xendit_secret_key, sentry_dsn, smtp_password]
     expose: ["8080"]
     networks: [edge, data]
