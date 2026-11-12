@@ -64,7 +64,7 @@ CREATE INDEX idx_cbt_payments_user ON teacher_cbt_payments (user_id, created_at 
 -- Guru yang sudah memiliki paket CBT sebelum fitur ini aktif tetap dapat
 -- mengakses CBT (grandfathered) dan dianggap sudah memakai jatah gratisnya.
 INSERT INTO teacher_cbt_entitlements (user_id, status, free_quota_used, active_from, active_until, source)
-SELECT DISTINCT p.publisher_id, 'active', 1, now(), NULL, 'admin_grant'
+SELECT DISTINCT p.publisher_id, 'active', 1, now(), NULL::timestamptz, 'admin_grant'
 FROM packages p
 WHERE p.exam_type = 'cbt' AND p.publisher_id IS NOT NULL
   AND EXISTS (SELECT 1 FROM users u WHERE u.id = p.publisher_id AND u.role = 'teacher')

@@ -33,11 +33,16 @@ export function TeacherCBTAccessModal({ access, open, onClose, onSubmitted }: { 
 
   useEffect(() => {
     if (!open) return;
-    setError(""); setProof("");
     api.teacherCBTPayments().then(setHistory).catch(() => { /* riwayat bersifat informatif */ });
   }, [open]);
 
   if (!open) return null;
+
+  function close() {
+    if (saving) return;
+    setError(""); setProof(""); setNote("");
+    onClose();
+  }
 
   function pickProof(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -68,9 +73,9 @@ export function TeacherCBTAccessModal({ access, open, onClose, onSubmitted }: { 
   const pending = history.find((item) => item.status === "pending") ?? access.pending_payment;
   const requiresPayment = access.settings.access_mode !== "free";
 
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
     <div className="card checkout-modal cbt-access-modal" onMouseDown={(event) => event.stopPropagation()}>
-      <button type="button" className="modal-close" disabled={saving} onClick={onClose}>×</button>
+      <button type="button" className="modal-close" disabled={saving} onClick={close}>×</button>
       <p className="eyebrow">Akses fitur CBT</p>
       <h2>{pending ? "Menunggu verifikasi admin" : access.can_create_cbt ? "Akses CBT Anda" : "Aktifkan akses CBT"}</h2>
       <p className="muted">{access.message}</p>

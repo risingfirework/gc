@@ -105,7 +105,6 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [data, setData] = useState<AdminDashboardData | null>(null);
-  const [masters, setMasters] = useState<Record<string, MasterItem[]>>({});
   const [userFinance, setUserFinance] = useState<UserFinanceProfile[]>([]);
   const [usersPage, setUsersPage] = useState<AdminUsersPage>({ items: [], page: 1, count: 25, total: 0, summary: { total: 0, students: 0, teachers: 0, admins: 0 } });
   const [packagesPage, setPackagesPage] = useState<AdminPackagesPage>({ items: [], page: 1, count: 12, total: 0, counts: { active: 0, inactive: 0, active_teacher: 0, inactive_teacher: 0 } });
@@ -214,9 +213,6 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
     api.adminCBTSettings().then(setCbtSettings).catch((reason) => setError(reason instanceof Error ? reason.message : "Pengaturan CBT gagal dimuat."));
   }, [effectiveView, role, refreshKey]);
   useEffect(() => {
-    api.listMaster("bab-pelajaran").then((items) => setMasters((current) => ({ ...current, "bab-pelajaran": items }))).catch(() => { /* master bab bersifat opsional */ });
-  }, [refreshKey]);
-  useEffect(() => {
     if (role !== "owner") return;
     api.adminUsers(userPage, 25, {
       role: userRoleFilter === "all" ? undefined : userRoleFilter,
@@ -252,11 +248,8 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
   useEffect(() => {
     api.globalRanking(rankingLevel === "semua" ? undefined : rankingLevel, rankingPage, 50, rankingMode === "activity" ? "activity" : undefined).then(setRankingPageData).catch((reason) => setError(reason instanceof Error ? reason.message : "Ranking gagal dimuat."));
   }, [rankingLevel, rankingPage, rankingMode, refreshKey]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- bump pagination to page 1 when filters change
   useEffect(() => { setUserPage(1); }, [userQuery, userRoleFilter, userLevelFilter]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- bump pagination to page 1 when filters change
   useEffect(() => { setPackagePage(1); }, [catalogStatusTab, catalogTab, catalogQuery, effectiveView]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- bump pagination to page 1 when filters change
   useEffect(() => { setRankingPage(1); }, [rankingLevel, rankingMode]);
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(""), 3500); return () => window.clearTimeout(timer); }, [toast]);
 
@@ -330,7 +323,6 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
       }
     }).catch((reason) => setError(reason instanceof Error ? reason.message : "Data verifikasi guru gagal dimuat."));
   }, [role, refreshKey, verifPage, verifFilter]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- bump pagination to page 1 when filter changes
   useEffect(() => { setVerifPage(1); }, [verifFilter]);
 
   const menus: Array<[AdminView, string]> = allowedViews.map((key) => [key, adminViewLabels[key]]);
@@ -607,7 +599,7 @@ Masukkan alasan refund (wajib):`, "");
       {effectiveView==="pengaturan" && siteSettings && <SiteSettingsPanel initial={siteSettings} onSaved={setSiteSettings}/>}
       {effectiveView==="profil" && <section className="admin-view"><div className="admin-view-header"><div><p className="eyebrow">Profil</p><h2>Informasi akun</h2></div></div><ProfileEditor user={user} onUpdated={onUserUpdate} /></section>}
     </section>
-    {dialog && <CrudDialog dialog={dialog} exams={selectedPackageId ? packageExams : data?.exams??[]} levels={data?.levels??[]} mapels={data?.mapels??[]} academicYears={data?.academic_years??[]} kategoris={data?.kategoris??[]} kelas={data?.kelas??[]} siteSettings={siteSettings} defaultQuestionSubject={packageQuestions[0]?.subject_name} user={user} busy={saving!==""} onClose={()=>setDialog(null)} masters={masters} onSubmit={(value)=>void (async()=>{const successBox=dialog.kind==="package"?(dialog.item?"Paket soal berhasil diperbarui.":"Paket soal berhasil dibuat."):dialog.kind==="question"?"Soal berhasil disimpan.":dialog.kind==="user"?(dialog.item?"Pengguna berhasil diperbarui.":"Pengguna berhasil dibuat."):"Data berhasil disimpan.";await action(async()=>{
+    {dialog && <CrudDialog dialog={dialog} exams={selectedPackageId ? packageExams : data?.exams??[]} levels={data?.levels??[]} mapels={data?.mapels??[]} academicYears={data?.academic_years??[]} kategoris={data?.kategoris??[]} kelas={data?.kelas??[]} siteSettings={siteSettings} defaultQuestionSubject={packageQuestions[0]?.subject_name} user={user} busy={saving!==""} onClose={()=>setDialog(null)} onSubmit={(value)=>void (async()=>{const successBox=dialog.kind==="package"?(dialog.item?"Paket soal berhasil diperbarui.":"Paket soal berhasil dibuat."):dialog.kind==="question"?"Soal berhasil disimpan.":dialog.kind==="user"?(dialog.item?"Pengguna berhasil diperbarui.":"Pengguna berhasil dibuat."):"Data berhasil disimpan.";await action(async()=>{
       if(dialog.kind==="user"&&"form" in value){const form=value.form;const role=String(form.get("role")) as User["role"];const schoolLevel=String(form.get("school_level")) as User["school_level"];if(dialog.item)await api.updateAdminUser(dialog.item.id,role,schoolLevel);else await api.createAdminUser({email:String(form.get("email")),password:String(form.get("password")),role,school_level:schoolLevel})}
       if(dialog.kind==="package"){if(!dialog.item&&"bundle" in value){const input=value.bundle;await api.createAdminPackageBundle(input)}else if("update" in value&&dialog.item){const {form,exam}=value.update;const examType=String(form.get("exam_type")) as AdminPackage["exam_type"];const isCbt=examType==="cbt";const startDateRaw=form.get("start_date");const endDateRaw=form.get("end_date");await api.updateAdminPackage(dialog.item.id,{title:String(form.get("title")),kode:String(form.get("kode")),description:String(form.get("description")),price:Number(form.get("price")),validity_days:Number(form.get("validity_days")),status:String(form.get("status")) as Status,jenjang:String(form.get("jenjang")) as User["school_level"],exam_type:examType,cbt_token:String(form.get("cbt_token")??""),start_date:isCbt&&startDateRaw?new Date(String(startDateRaw)+"T00:00:00Z").toISOString():undefined,end_date:isCbt&&endDateRaw?new Date(String(endDateRaw)+"T23:59:59Z").toISOString():undefined,kategori_id:String(form.get("kategori_id")),kelas_id:String(form.get("kelas_id"))});const examTarget=data?.exams.find((item)=>item.package_id===dialog.item!.id);if(examTarget)await api.updateAdminExam(examTarget.id,{package_id:examTarget.package_id,title:exam.title,mapel_id:exam.mapel_id,tahun_ajaran_id:exam.tahun_ajaran_id,duration_minutes:exam.duration_minutes,total_questions:exam.total_questions,passing_score:exam.passing_score,status:exam.status,shuffle_questions:exam.shuffle_questions,shuffle_options:exam.shuffle_options})}}
       if(dialog.kind==="question"&&"form" in value){const form=value.form;const input={exam_id:String(form.get("exam_id")),subject_name:String(form.get("subject_name")),chapter_name:String(form.get("chapter_name")),content_text:String(form.get("content_text")),question_type:String(form.get("question_type")) as AdminQuestion["question_type"],presentation_type:String(form.get("presentation_type")) as AdminQuestion["presentation_type"],group_code:String(form.get("group_code")),stimulus_text:String(form.get("stimulus_text")),question_image_url:String(form.get("question_image_url")),stimulus_image_url:String(form.get("stimulus_image_url")),category_labels:JSON.parse(String(form.get("category_labels_json"))) as string[],options:JSON.parse(String(form.get("options_json"))) as {key:string;content:string;image_url?:string}[],correct_answer:String(form.get("correct_answer")),score_weight:Number(form.get("score_weight")),explanation_text:String(form.get("explanation_text")),status:String(form.get("status")) as Status};if(dialog.item)await api.updateAdminQuestion(dialog.item.id,input);else await api.createAdminQuestion(input)}
@@ -696,7 +688,7 @@ Masukkan alasan refund (wajib):`, "");
   </div></main>;
 }
 
-function CrudDialog({dialog,exams,levels,mapels,academicYears,kategoris,kelas,siteSettings:systemSettings,defaultQuestionSubject,user,busy,onClose,onSubmit,masters}:{dialog:Exclude<Dialog,null>;exams:AdminExam[];levels:string[];mapels:MasterItem[];academicYears:MasterItem[];kategoris:MasterItem[];kelas:MasterItem[];siteSettings:SiteSettings|null;defaultQuestionSubject?:string;user:User;busy:boolean;onClose:()=>void;onSubmit:(value:DialogSubmit)=>void;masters:Record<string,MasterItem[]>}){
+function CrudDialog({dialog,exams,levels,mapels,academicYears,kategoris,kelas,siteSettings:systemSettings,defaultQuestionSubject,user,busy,onClose,onSubmit}:{dialog:Exclude<Dialog,null>;exams:AdminExam[];levels:string[];mapels:MasterItem[];academicYears:MasterItem[];kategoris:MasterItem[];kelas:MasterItem[];siteSettings:SiteSettings|null;defaultQuestionSubject?:string;user:User;busy:boolean;onClose:()=>void;onSubmit:(value:DialogSubmit)=>void}){
   const [options,setOptions] = useState<{key:string;content:string}[]>(dialog.kind==="question"?(dialog.item?.options??[{key:"A",content:""},{key:"B",content:""}]):[]);
   const [pkgExamType,setPkgExamType] = useState<AdminPackage["exam_type"]>(dialog.kind==="package"?(dialog.item?.exam_type??dialog.defaultExamType??"sell"):"sell");
   const [cbtToken,setCbtToken] = useState<string>(dialog.kind==="package"?(dialog.item?.cbt_token??""):"");
