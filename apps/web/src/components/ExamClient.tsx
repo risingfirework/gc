@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import Image from "next/image";
 import { APIError, api, ExamStartResponse, ScreenLockResponse, SiteSettings, SubmitExamResponse } from "@/services/api";
 import { AntiCheatEvent, useAntiCheat } from "@/hooks/useAntiCheat";
 import { useCBTAutoSave } from "@/hooks/useCBTAutoSave";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import BrandLogo from "./BrandLogo";
 import RichText from "@/components/RichText";
+import QuestionMedia from "@/components/QuestionMedia";
 
 type StoredExamState = { answers: Record<string, string>; doubtful: string[] };
 
@@ -271,12 +271,12 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
       <div className="exam-shell">
         <section className="card question-card">
           <div className="question-meta"><span>{question.subject_name}</span><span>Soal {index + 1} dari {exam.questions.length}</span></div>
-          {question.presentation_type === "group" && <div className="group-stimulus"><small>Stimulus {question.group_code}</small><RichText content={question.stimulus_text}/><QuestionImage src={question.stimulus_image_url} alt="Gambar stimulus soal"/></div>}
-          <div className="question-content"><RichText content={question.content_text}/><QuestionImage src={question.question_image_url} alt="Gambar pertanyaan"/></div>
-          {question.question_type === "single_choice" && <div className="answer-list">{question.options.map((option) => <button type="button" className={`option ${answers[question.id] === option.key ? "selected" : ""}`} onClick={() => selectAnswer(question.id, option.key)} key={option.key}><span className="option-key">{option.key}</span><span><RichText content={option.content}/><QuestionImage src={option.image_url} alt={`Gambar pilihan ${option.key}`}/></span></button>)}</div>}
+          {question.presentation_type === "group" && <div className="group-stimulus"><small>Stimulus {question.group_code}</small><RichText content={question.stimulus_text}/><QuestionMedia image={question.stimulus_image_url} alt="Gambar stimulus soal"/></div>}
+          <div className="question-content"><RichText content={question.content_text}/><QuestionMedia image={question.question_image_url} audio={question.question_audio_url} video={question.question_video_url} alt="Media pertanyaan"/></div>
+          {question.question_type === "single_choice" && <div className="answer-list">{question.options.map((option) => <button type="button" className={`option ${answers[question.id] === option.key ? "selected" : ""}`} onClick={() => selectAnswer(question.id, option.key)} key={option.key}><span className="option-key">{option.key}</span><span><RichText content={option.content}/><QuestionMedia image={option.image_url} alt={`Gambar pilihan ${option.key}`}/></span></button>)}</div>}
           {question.question_type === "essay" && <><p className="answer-instruction">Tuliskan jawaban uraian Anda.</p><textarea className="essay-answer" value={answers[question.id] ?? ""} onChange={(event) => selectAnswer(question.id, event.target.value)} placeholder="Ketik jawaban esai Anda di sini..." rows={8}/></>}
-          {question.question_type === "multiple_choice" && <><p className="answer-instruction">Pilih semua jawaban yang benar.</p><div className="answer-list">{question.options.map((option) => { const selected = (answers[question.id] ?? "").split(",").includes(option.key); return <button type="button" role="checkbox" aria-checked={selected} aria-label={`Pilih jawaban ${option.key}`} className={`option multi ${selected ? "selected" : ""}`} onClick={() => toggleMultipleAnswer(question.id, option.key)} key={option.key}><span className="option-key" aria-hidden="true">{selected ? "✓" : ""}</span><span><RichText content={option.content}/><QuestionImage src={option.image_url} alt={`Gambar pilihan ${option.key}`}/></span></button>; })}</div></>}
-          {question.question_type === "category" && <><p className="answer-instruction">Tentukan kategori untuk setiap pernyataan.</p><div className="category-answer-table">{question.options.map((option) => { const selected = Object.fromEntries((answers[question.id] ?? "").split(";").map((part) => part.split("=", 2)).filter((part) => part.length === 2))[option.key]; return <div className="category-answer-row" key={option.key}><div><b>{option.key}</b><span><RichText content={option.content}/><QuestionImage src={option.image_url} alt={`Gambar pernyataan ${option.key}`}/></span></div><div>{question.category_labels.map((label) => <button type="button" className={selected === label ? "selected" : ""} onClick={() => selectCategoryAnswer(question.id, option.key, label)} key={label}>{label}</button>)}</div></div>; })}</div></>}
+          {question.question_type === "multiple_choice" && <><p className="answer-instruction">Pilih semua jawaban yang benar.</p><div className="answer-list">{question.options.map((option) => { const selected = (answers[question.id] ?? "").split(",").includes(option.key); return <button type="button" role="checkbox" aria-checked={selected} aria-label={`Pilih jawaban ${option.key}`} className={`option multi ${selected ? "selected" : ""}`} onClick={() => toggleMultipleAnswer(question.id, option.key)} key={option.key}><span className="option-key" aria-hidden="true">{selected ? "✓" : ""}</span><span><RichText content={option.content}/><QuestionMedia image={option.image_url} alt={`Gambar pilihan ${option.key}`}/></span></button>; })}</div></>}
+          {question.question_type === "category" && <><p className="answer-instruction">Tentukan kategori untuk setiap pernyataan.</p><div className="category-answer-table">{question.options.map((option) => { const selected = Object.fromEntries((answers[question.id] ?? "").split(";").map((part) => part.split("=", 2)).filter((part) => part.length === 2))[option.key]; return <div className="category-answer-row" key={option.key}><div><b>{option.key}</b><span><RichText content={option.content}/><QuestionMedia image={option.image_url} alt={`Gambar pernyataan ${option.key}`}/></span></div><div>{question.category_labels.map((label) => <button type="button" className={selected === label ? "selected" : ""} onClick={() => selectCategoryAnswer(question.id, option.key, label)} key={label}>{label}</button>)}</div></div>; })}</div></>}
           <footer className="exam-actions">
             <button className="button secondary" disabled={index === 0} onClick={() => setIndex((value) => value - 1)}>Sebelumnya</button>
             <button type="button" className={`doubt-button ${doubtful.has(question.id) ? "active" : ""}`} aria-pressed={doubtful.has(question.id)} onClick={() => toggleDoubtful(question.id)}>⚑ {doubtful.has(question.id) ? "Batalkan Ragu-ragu" : "Ragu-ragu"}</button>
@@ -312,8 +312,4 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
           <div className="verify-modal-actions"><button type="button" className="verify-cancel" disabled={submitting} onClick={() => setConfirmSubmit(false)}>Kembali ke ujian</button><button type="button" className="verify-confirm-approve" disabled={submitting} onClick={() => { setConfirmSubmit(false); void submitAttempt(false); }}>{submitting ? "Mengirim..." : "Ya, kumpulkan ujian"}</button></div></section></div>, document.body)}
     {screenLocked && createPortal(<div className="screen-lock-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="screen-lock-title" onContextMenu={(event) => event.preventDefault()}><section className="screen-lock-card"><svg className="screen-lock-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 9V7a5 5 0 0 0-10 0v2H5v12h14V9h-2Zm-8-2a3 3 0 0 1 6 0v2H9V7Z"/></svg><h2 id="screen-lock-title">Layar terkunci</h2><p>Anda terdeteksi meninggalkan halaman ujian. Layar akan terbuka otomatis, atau hubungi pengawas untuk dibuka.</p><div className="screen-lock-countdown" aria-live="assertive">{screenLockSeconds}</div><small>Pelanggaran tercatat: {screenLockViolations}</small></section></div>, document.body)}
   </main>;
-}
-
-function QuestionImage({ src, alt }: { src?: string; alt: string }) {
-  return src ? <Image className="question-media" src={src} alt={alt} width={800} height={500} unoptimized/> : null;
 }

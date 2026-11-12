@@ -87,6 +87,8 @@ export type Status = "active" | "inactive";
 export type LoginResponse = { access_token?: string; token_type?: "Bearer"; expires_in?: number; refresh_token?: string; refresh_expires_in?: number; user: User; requires_2fa?: boolean; mfa_token?: string };
 export type QuestionOption = { key: string; content: string; image_url?: string };
 export type QuestionMedia = { question_audio_url?: string; question_video_url?: string; explanation_video_url?: string };
+export type MediaKind = "image" | "audio" | "video";
+export type MediaAsset = { id: string; kind: MediaKind; mime_type: string; size_bytes: number; original_name?: string; url: string; created_at: string };
 export type QuestionType = "single_choice" | "multiple_choice" | "category" | "essay";
 export type PresentationType = "single" | "group";
 export type TKAQuestionFields = { question_type: QuestionType; presentation_type: PresentationType; group_code: string; stimulus_text: string; question_image_url: string; stimulus_image_url: string; question_audio_url?: string; question_video_url?: string; explanation_video_url?: string; category_labels: string[] };
@@ -126,7 +128,7 @@ export type CheckoutResponse = { transaction: Transaction; payment_url: string; 
 export type UserPricingPolicy = { discount_percent: number; account_active: boolean };
 export type SubjectResult = { subject_name: string; correct_answers: number; wrong_answers: number; unanswered: number; total_questions: number; score: number };
 export type ChapterResult = { chapter_name: string; correct_answers: number; wrong_answers: number; unanswered: number; total_questions: number; score: number };
-export type AnswerReview = { question_id: string; subject_name: string; chapter_name?: string; content_text: string; question_type: "single_choice" | "multiple_choice" | "category" | "essay"; presentation_type: "single" | "group"; group_code?: string; stimulus_text?: string; question_image_url?: string; stimulus_image_url?: string; category_labels?: string[]; options: QuestionOption[]; selected_option?: string; correct_answer: string; is_correct: boolean; score_weight: number; explanation_text: string; explanation_video_url?: string };
+export type AnswerReview = { question_id: string; subject_name: string; chapter_name?: string; content_text: string; question_type: "single_choice" | "multiple_choice" | "category" | "essay"; presentation_type: "single" | "group"; group_code?: string; stimulus_text?: string; question_image_url?: string; stimulus_image_url?: string; question_audio_url?: string; question_video_url?: string; category_labels?: string[]; options: QuestionOption[]; selected_option?: string; correct_answer: string; is_correct: boolean; score_weight: number; explanation_text: string; explanation_video_url?: string };
 export type ExamResult = { user_exam_id: string; exam_id: string; title: string; status: "submitted"; scoring_method: "standard" | "irt_2pl"; started_at: string; finished_at: string; total_score: number; passing_score: number; passed: boolean; correct_answers: number; wrong_answers: number; unanswered: number; subjects: SubjectResult[]; chapters: ChapterResult[]; review_available: boolean; review: AnswerReview[] };
 export type GlobalRanking = { rank: number; display_name: string; school_level: User["school_level"]; score: number; best_percentile: number; duration_seconds: number; finished_at: string; is_current_user: boolean; exams_done: number };
 export type AdminOverview = { total_users: number; total_students: number; total_packages: number; total_exams: number; total_transactions: number; paid_transactions: number };
@@ -237,6 +239,19 @@ export const api = {
   },
   async packages() { return (await http.get<{ data: Package[] }>("/packages")).data; },
   async siteSettings() { return (await http.get<{settings:SiteSettings}>("/settings")).data.settings; },
+  async uploadMedia(file: File, kind: MediaKind, onProgress?: (percent: number) => void) {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("kind", kind);
+    return (await http.post<{ asset: MediaAsset }>("/media", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 10 * 60 * 1000,
+      onUploadProgress: (event) => {
+        if (onProgress && event.total) onProgress(Math.round((event.loaded / event.total) * 100));
+      },
+    })).data.asset;
+  },
+  async deleteMedia(id: string) { await http.delete(`/media/${id}`); },
   async trackPackageView(packageID:string) {
     let visitorKey = localStorage.getItem("tka_catalog_visitor");
     if (!visitorKey) { visitorKey = crypto.randomUUID(); localStorage.setItem("tka_catalog_visitor", visitorKey); }

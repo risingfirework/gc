@@ -859,3 +859,5 @@ html{scroll-behavior:smooth}
   .cbt-access-banner .button{width:100%}
   .cbt-tariff-card{grid-template-columns:1fr}
 }
+audio.question-media{width:100%;max-width:560px;background:var(--surface-soft);padding:.35rem}
+video.question-media{width:100%;max-width:720px;background:#000}

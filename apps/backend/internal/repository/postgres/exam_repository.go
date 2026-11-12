@@ -51,7 +51,8 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 		SELECT id, exam_id, subject_name, chapter_name, content_text, question_type, presentation_type,
 		       COALESCE(group_code,''), stimulus_text, question_image_url, stimulus_image_url,
 		       category_labels_json, options_json, correct_answer, score_weight,
-		       difficulty, discrimination, explanation_text, explanation_video_url
+		       difficulty, discrimination, explanation_text, explanation_video_url,
+		       question_audio_url, question_video_url
 		FROM questions
 		WHERE exam_id = $1
 		ORDER BY display_order, id`
@@ -72,6 +73,7 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 			&question.QuestionImageURL, &question.StimulusImageURL,
 			&rawCategoryLabels, &rawOptions, &question.CorrectAnswer, &question.ScoreWeight,
 			&question.Difficulty, &question.Discrimination, &question.ExplanationText, &question.ExplanationVideoURL,
+			&question.QuestionAudioURL, &question.QuestionVideoURL,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan question: %w", err)
 		}

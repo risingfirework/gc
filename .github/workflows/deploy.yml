@@ -95,6 +95,19 @@ jobs:
             git pull --ff-only origin main
             docker compose --env-file .env.production -f docker-compose.prod.yml run --rm migrate
             docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
+            echo "---- NGINX RELOAD ----"
+            for attempt in $(seq 1 10); do
+              if docker compose --env-file .env.production -f docker-compose.prod.yml exec -T nginx nginx -t; then
+                docker compose --env-file .env.production -f docker-compose.prod.yml exec -T nginx nginx -s reload
+                break
+              fi
+              if [ "$attempt" -eq 10 ]; then
+                echo "Konfigurasi nginx tidak valid atau container belum siap"
+                exit 1
+              fi
+              echo "Menunggu nginx siap (percobaan $attempt/10)..."
+              sleep 2
+            done
             echo "---- HEALTH ----"
             docker compose --env-file .env.production -f docker-compose.prod.yml ps
             echo "---- LIVE CHECK ----"

@@ -7,9 +7,9 @@ import StudentMenu from "./StudentMenu";
 import NotificationBell from "./NotificationBell";
 import Breadcrumb from "./Breadcrumb";
 import StudentBottomNav from "./StudentBottomNav";
-import Image from "next/image";
 import { useEffect, useState } from "react";
 import RichText from "@/components/RichText";
+import QuestionMedia from "@/components/QuestionMedia";
 import { AnswerReview, api, ExamResult, SiteSettings } from "@/services/api";
 
 export default function ResultClient({ attemptID }: { attemptID: string }) {
@@ -49,15 +49,15 @@ function QuestionReviewCard({ item, index, total }: { item: AnswerReview; index:
   return <article className={`card review-question-card ${status}`}>
     <header className="review-question-header"><div className="question-meta"><span>{item.subject_name}{item.chapter_name ? ` · ${item.chapter_name}` : ""}</span><span>Soal {index + 1} dari {total}</span></div><span className={`review-status ${status}`}><i aria-hidden="true">{statusIcon}</i>{statusLabel}</span></header>
     <div className="review-question-main">
-      {item.presentation_type === "group" && <div className="group-stimulus"><small>Stimulus {item.group_code}</small><RichText content={item.stimulus_text ?? ""}/><QuestionImage src={item.stimulus_image_url} alt="Gambar stimulus soal"/></div>}
-      <div className="question-content"><RichText content={item.content_text}/><QuestionImage src={item.question_image_url} alt="Gambar pertanyaan"/></div>
+      {item.presentation_type === "group" && <div className="group-stimulus"><small>Stimulus {item.group_code}</small><RichText content={item.stimulus_text ?? ""}/><QuestionMedia image={item.stimulus_image_url} alt="Gambar stimulus soal"/></div>}
+      <div className="question-content"><RichText content={item.content_text}/><QuestionMedia image={item.question_image_url} audio={item.question_audio_url} video={item.question_video_url} alt="Media pertanyaan"/></div>
       {item.question_type === "multiple_choice" && <p className="answer-instruction">Soal pilihan ganda kompleks · dapat memiliki lebih dari satu jawaban benar.</p>}
       {item.question_type === "essay" && <p className="answer-instruction">Soal esai · dinilai manual oleh guru.</p>}
       {item.question_type === "essay" ? <div className="review-essay"><div className="essay-block student"><small>Jawaban Anda</small><p>{item.selected_option || "—"}</p></div><div className="essay-block reference"><small>Referensi jawaban</small><p>{item.correct_answer}</p></div></div> : item.question_type !== "category" ? <div className="review-answer-list">{item.options.map((option) => {
         const selected = selectedKeys.has(option.key);
         const correct = correctKeys.has(option.key);
-        return <div className={`review-option ${item.question_type === "multiple_choice" ? "multi " : ""}${selected?"selected":""} ${correct?"correct-key":""} ${selected&&!correct?"wrong-choice":""}`} key={option.key}><span className="option-key" aria-hidden={item.question_type === "multiple_choice" || undefined}>{item.question_type === "multiple_choice" ? (selected ? "✓" : "") : option.key}</span><span className="review-option-content"><RichText content={option.content}/><QuestionImage src={option.image_url} alt={`Gambar pilihan ${option.key}`}/></span><span className="review-option-markers">{selected&&<small className="your-answer">Jawaban Anda</small>}{correct&&<small className="key-answer">Kunci</small>}</span></div>;
-      })}</div> : <div className="review-category-list">{item.options.map((option) => <div className="review-category-row" key={option.key}><div><b>{option.key}</b><span><RichText content={option.content}/><QuestionImage src={option.image_url} alt={`Gambar pernyataan ${option.key}`}/></span></div><div>{(item.category_labels ?? []).map((label) => { const selected = selectedCategories[option.key] === label; const correct = correctCategories[option.key] === label; return <span className={`review-category-choice ${selected?"selected":""} ${correct?"correct-key":""} ${selected&&!correct?"wrong-choice":""}`} key={label}>{label}{selected&&<small>Jawaban Anda</small>}{correct&&<small>Kunci</small>}</span>; })}</div></div>)}</div>}
+        return <div className={`review-option ${item.question_type === "multiple_choice" ? "multi " : ""}${selected?"selected":""} ${correct?"correct-key":""} ${selected&&!correct?"wrong-choice":""}`} key={option.key}><span className="option-key" aria-hidden={item.question_type === "multiple_choice" || undefined}>{item.question_type === "multiple_choice" ? (selected ? "✓" : "") : option.key}</span><span className="review-option-content"><RichText content={option.content}/><QuestionMedia image={option.image_url} alt={`Gambar pilihan ${option.key}`}/></span><span className="review-option-markers">{selected&&<small className="your-answer">Jawaban Anda</small>}{correct&&<small className="key-answer">Kunci</small>}</span></div>;
+      })}</div> : <div className="review-category-list">{item.options.map((option) => <div className="review-category-row" key={option.key}><div><b>{option.key}</b><span><RichText content={option.content}/><QuestionMedia image={option.image_url} alt={`Gambar pernyataan ${option.key}`}/></span></div><div>{(item.category_labels ?? []).map((label) => { const selected = selectedCategories[option.key] === label; const correct = correctCategories[option.key] === label; return <span className={`review-category-choice ${selected?"selected":""} ${correct?"correct-key":""} ${selected&&!correct?"wrong-choice":""}`} key={label}>{label}{selected&&<small>Jawaban Anda</small>}{correct&&<small>Kunci</small>}</span>; })}</div></div>)}</div>}
     </div>
     <div className="review-analysis">
       <div className="review-analysis-facts"><p className="review-analysis-title">Hasil jawaban</p><dl><div><dt>Hasil</dt><dd className={status}>{status === "correct" ? "Jawaban benar" : isEssay && !unanswered ? "Menunggu penilaian manual" : status === "wrong" ? "Jawaban belum tepat" : "Belum dijawab"}</dd></div><div><dt>Jawaban Anda</dt><dd>{formatAnswer(item.selected_option, isEssay)}</dd></div><div><dt>Kunci jawaban</dt><dd>{formatAnswer(item.correct_answer, isEssay)}</dd></div><div><dt>Bobot soal</dt><dd>{item.score_weight}</dd></div></dl></div>
@@ -75,8 +75,4 @@ function formatAnswer(value?: string, raw = false) {
   if (raw) return value;
   if (value.includes("=")) return value.split(";").map((part) => part.replace("=", ": ")).join(" · ");
   return value.split(",").join(", ");
-}
-
-function QuestionImage({ src, alt }: { src?: string; alt: string }) {
-  return src ? <Image className="question-media" src={src} alt={alt} width={800} height={500} unoptimized/> : null;
 }
