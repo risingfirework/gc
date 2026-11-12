@@ -352,7 +352,7 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, destination any) error {
 	limit := int64(maxRequestBody)
-	if strings.Contains(r.URL.Path, "/questions") || strings.HasSuffix(r.URL.Path, "/packages/bundle") || strings.HasSuffix(r.URL.Path, "/appeal") {
+	if strings.Contains(r.URL.Path, "/questions") || strings.HasSuffix(r.URL.Path, "/packages/bundle") || strings.HasSuffix(r.URL.Path, "/appeal") || strings.HasSuffix(r.URL.Path, "/cbt-payments") {
 		limit = maxQuestionRequestBody
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, limit)

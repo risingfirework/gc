@@ -17,11 +17,12 @@ import VideoManagerPanel from "./VideoManagerPanel";
 import DataImage from "./DataImage";
 import ConfirmModal from "./ConfirmModal";
 import CBTSettingsPanel from "./CBTSettingsPanel";
+import CBTAccessAdminPanel from "./CBTAccessAdminPanel";
 import BrandLogo from "./BrandLogo";
 import QuestionBankTools from "./QuestionBankTools";
 import QuestionShuffleSettings from "./QuestionShuffleSettings";
 
-type AdminView = "ringkasan" | "users" | "katalog" | "cbt" | "cbt-pengaturan" | "finance" | "pembayaran" | "transaksi" | "ranking" | "master" | "testimoni" | "video" | "pengaturan" | "audit" | "verifikasi" | "profil";
+type AdminView = "ringkasan" | "users" | "katalog" | "cbt" | "cbt-pengaturan" | "cbt-guru" | "finance" | "pembayaran" | "transaksi" | "ranking" | "master" | "testimoni" | "video" | "pengaturan" | "audit" | "verifikasi" | "profil";
 type Dialog = { kind: "user"; item?: User } | { kind: "package"; item?: AdminPackage; defaultExamType?: "sell" | "cbt" } | { kind: "question"; item?: AdminQuestion } | { kind: "master"; category: MasterCategory; item?: MasterItem } | null;
 type DialogSubmit = { form: FormData } | { bundle: PackageBundleCreate } | { update: { form: FormData; exam: ExamEntry } };
 const money = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
@@ -56,11 +57,11 @@ const masterCategories: MasterCategory[] = ["mapel", "jenjang", "tahun-ajaran", 
 
 const statusLabel = (status: Status) => (status === "active" ? "Aktif" : "Nonaktif");
 const userRoleLabel = (role: User["role"]) => role === "student" ? "Siswa" : role === "teacher" ? "Guru" : role === "owner" ? "Pemilik" : role === "finance" ? "Finance" : role === "affiliate" ? "Affiliate" : "Operator";
-const adminViewLabels: Record<AdminView, string> = { ringkasan:"Ringkasan", users:"Kelola User", katalog:"Katalog Paket Soal", cbt:"Bank Soal CBT", "cbt-pengaturan":"Pengaturan CBT", finance:"Finance", pembayaran:"Integrasi Pembayaran", master:"Master Data", transaksi:"Transaksi", ranking:"Ranking", testimoni:"Testimoni", video:"Menu Video", pengaturan:"Pengaturan", audit:"Audit Log", verifikasi:"Verifikasi Guru", profil:"Profil" };
+const adminViewLabels: Record<AdminView, string> = { ringkasan:"Ringkasan", users:"Kelola User", katalog:"Katalog Paket Soal", cbt:"Bank Soal CBT", "cbt-pengaturan":"Pengaturan CBT", "cbt-guru":"CBT Guru", finance:"Finance", pembayaran:"Integrasi Pembayaran", master:"Master Data", transaksi:"Transaksi", ranking:"Ranking", testimoni:"Testimoni", video:"Menu Video", pengaturan:"Pengaturan", audit:"Audit Log", verifikasi:"Verifikasi Guru", profil:"Profil" };
 const sidebarGroups: Array<{ name: string; views: AdminView[] }> = [
   { name: "Konten", views: ["katalog", "cbt", "cbt-pengaturan", "master"] },
   { name: "Interaksi", views: ["ranking", "testimoni", "video"] },
-  { name: "Pengguna", views: ["users", "verifikasi"] },
+  { name: "Pengguna", views: ["users", "verifikasi", "cbt-guru"] },
   { name: "Keuangan", views: ["finance", "transaksi", "pembayaran"] },
   { name: "Sistem", views: ["pengaturan", "audit"] },
 ];
@@ -95,10 +96,10 @@ function EyeOffIcon() {
 export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdate }: { user: User; onLogout: () => void; loggingOut: boolean; onUserUpdate?: (u: User) => void }) {
   const role = user.role;
   const allowedViews: AdminView[] = role === "owner"
-    ? ["ringkasan", "users", "katalog", "cbt", "cbt-pengaturan", "finance", "pembayaran", "master", "transaksi", "ranking", "testimoni", "video", "pengaturan", "audit", "verifikasi", "profil"]
+    ? ["ringkasan", "users", "katalog", "cbt", "cbt-pengaturan", "cbt-guru", "finance", "pembayaran", "master", "transaksi", "ranking", "testimoni", "video", "pengaturan", "audit", "verifikasi", "profil"]
     : role === "finance"
       ? ["finance", "transaksi", "profil"]
-      : ["ringkasan", "katalog", "cbt", "cbt-pengaturan", "master", "transaksi", "ranking", "testimoni", "video", "pengaturan", "verifikasi", "profil"];
+      : ["ringkasan", "katalog", "cbt", "cbt-pengaturan", "cbt-guru", "master", "transaksi", "ranking", "testimoni", "video", "pengaturan", "verifikasi", "profil"];
   const [view, setView] = useState<AdminView>(allowedViews[0]);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -602,6 +603,7 @@ Masukkan alasan refund (wajib):`, "");
         <AdminTable headers={["Guru","No. KTP","Jenjang","Status","Bukti Sanggah","Cek SIMPKB","Aksi"]}>{verifications.items.map((item)=><tr key={item.id}><td><div>{item.name || item.email}<small>{item.email}</small></div></td><td><strong>{item.teacher_ktp || "—"}</strong></td><td>{item.school_level}</td><td><span className={`status-pill ${item.status}`}>{item.status==="pending"?"Menunggu":"Ditolak"}</span></td><td style={{maxWidth:240}}>{item.status==="rejected" ? <div className="verification-proof-cell">{item.appeal_image ? <button type="button" className="table-action appeal-proof-btn" onClick={()=>setAppealPreview(item)}><DataImage className="appeal-proof-thumb" src={item.appeal_image} alt="Bukti sanggah" width={120} height={76}/><span>Perbesar</span></button> : <span className="muted">Belum sanggah</span>}{item.rejection_reason && <small className="muted">Penolakan: {item.rejection_reason}</small>}</div> : item.appeal_image ? <div className="verification-proof-cell"><button type="button" className="table-action appeal-proof-btn" onClick={()=>setAppealPreview(item)}><DataImage className="appeal-proof-thumb" src={item.appeal_image} alt="Bukti sanggah" width={120} height={76}/><span>Perbesar</span></button><small className="muted">Sanggah diajukan</small></div> : <span className="muted">—</span>}</td><td><div className="simpkb-check-cell"><span className={`status-pill simpkb-${item.simpkb_status}`}>{simpkbLabel(item.simpkb_status)}</span>{item.simpkb_image&&<button className="table-action" title="Lihat hasil pencarian SIMPKB" onClick={()=>setSIMPKBPreview(item)}>Lihat hasil</button>}<button className="table-action" disabled={saving!==""} onClick={()=>void checkSIMPKB(item)}>Cek ulang</button></div></td><td><div className="user-row-actions"><button className="table-action" disabled={saving!==""} onClick={()=>void approveTeacher(item)}>Setujui</button><button className="danger-action" disabled={saving!==""} onClick={()=>void rejectTeacher(item)}>Tolak</button></div></td></tr>)}{verifications.items.length===0&&<tr><td colSpan={7} className="empty-state">Tidak ada guru dalam kategori ini. Semua pendaftaran guru sudah selesai diverifikasi.</td></tr>}</AdminTable>
         <div className="pagination-row"><button className="table-action" disabled={verifications.page<=1||saving!==""} onClick={()=>setVerifPage((p)=>Math.max(1,p-1))}>‹ Sebelumnya</button><span className="muted">Hal {verifications.page} · {verifications.total} guru</span><button className="table-action" disabled={verifications.page*verifications.count>=verifications.total||saving!==""} onClick={()=>setVerifPage((p)=>p+1)}>Berikutnya ›</button></div>
       </section>}
+      {effectiveView==="cbt-guru" && <CBTAccessAdminPanel/>}
       {effectiveView==="pengaturan" && siteSettings && <SiteSettingsPanel initial={siteSettings} onSaved={setSiteSettings}/>}
       {effectiveView==="profil" && <section className="admin-view"><div className="admin-view-header"><div><p className="eyebrow">Profil</p><h2>Informasi akun</h2></div></div><ProfileEditor user={user} onUpdated={onUserUpdate} /></section>}
     </section>

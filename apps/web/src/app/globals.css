@@ -784,3 +784,78 @@ html{scroll-behavior:smooth}
   .landing .hero-dots{margin-top:12px}
   .landing .hero-caption{padding:0 18px}
 }
+
+/* CBT access policy: admin & teacher */
+.cbt-access-banner{display:flex;align-items:center;gap:14px;margin:0 0 18px;padding:16px 18px;border-radius:16px;border:1px solid #dbe6f5;background:linear-gradient(135deg,#f7fbff,#eef5ff)}
+.cbt-access-banner.ok{border-color:#bfe8d4;background:linear-gradient(135deg,#f2fcf7,#e8f8f0)}
+.cbt-access-banner.trial{border-color:#c7e3ff;background:linear-gradient(135deg,#f2f9ff,#e6f2ff)}
+.cbt-access-banner.pending{border-color:#e6dcc0;background:linear-gradient(135deg,#fffaf0,#fdf4df)}
+.cbt-access-banner.locked{border-color:#f3cfcf;background:linear-gradient(135deg,#fff7f7,#fdeaea)}
+.cbt-access-banner-icon{display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;border-radius:12px;background:#00a894;color:#fff;font-size:20px;font-weight:900}
+.cbt-access-banner.locked .cbt-access-banner-icon{background:#d94a4a}
+.cbt-access-banner.pending .cbt-access-banner-icon{background:#c99a1e}
+.cbt-access-banner.trial .cbt-access-banner-icon{background:#2d7fd6}
+.cbt-access-banner-body{display:grid;gap:2px;flex:1;min-width:0}
+.cbt-access-banner-body strong{font-size:15px}
+.cbt-access-banner-body small{color:#51607a;font-size:13px;line-height:1.45}
+.cbt-access-banner .button{flex:0 0 auto}
+.cbt-access-pill{flex:0 0 auto;padding:8px 12px;border-radius:999px;background:#fff;border:1px solid #cfe0f4;color:#315ca8;font-size:12px;font-weight:800;white-space:nowrap}
+.cbt-access-tabs{flex-wrap:wrap}
+.cbt-access-form{display:grid;gap:16px;padding:22px}
+.cbt-access-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.cbt-access-form label{display:grid;gap:6px;font-size:13px;font-weight:750;color:#334155}
+.cbt-access-form label>span{display:block}
+.cbt-access-form input,.cbt-access-form select,.cbt-access-form textarea{border:1px solid #cfd7e6;border-radius:10px;padding:10px 12px;font:inherit;font-weight:500;background:#fff;color:var(--ink)}
+.cbt-access-form input:focus,.cbt-access-form select:focus,.cbt-access-form textarea:focus{outline:2px solid var(--primary);outline-offset:-1px}
+.cbt-access-form small{color:var(--muted);font-weight:500;line-height:1.45}
+.cbt-access-form .finance-number{display:flex;align-items:center;gap:8px;border:1px solid #cfd7e6;border-radius:10px;padding:0 12px;background:#fff}
+.cbt-access-form .finance-number i{font-style:normal;font-weight:800;color:#64748b}
+.cbt-access-form .finance-number input{border:0;padding:10px 0;flex:1;outline:none}
+.cbt-access-checks{display:grid;gap:10px;padding:14px;border-radius:12px;background:#f6f9fd;border:1px solid #e2e9f4}
+.cbt-access-form .check-row{display:flex;align-items:flex-start;gap:10px;font-weight:600}
+.cbt-access-form .check-row input{width:18px;height:18px;margin-top:2px;accent-color:var(--primary)}
+.cbt-access-form .check-row span{display:grid;gap:2px}
+.cbt-access-form-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.cbt-access-form-footer .muted{margin:0}
+.cbt-access-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.cbt-access-toolbar input,.cbt-access-toolbar select{flex:1;min-width:180px;border:1px solid #cfd7e6;border-radius:10px;padding:10px 13px;background:#fff;font:inherit}
+.cbt-row-actions{display:flex;gap:6px;flex-wrap:wrap}
+.cbt-proof-thumb{width:64px;height:48px;border-radius:8px;overflow:hidden;border:1px solid #d9e1ef}
+.cbt-proof-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.cbt-access-pager{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:12px 4px 0;font-size:13px;color:var(--muted)}
+.cbt-access-pager .button{padding:8px 12px}
+.cbt-access-modal{width:min(560px,100%);max-height:min(92dvh,820px);overflow-y:auto}
+.cbt-tariff-card{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:16px 0;padding:14px;border-radius:14px;background:linear-gradient(135deg,#f3f8ff,#eaf2ff);border:1px solid #d6e4f7}
+.cbt-tariff-card>div{display:grid;gap:2px}
+.cbt-tariff-card small{color:#51607a;font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.03em}
+.cbt-tariff-card strong{font-size:15px;color:#183b78}
+.cbt-instructions{margin:12px 0;padding:12px 14px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0}
+.cbt-instructions strong{display:block;margin-bottom:4px;font-size:13px}
+.cbt-instructions p{margin:0;white-space:pre-line;color:#475569;font-size:13px;line-height:1.55}
+.cbt-pending-note{display:flex;gap:10px;align-items:flex-start;margin:14px 0;padding:14px;border-radius:12px;background:#fff8e6;border:1px solid #f0dfae}
+.cbt-pending-note>span{font-size:18px}
+.cbt-pending-note p{margin:0;display:grid;gap:2px}
+.cbt-pending-note small{color:#7a6420}
+.cbt-access-active{display:flex;gap:10px;align-items:flex-start;margin:14px 0;padding:14px;border-radius:12px;background:#edf9f2;border:1px solid #bfe8d4}
+.cbt-access-active>span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#24a36a;color:#fff;font-weight:900}
+.cbt-access-active p{margin:0;display:grid;gap:2px}
+.cbt-payment-form{display:grid;gap:12px;margin-top:8px}
+.cbt-payment-form label{display:grid;gap:6px;font-size:13px;font-weight:750}
+.cbt-payment-form label>span em{font-style:normal;color:var(--muted);font-weight:500}
+.cbt-payment-form textarea{border:1px solid #cfd7e6;border-radius:10px;padding:10px 12px;font:inherit;resize:vertical}
+.cbt-payment-history{display:grid;gap:8px;margin-top:18px;padding-top:14px;border-top:1px solid #e2e8f0}
+.cbt-payment-history>strong{font-size:13px}
+.cbt-payment-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 12px;border-radius:10px;background:#f8fafc;border:1px solid #e8edf5}
+.cbt-payment-row>div{display:grid;gap:1px}
+.cbt-payment-row small{color:var(--muted);font-size:12px}
+.cbt-payment-reason{flex-basis:100%;color:#a52a2a}
+.request-status.trial_available,.request-status.trial_used{background:#eaf2ff;color:#225ac7}
+.request-status.active{background:#e6f7ed;color:#147245}
+.request-status.expired{background:#f1f5f9;color:#475569}
+.request-status.blocked{background:#ffe8e8;color:#a52a2a}
+@media(max-width:760px){
+  .cbt-access-grid{grid-template-columns:1fr}
+  .cbt-access-banner{flex-wrap:wrap}
+  .cbt-access-banner .button{width:100%}
+  .cbt-tariff-card{grid-template-columns:1fr}
+}

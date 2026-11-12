@@ -573,12 +573,26 @@ func writeAdminError(logger *slog.Logger, w http.ResponseWriter, r *http.Request
 	if ok {
 		logger.DebugContext(r.Context(), "admin access trace", "route", r.URL.Path, "actor", claims.Email, "role", claims.Role, "error", err.Error())
 	}
+	var denied *domain.CBTAccessDeniedError
+	if errors.As(err, &denied) {
+		payload := map[string]any{
+			"code":    http.StatusText(http.StatusForbidden),
+			"message": denied.Error(),
+			"error":   denied.Error(),
+			"reason":  denied.Reason,
+		}
+		if denied.Access != nil {
+			payload["access"] = denied.Access
+		}
+		writeJSON(w, http.StatusForbidden, payload)
+		return true
+	}
 	switch {
-	case errors.Is(err, domain.ErrInvalidInput), errors.Is(err, domain.ErrPayoutAccountRequired), errors.Is(err, domain.ErrPayoutMinimum), errors.Is(err, domain.ErrInsufficientPayoutBalance), errors.Is(err, domain.ErrPayoutProofRequired), errors.Is(err, domain.ErrInvalidPayment), errors.Is(err, domain.ErrNotFreePackage), errors.Is(err, domain.ErrInvalidReferralCode), errors.Is(err, domain.ErrInvalidWebhookSignature), errors.Is(err, domain.ErrInvalidPaymentTransition):
+	case errors.Is(err, domain.ErrInvalidInput), errors.Is(err, domain.ErrPayoutAccountRequired), errors.Is(err, domain.ErrPayoutMinimum), errors.Is(err, domain.ErrInsufficientPayoutBalance), errors.Is(err, domain.ErrPayoutProofRequired), errors.Is(err, domain.ErrInvalidPayment), errors.Is(err, domain.ErrNotFreePackage), errors.Is(err, domain.ErrInvalidReferralCode), errors.Is(err, domain.ErrInvalidWebhookSignature), errors.Is(err, domain.ErrInvalidPaymentTransition), errors.Is(err, domain.ErrCBTAccessSettings), errors.Is(err, domain.ErrCBTPaymentNotRequired):
 		writeError(w, 422, err.Error())
-	case errors.Is(err, domain.ErrUserNotFound), errors.Is(err, domain.ErrPackageNotFound), errors.Is(err, domain.ErrExamNotFound), errors.Is(err, domain.ErrQuestionNotFound), errors.Is(err, domain.ErrMasterNotFound), errors.Is(err, domain.ErrPayoutRequestNotFound), errors.Is(err, domain.ErrTransactionNotFound):
+	case errors.Is(err, domain.ErrUserNotFound), errors.Is(err, domain.ErrPackageNotFound), errors.Is(err, domain.ErrExamNotFound), errors.Is(err, domain.ErrQuestionNotFound), errors.Is(err, domain.ErrMasterNotFound), errors.Is(err, domain.ErrPayoutRequestNotFound), errors.Is(err, domain.ErrTransactionNotFound), errors.Is(err, domain.ErrCBTPaymentNotFound), errors.Is(err, domain.ErrCBTTeacherNotFound):
 		writeError(w, 404, err.Error())
-	case errors.Is(err, domain.ErrEmailAlreadyExists), errors.Is(err, domain.ErrAdminConflict), errors.Is(err, domain.ErrDuplicateName), errors.Is(err, domain.ErrDuplicateKode), errors.Is(err, domain.ErrPayoutRequestActive), errors.Is(err, domain.ErrPayoutTransition), errors.Is(err, domain.ErrLastOwnerGuard), errors.Is(err, domain.ErrTransactionNotRefundable), errors.Is(err, domain.ErrPackageHasAttempts), errors.Is(err, domain.ErrPackageInUse), errors.Is(err, domain.ErrExamHasAttempts), errors.Is(err, domain.ErrScreenLockNotLocked):
+	case errors.Is(err, domain.ErrEmailAlreadyExists), errors.Is(err, domain.ErrAdminConflict), errors.Is(err, domain.ErrDuplicateName), errors.Is(err, domain.ErrDuplicateKode), errors.Is(err, domain.ErrPayoutRequestActive), errors.Is(err, domain.ErrPayoutTransition), errors.Is(err, domain.ErrLastOwnerGuard), errors.Is(err, domain.ErrTransactionNotRefundable), errors.Is(err, domain.ErrPackageHasAttempts), errors.Is(err, domain.ErrPackageInUse), errors.Is(err, domain.ErrExamHasAttempts), errors.Is(err, domain.ErrScreenLockNotLocked), errors.Is(err, domain.ErrCBTPaymentTransition), errors.Is(err, domain.ErrCBTPaymentPending):
 		writeError(w, 409, err.Error())
 	case errors.Is(err, domain.ErrExamForbidden):
 		writeError(w, 403, err.Error())

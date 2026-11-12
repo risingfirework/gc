@@ -35,6 +35,7 @@ type RouterOptions struct {
 	ViewRateWindow           time.Duration
 	Admin                    domain.AdminService
 	Teacher                  domain.TeacherService
+	CBTAccess                domain.CBTAccessService
 	Testimonial              domain.TestimonialService
 	Notification             domain.NotificationService
 	Affiliate                domain.AffiliateService
@@ -68,6 +69,10 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 	var analyticsHandler *handler.AnalyticsHandler
 	if analytics != nil {
 		analyticsHandler = handler.NewAnalyticsHandler(analytics, logger)
+	}
+	var cbtAccessHandler *handler.CBTAccessHandler
+	if opts.CBTAccess != nil {
+		cbtAccessHandler = handler.NewCBTAccessHandler(opts.CBTAccess, logger)
 	}
 	router.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -177,7 +182,23 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 				router.Post("/teachers/{id}/verify", adminHandler.ApproveTeacher)
 				router.Post("/teachers/{id}/reject", adminHandler.RejectTeacher)
 				router.Post("/teachers/{id}/simpkb/check", adminHandler.CheckTeacherSIMPKB)
+				if cbtAccessHandler != nil {
+					router.Get("/cbt-access-settings", cbtAccessHandler.AdminSettings)
+					router.Put("/cbt-access-settings", cbtAccessHandler.AdminUpdateSettings)
+					router.Get("/teachers/cbt-access", cbtAccessHandler.AdminTeacherAccess)
+					router.Post("/teachers/{id}/cbt-access/grant", cbtAccessHandler.AdminGrantAccess)
+					router.Post("/teachers/{id}/cbt-access/revoke", cbtAccessHandler.AdminRevokeAccess)
+				}
 			})
+			if cbtAccessHandler != nil {
+				router.Group(func(router chi.Router) {
+					// Verifikasi pembayaran akses CBT: owner, admin, dan finance.
+					router.Use(middleware.RequireRoles(domain.RoleOwner, domain.RoleAdmin, domain.RoleFinance))
+					router.Get("/cbt-payments", cbtAccessHandler.AdminPayments)
+					router.Post("/cbt-payments/{id}/approve", cbtAccessHandler.AdminApprovePayment)
+					router.Post("/cbt-payments/{id}/reject", cbtAccessHandler.AdminRejectPayment)
+				})
+			}
 			router.Group(func(router chi.Router) {
 				// Daftar transaksi tanpa data internal lain: owner/admin/finance.
 				// Refund hanya owner/finance yang diizinkan.
@@ -205,7 +226,7 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 				router.Post("/users", adminHandler.CreateUser)
 				router.Patch("/users/{id}", adminHandler.UpdateUser)
 				router.Delete("/users/{id}", adminHandler.DeleteUser)
-	router.Post("/users/{id}/reset-password", adminHandler.ResetPassword)
+				router.Post("/users/{id}/reset-password", adminHandler.ResetPassword)
 				router.Get("/audit", adminHandler.AuditLogList)
 				if payment != nil {
 					// Integrasi pembayaran: hanya owner yang boleh melihat/mengubah
@@ -257,6 +278,11 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 			router.Put("/questions/{id}", teacherHandler.UpdateQuestion)
 			router.Delete("/questions/{id}", teacherHandler.DeleteQuestion)
 			router.Post("/questions/bulk-delete", teacherHandler.BulkDeleteQuestions)
+			if cbtAccessHandler != nil {
+				router.Get("/cbt-access", cbtAccessHandler.TeacherStatus)
+				router.Get("/cbt-payments", cbtAccessHandler.TeacherPayments)
+				router.Post("/cbt-payments", cbtAccessHandler.TeacherSubmitPayment)
+			}
 		})
 	}
 	router.Group(func(router chi.Router) {

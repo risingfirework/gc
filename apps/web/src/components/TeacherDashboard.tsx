@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { AdminExam, AdminPackage, AdminQuestion, api, CBTPublishSetting, ExamEntry, MasterItem, PackageBundleCreate, SiteSettings, Status, TeacherDashboardData, User } from "@/services/api";
+import { AdminExam, AdminPackage, AdminQuestion, api, APIError, CBTAccessStatus, CBTPublishSetting, ExamEntry, MasterItem, PackageBundleCreate, SiteSettings, Status, TeacherDashboardData, User } from "@/services/api";
 import { PackageExamFields } from "./PackageExamFields";
 import ProfileEditor from "./ProfileEditor";
 import TKAQuestionFields from "./TKAQuestionFields";
@@ -14,6 +14,7 @@ import DataImage from "./DataImage";
 import ConfirmModal from "./ConfirmModal";
 import CBTSettingsPanel from "./CBTSettingsPanel";
 import QuestionShuffleSettings from "./QuestionShuffleSettings";
+import { TeacherCBTAccessBanner, TeacherCBTAccessModal } from "./TeacherCBTAccess";
 
 type TeacherView = "ringkasan" | "katalog" | "cbt" | "komisi" | "pencairan" | "profil";
 type Dialog = { kind: "package"; item?: AdminPackage; defaultExamType?: "sell" | "cbt" } | { kind: "question"; item?: AdminQuestion } | null;
@@ -48,12 +49,15 @@ export default function TeacherDashboard({ user, onLogout, loggingOut, onUserUpd
   const [removeTarget, setRemoveTarget] = useState<{ kind: "package" | "question"; id: string; label: string; isCBT?: boolean } | null>(null);
   const [bulkDeleteTarget, setBulkDeleteTarget] = useState<{ mode: "all" | "selected"; packageId: string; count: number } | null>(null);
   const [cbtSettings, setCbtSettings] = useState<CBTPublishSetting[]>([]);
+  const [cbtAccess, setCbtAccess] = useState<CBTAccessStatus | null>(null);
+  const [cbtAccessModal, setCbtAccessModal] = useState(false);
 
   const verificationStatus = user.teacher_verification_status ?? "approved";
 
   const reload = useCallback(async () => {
     const dashboard = await api.teacherDashboard();
     setData(dashboard);
+    try { setCbtAccess(await api.teacherCBTAccess()); } catch { /* status akses CBT bersifat opsional */ }
   }, []);
   useEffect(() => {
     if ((user.teacher_verification_status ?? "approved") !== "approved") return;
@@ -70,11 +74,28 @@ export default function TeacherDashboard({ user, onLogout, loggingOut, onUserUpd
     if ((user.teacher_verification_status ?? "approved") !== "approved") return;
     api.listMaster("bab-pelajaran").then((items) => setMasters((current) => ({ ...current, "bab-pelajaran": items }))).catch(() => { /* guru memilih bab dari daftar yang tersedia */ });
   }, [user.teacher_verification_status]);
+  useEffect(() => {
+    if ((user.teacher_verification_status ?? "approved") !== "approved") return;
+    api.teacherCBTAccess().then(setCbtAccess).catch(() => { /* kebijakan akses CBT bersifat opsional saat backend lama */ });
+  }, [user.teacher_verification_status]);
+
+  function handleAccessError(reason: unknown): boolean {
+    if (reason instanceof APIError && reason.status === 403) {
+      const payload = reason.payload as { access?: CBTAccessStatus } | undefined;
+      if (payload?.access) {
+        setCbtAccess(payload.access);
+        setCbtAccessModal(true);
+        setDialog(null);
+        return true;
+      }
+    }
+    return false;
+  }
 
   async function action(task: () => Promise<unknown>, success?: string) {
     setSaving("mutation"); setError("");
     try { await task(); await reload(); setDialog(null); if (success) setToast(success); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "Operasi gagal."); }
+    catch (reason) { if (!handleAccessError(reason)) setError(reason instanceof Error ? reason.message : "Operasi gagal."); }
     finally { setSaving(""); }
   }
   function remove(kind: "package" | "question", id: string, label: string, isCBT = false) {
@@ -143,6 +164,14 @@ export default function TeacherDashboard({ user, onLogout, loggingOut, onUserUpd
     setCatalogQuery("");
   };
 
+  function openPackageDialog() {
+    if (view === "cbt" && cbtAccess && !cbtAccess.can_create_cbt) {
+      setCbtAccessModal(true);
+      return;
+    }
+    setDialog(view === "cbt" ? { kind: "package", defaultExamType: "cbt" } : { kind: "package" });
+  }
+
   function pickAppealFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -197,11 +226,12 @@ export default function TeacherDashboard({ user, onLogout, loggingOut, onUserUpd
     <section className="admin-main">
       <header className="admin-topbar"><div><p className="eyebrow">Panel guru</p><h1>{menus.find(([key]) => key === view)?.[1]}</h1></div><button className="admin-identity" onClick={() => navigate("profil")}><span>{(user.name?.trim()||user.email)[0].toUpperCase()}</span><div><strong>{user.name?.trim()||"Nama belum dilengkapi"}</strong><small>{user.email} · Guru</small></div></button></header>
       {error && <p className="error">{error}</p>}{!data && !error && <div className="card">Memuat data guru...</div>}
+      {cbtAccess && <TeacherCBTAccessBanner access={cbtAccess} onOpen={() => setCbtAccessModal(true)} />}
 
       {data && view === "ringkasan" && <div className="admin-view"><div className="admin-stats"><Stat label="Paket Saya" value={data.overview.total_packages} /><Stat label="Ujian" value={data.overview.total_exams} /><Stat label="Soal" value={data.overview.total_questions} /><Stat label="Penjualan" value={data.overview.total_sales} /><Stat label="Pendapatan" value={data.overview.total_revenue} money /></div><section className="teacher-sales-summary"><div className="admin-view-header"><div><p className="eyebrow">Aktivitas terbaru</p><h2>Ringkasan penjualan</h2><p className="muted">Transaksi siswa yang telah berhasil dibayar.</p></div></div><AdminTable headers={["Nomor invoice", "Tanggal transaksi"]}>{recentSales.length ? recentSales.map((item) => <tr key={item.id}><td><strong>{item.invoice_number}</strong></td><td>{new Date(item.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" })}</td></tr>) : <tr><td colSpan={2} className="empty-state">Belum ada transaksi penjualan.</td></tr>}</AdminTable></section></div>}
 
       {data && (view === "katalog" || view === "cbt") && !selectedPackage && <section className="admin-view catalog-admin">
-        <div className="admin-catalog-heading"><div><p className="eyebrow">{view === "cbt" ? "Bank soal CBT milik saya" : "Bank soal milik saya"}</p><h2>{view === "cbt" ? "Paket ujian CBT yang kamu buat" : "Kelola paket, ujian, dan bank soal"}</h2><p className="muted">{view === "cbt" ? "Hanya menampilkan paket dengan tipe CBT." : "Klik salah satu kartu untuk membuka lingkungan pengelolaan lengkap."}</p></div><button className="button" onClick={() => setDialog(view === "cbt" ? { kind: "package", defaultExamType: "cbt" } : { kind: "package" })}>+ Tambah paket</button></div>
+        <div className="admin-catalog-heading"><div><p className="eyebrow">{view === "cbt" ? "Bank soal CBT milik saya" : "Bank soal milik saya"}</p><h2>{view === "cbt" ? "Paket ujian CBT yang kamu buat" : "Kelola paket, ujian, dan bank soal"}</h2><p className="muted">{view === "cbt" ? "Hanya menampilkan paket dengan tipe CBT." : "Klik salah satu kartu untuk membuka lingkungan pengelolaan lengkap."}</p></div><button className="button" onClick={openPackageDialog}>+ Tambah paket</button></div>
         <div className="content-subtabs catalog-status-tabs"><button className={catalogStatusTab === "active" ? "active" : ""} onClick={() => setCatalogStatusTab("active")}>Publish <span>{allPackages.filter((item) => (view === "cbt" ? item.exam_type === "cbt" : item.exam_type !== "cbt") && item.status === "active").length}</span></button><button className={catalogStatusTab === "inactive" ? "active" : ""} onClick={() => setCatalogStatusTab("inactive")}>Menunggu verifikasi <span>{allPackages.filter((item) => (view === "cbt" ? item.exam_type === "cbt" : item.exam_type !== "cbt") && item.status === "inactive").length}</span></button></div>
         <div className="catalog-toolbar"><input className="catalog-search" type="search" placeholder="Cari kode soal atau nama paket..." value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} /></div>
         <div className="admin-package-grid">{visiblePackages.map((item) => <article className={`card admin-package-card ${item.status === "inactive" ? "inactive" : ""}`} key={item.id} onClick={() => setSelectedPackageId(item.id)}><div className="admin-package-card-top"><PackageStatusPill status={item.status} /><span className="package-code">{item.kode}</span></div><span className="package-jenjang">{item.jenjang}</span><span className="package-exam-type">{item.exam_type === "cbt" ? "CBT" : "Sell"}</span>{item.kategori_name ? <small className="package-publisher">Kategori: {item.kategori_name}{item.kelas_name ? ` · Kelas ${item.kelas_name}` : ""}</small> : null}<h3>{item.title}</h3><p>{item.description}</p><strong>{item.price === 0 ? "Gratis" : money.format(item.price)}</strong><small>{(data.exams.filter((exam) => exam.package_id === item.id).length)} ujian · {data.questions.filter((q) => new Set(data.exams.filter((exam) => exam.package_id === item.id).map((exam) => exam.id)).has(q.exam_id)).length} soal</small>{item.publisher_email && <small className="package-publisher">Pembuat: {item.publisher_email}</small>}{item.status === "active" && <CatalogStats sales={item.sales_count} views={item.view_count}/>}<div><button className="table-action" onClick={(event) => { event.stopPropagation(); setDialog({ kind: "package", item }); }}>Edit</button><button className="danger-action" onClick={(event) => { event.stopPropagation(); void remove("package", item.id, item.title, item.exam_type === "cbt"); }}>Hapus</button></div></article>)}
@@ -266,6 +296,7 @@ export default function TeacherDashboard({ user, onLogout, loggingOut, onUserUpd
       if (dialog.kind === "question" && "form" in value) { const form = value.form; const input = { exam_id: String(form.get("exam_id")), subject_name: String(form.get("subject_name")), chapter_name: String(form.get("chapter_name")), content_text: String(form.get("content_text")), question_type: String(form.get("question_type")) as AdminQuestion["question_type"], presentation_type: String(form.get("presentation_type")) as AdminQuestion["presentation_type"], group_code: String(form.get("group_code")), stimulus_text: String(form.get("stimulus_text")), question_image_url: String(form.get("question_image_url")), stimulus_image_url: String(form.get("stimulus_image_url")), category_labels: JSON.parse(String(form.get("category_labels_json"))) as string[], options: JSON.parse(String(form.get("options_json"))) as { key: string; content: string; image_url?: string }[], correct_answer: String(form.get("correct_answer")), score_weight: Number(form.get("score_weight")), explanation_text: String(form.get("explanation_text")), status: String(form.get("status")) as Status }; if (dialog.item) await api.updateTeacherQuestion(dialog.item.id, input); else await api.createTeacherQuestion(input); }
     }, successBox); }} />}
     {payoutModal && data && <PayoutRequestModal available={data.commission_summary.available} minimum={data.finance_settings.minimum_payout} saving={saving === "payout-request"} onClose={() => setPayoutModal(false)} onSubmit={(amount) => { setPayoutModal(false); void requestPayout(amount); }} />}
+    {cbtAccess && <TeacherCBTAccessModal access={cbtAccess} open={cbtAccessModal} onClose={() => setCbtAccessModal(false)} onSubmitted={() => { api.teacherCBTAccess().then(setCbtAccess).catch(() => { /* status akan diperbarui saat halaman dimuat ulang */ }); }} />}
     {toast && <div className="success-toast" role="status"><span>✓</span><p>{toast}</p><button type="button" aria-label="Tutup notifikasi" onClick={() => setToast("")}>×</button></div>}
     {removeTarget && <ConfirmModal title={removeTarget.kind === "package" ? "Hapus paket soal" : "Hapus soal"} message={removeTarget.kind === "package" ? `Paket soal "${removeTarget.label}" beserta seluruh ujian dan soal di dalamnya akan dihapus permanen.${removeTarget.isCBT ? " Untuk paket CBT, data riwayat pengerjaan siswa juga akan dihapus." : ""} Tindakan ini tidak dapat dibatalkan.` : `Soal "${removeTarget.label}" akan dihapus permanen dari bank soal.`} busy={saving === "mutation"} onClose={() => setRemoveTarget(null)} onConfirm={() => void confirmRemove()} />}
     {bulkDeleteTarget && <ConfirmModal title={bulkDeleteTarget.mode === "all" ? "Hapus semua soal" : "Hapus soal terpilih"} message={bulkDeleteTarget.mode === "all" ? `Seluruh ${bulkDeleteTarget.count} soal pada paket "${selectedPackage?.title ?? ""}" akan dihapus permanen. Tindakan ini tidak dapat dibatalkan.` : `${bulkDeleteTarget.count} soal terpilih akan dihapus permanen dari bank soal. Tindakan ini tidak dapat dibatalkan.`} busy={saving === "mutation"} onClose={() => setBulkDeleteTarget(null)} onConfirm={() => void confirmBulkDeleteQuestions()} />}

@@ -146,6 +146,8 @@ func main() {
 	adminService := service.NewAdminService(postgresrepo.NewAdminRepository(db), service.NewSIMPKBClient(cfg.SIMPKBCheckURL))
 	adminService.ConfigurePaymentRefunds(paymentService)
 	teacherService := service.NewTeacherService(postgresrepo.NewTeacherRepository(db))
+	cbtAccessService := service.NewCBTAccessService(postgresrepo.NewCBTAccessRepository(db))
+	teacherService.ConfigureCBTAccess(cbtAccessService)
 	affiliateService := service.NewAffiliateService(postgresrepo.NewAffiliateRepository(db), postgresrepo.NewTeacherRepository(db), cfg.PublicWebURL)
 	testimonialService := service.NewTestimonialService(postgresrepo.NewTestimonialRepository(db))
 	notificationService := domain.NewNotificationService(postgresrepo.NewNotificationRepository(db))
@@ -208,7 +210,7 @@ func main() {
 				TrustProxy:               cfg.TrustProxy,
 				ViewRateLimit:            cfg.PaymentViewRateLimit,
 				ViewRateWindow:           cfg.PaymentViewRateWindow,
-				Admin:                    adminService, Teacher: teacherService, Testimonial: testimonialService, Notification: notificationService, Affiliate: affiliateService,
+				Admin:                    adminService, Teacher: teacherService, Testimonial: testimonialService, Notification: notificationService, Affiliate: affiliateService, CBTAccess: cbtAccessService,
 				Readiness: func(ctx context.Context) error {
 					if err := db.Ping(ctx); err != nil {
 						return fmt.Errorf("postgres: %w", err)

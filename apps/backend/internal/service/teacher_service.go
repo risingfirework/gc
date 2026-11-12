@@ -12,10 +12,32 @@ import (
 var payoutNumberPattern = regexp.MustCompile(`^[0-9]{6,30}$`)
 var payoutPhonePattern = regexp.MustCompile(`^(?:\+62|62|0)[0-9]{8,13}$`)
 
-type TeacherService struct{ repository domain.TeacherRepository }
+type TeacherService struct {
+	repository domain.TeacherRepository
+	access     domain.CBTAccessService
+}
 
 func NewTeacherService(repository domain.TeacherRepository) *TeacherService {
 	return &TeacherService{repository: repository}
+}
+
+// ConfigureCBTAccess memasang layanan kebijakan akses CBT guru. Bila tidak
+// dipasang (mis. pada unit test), pembuatan paket CBT berjalan tanpa gate.
+func (s *TeacherService) ConfigureCBTAccess(access domain.CBTAccessService) {
+	s.access = access
+}
+
+func (s *TeacherService) beginCBTCreation(ctx context.Context, publisherID string) (string, error) {
+	if s.access == nil {
+		return "", nil
+	}
+	return s.access.BeginCBTCreation(ctx, publisherID)
+}
+
+func (s *TeacherService) refundCBTCreation(ctx context.Context, publisherID, token string) {
+	if s.access != nil && token != "" {
+		_ = s.access.RefundCBTCreation(ctx, publisherID, token)
+	}
 }
 func (s *TeacherService) GetDashboard(ctx context.Context, publisherID string) (*domain.TeacherDashboard, error) {
 	return s.repository.GetDashboard(ctx, publisherID)
@@ -32,7 +54,20 @@ func (s *TeacherService) CreatePackage(ctx context.Context, publisherID string, 
 	if validateAdminPackage(input) != nil {
 		return nil, domain.ErrInvalidInput
 	}
-	return s.repository.CreatePackage(ctx, publisherID, input)
+	var token string
+	if input.ExamType == "cbt" {
+		var err error
+		token, err = s.beginCBTCreation(ctx, publisherID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result, err := s.repository.CreatePackage(ctx, publisherID, input)
+	if err != nil {
+		s.refundCBTCreation(ctx, publisherID, token)
+		return nil, err
+	}
+	return result, nil
 }
 func (s *TeacherService) UpdatePackage(ctx context.Context, publisherID, id string, input domain.AdminPackageRequest) (*domain.AdminPackage, error) {
 	input.Title = strings.TrimSpace(input.Title)
@@ -42,13 +77,17 @@ func (s *TeacherService) UpdatePackage(ctx context.Context, publisherID, id stri
 	if !validUUID(id) {
 		return nil, domain.ErrInvalidInput
 	}
-	if input.ExamType == "cbt" && input.StartDate == "" && input.EndDate == "" {
-		existing, err := s.repository.GetPackage(ctx, publisherID, id)
+	var existing *domain.AdminPackage
+	if input.ExamType == "cbt" {
+		current, err := s.repository.GetPackage(ctx, publisherID, id)
 		if err != nil {
 			return nil, err
 		}
-		input.StartDate = strings.TrimSpace(existing.StartDate)
-		input.EndDate = strings.TrimSpace(existing.EndDate)
+		existing = current
+		if input.StartDate == "" && input.EndDate == "" {
+			input.StartDate = strings.TrimSpace(current.StartDate)
+			input.EndDate = strings.TrimSpace(current.EndDate)
+		}
 	}
 	input.Status = domain.StatusInactive
 	applyPackagePolicies(&input)
@@ -58,7 +97,20 @@ func (s *TeacherService) UpdatePackage(ctx context.Context, publisherID, id stri
 	if validateAdminPackage(input) != nil {
 		return nil, domain.ErrInvalidInput
 	}
-	return s.repository.UpdatePackage(ctx, publisherID, id, input)
+	var token string
+	if input.ExamType == "cbt" && existing != nil && existing.ExamType != "cbt" {
+		var err error
+		token, err = s.beginCBTCreation(ctx, publisherID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result, err := s.repository.UpdatePackage(ctx, publisherID, id, input)
+	if err != nil {
+		s.refundCBTCreation(ctx, publisherID, token)
+		return nil, err
+	}
+	return result, nil
 }
 func (s *TeacherService) CreatePackageBundle(ctx context.Context, publisherID string, input domain.PackageBundle) (*domain.AdminPackage, error) {
 	input.Package.Title = strings.TrimSpace(input.Package.Title)
@@ -80,7 +132,20 @@ func (s *TeacherService) CreatePackageBundle(ctx context.Context, publisherID st
 	if validatePackageBundle(input) != nil {
 		return nil, domain.ErrInvalidInput
 	}
-	return s.repository.CreatePackageBundle(ctx, publisherID, input)
+	var token string
+	if input.Package.ExamType == "cbt" {
+		var err error
+		token, err = s.beginCBTCreation(ctx, publisherID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	result, err := s.repository.CreatePackageBundle(ctx, publisherID, input)
+	if err != nil {
+		s.refundCBTCreation(ctx, publisherID, token)
+		return nil, err
+	}
+	return result, nil
 }
 func (s *TeacherService) DeletePackage(ctx context.Context, publisherID, id string) error {
 	if !validUUID(id) {

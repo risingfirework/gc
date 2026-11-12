@@ -32,7 +32,7 @@ function expireSession(message: string) {
 }
 
 export class APIError extends Error {
-  constructor(message: string, public status?: number, public code?: string, public networkError = false) {
+  constructor(message: string, public status?: number, public code?: string, public networkError = false, public payload?: unknown) {
     super(message);
     this.name = "APIError";
   }
@@ -78,7 +78,7 @@ http.interceptors.response.use(
       }
       if (!refreshPromise) expireSession(message);
     }
-    return Promise.reject(new APIError(message, status, body?.code, networkError));
+    return Promise.reject(new APIError(message, status, body?.code, networkError, body));
   },
 );
 
@@ -165,6 +165,15 @@ export type PackageEntry = { title: string; kode: string; description: string; p
 export type PackageBundleCreate = { package: PackageEntry; exam?: ExamEntry; questions?: QuestionEntry[] };
 export type PaymentSettingsInput = { provider?: string; secret_key?: string; webhook_token?: string; base_url?: string; success_redirect_url?: string; failure_redirect_url?: string };
 export type PaymentSettings = { provider: string; environment: string; secret_key_configured: boolean; secret_key_masked?: string; webhook_token_configured: boolean; webhook_token_masked?: string; base_url: string; success_redirect_url: string; failure_redirect_url: string; updated_at: string };
+
+export type CBTAccessMode = "free" | "trial_then_paid" | "paid";
+export type CBTAccessSettings = { access_mode: CBTAccessMode; price_amount: number; currency: string; validity_days: number; free_quota: number; free_quota_reset: "never" | "yearly"; payment_mode: "manual" | "gateway"; payment_instructions: string; contact_info: string; lock_scope: "create_new_cbt" | "all_cbt_features"; allow_manage_existing: boolean; grace_days: number; require_verified_teacher: boolean; updated_at: string };
+export type TeacherCBTEntitlement = { user_id: string; status: "trial_available" | "trial_used" | "active" | "expired" | "pending" | "blocked"; free_quota_used: number; active_from?: string; active_until?: string; source?: "free" | "trial" | "payment" | "admin_grant"; created_at: string; updated_at: string };
+export type TeacherCBTPayment = { id: string; user_id: string; user_email?: string; user_name?: string; amount: number; currency: string; proof_image?: string; note: string; status: "pending" | "approved" | "rejected" | "cancelled"; period_start?: string; period_end?: string; reviewed_by?: string; reviewed_at?: string; rejection_reason: string; created_at: string; updated_at: string };
+export type CBTAccessStatus = { settings: CBTAccessSettings; entitlement: TeacherCBTEntitlement; can_create_cbt: boolean; reason: string; message: string; pending_payment?: TeacherCBTPayment };
+export type TeacherCBTAccessRow = { user_id: string; email: string; name: string; verification_status: string; entitlement: TeacherCBTEntitlement; can_create_cbt: boolean; reason: string; message: string; has_pending_payment: boolean };
+export type CBTPaymentInput = { proof_image: string; note: string };
+export type CBTPaymentReviewInput = { period_start?: string; period_end?: string; note?: string; reason?: string };
 
 export const tokenStore = {
   set(token: string, user?: User) {
@@ -376,4 +385,24 @@ export const api = {
   async adminDeleteTestimonial(id: string) { await http.delete(`/admin/testimonials/${id}`); },
   async paymentSettings() { return (await http.get<{ settings: PaymentSettings }>(`/admin/payment-settings`)).data.settings; },
   async updatePaymentSettings(input: PaymentSettingsInput) { return (await http.put<{ settings: PaymentSettings }>(`/admin/payment-settings`, input)).data.settings; },
+  async adminCBTAccessSettings() { return (await http.get<{ settings: CBTAccessSettings }>("/admin/cbt-access-settings")).data.settings; },
+  async updateAdminCBTAccessSettings(input: Omit<CBTAccessSettings, "updated_at">) { return (await http.put<{ settings: CBTAccessSettings }>("/admin/cbt-access-settings", input)).data.settings; },
+  async adminCBTPayments(page: number = 1, perPage: number = 25, status?: string) {
+    const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    if (status) params.set("status", status);
+    return (await http.get<AdminPage<TeacherCBTPayment>>(`/admin/cbt-payments?${params.toString()}`)).data;
+  },
+  async adminApproveCBTPayment(id: string, input: CBTPaymentReviewInput) { return (await http.post<{ payment: TeacherCBTPayment }>(`/admin/cbt-payments/${id}/approve`, input)).data.payment; },
+  async adminRejectCBTPayment(id: string, input: CBTPaymentReviewInput) { return (await http.post<{ payment: TeacherCBTPayment }>(`/admin/cbt-payments/${id}/reject`, input)).data.payment; },
+  async adminTeacherCBTAccess(page: number = 1, perPage: number = 25, filters: { status?: string; q?: string } = {}) {
+    const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+    if (filters.status) params.set("status", filters.status);
+    if (filters.q) params.set("q", filters.q);
+    return (await http.get<AdminPage<TeacherCBTAccessRow>>(`/admin/teachers/cbt-access?${params.toString()}`)).data;
+  },
+  async adminGrantCBTAccess(id: string, validityDays: number, reason: string) { await http.post(`/admin/teachers/${id}/cbt-access/grant`, { validity_days: validityDays, reason }); },
+  async adminRevokeCBTAccess(id: string, reason: string) { await http.post(`/admin/teachers/${id}/cbt-access/revoke`, { reason }); },
+  async teacherCBTAccess() { return (await http.get<{ access: CBTAccessStatus }>("/teacher/cbt-access")).data.access; },
+  async teacherCBTPayments() { return (await http.get<{ items: TeacherCBTPayment[] }>("/teacher/cbt-payments")).data.items; },
+  async submitTeacherCBTPayment(input: CBTPaymentInput) { return (await http.post<{ payment: TeacherCBTPayment }>("/teacher/cbt-payments", input)).data.payment; },
 };
