@@ -40,7 +40,15 @@ func TestHTTPMetricsUseRoutePattern(t *testing.T) {
 	if !strings.Contains(string(body), want) {
 		t.Fatalf("route metric missing; wanted %q", want)
 	}
-	if strings.Contains(string(body), "123") || strings.Contains(string(body), "secret") {
-		t.Fatal("metrics leaked raw path or query data")
+	// Periksa hanya metrik HTTP milik aplikasi. Nilai metrik runtime Go dapat
+	// memuat angka acak seperti "123" sehingga pemeriksaan seluruh body rawan
+	// gagal secara acak.
+	for _, line := range strings.Split(string(body), "\n") {
+		if !strings.HasPrefix(line, "tka_http_") {
+			continue
+		}
+		if strings.Contains(line, "123") || strings.Contains(line, "secret") {
+			t.Fatalf("metrics leaked raw path or query data: %s", line)
+		}
 	}
 }
