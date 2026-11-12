@@ -241,7 +241,7 @@ func main() {
 		ReadTimeout:  5 * time.Minute,
 		WriteTimeout: 0,
 		IdleTimeout:  60 * time.Second,
-		ErrorLog:          log.New(os.Stderr, "http: ", log.LstdFlags),
+		ErrorLog:     log.New(os.Stderr, "http: ", log.LstdFlags),
 	}
 
 	serverErrors := make(chan error, 1)

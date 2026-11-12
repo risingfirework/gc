@@ -27,21 +27,21 @@ var (
 		"image/gif":  true,
 	}
 	mediaAudioMimes = map[string]bool{
-		"audio/aac":     true,
-		"audio/flac":    true,
-		"audio/mp4":     true,
-		"audio/mpeg":    true,
-		"audio/ogg":     true,
-		"audio/wav":     true,
-		"audio/webm":    true,
-		"audio/x-m4a":   true,
-		"audio/x-wav":   true,
+		"audio/aac":   true,
+		"audio/flac":  true,
+		"audio/mp4":   true,
+		"audio/mpeg":  true,
+		"audio/ogg":   true,
+		"audio/wav":   true,
+		"audio/webm":  true,
+		"audio/x-m4a": true,
+		"audio/x-wav": true,
 	}
 	mediaVideoMimes = map[string]bool{
-		"video/mp4":       true,
-		"video/ogg":       true,
-		"video/quicktime": true,
-		"video/webm":      true,
+		"video/mp4":        true,
+		"video/ogg":        true,
+		"video/quicktime":  true,
+		"video/webm":       true,
 		"video/x-matroska": true,
 	}
 )
