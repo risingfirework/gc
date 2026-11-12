@@ -98,7 +98,18 @@ jobs:
             echo "---- HEALTH ----"
             docker compose --env-file .env.production -f docker-compose.prod.yml ps
             echo "---- LIVE CHECK ----"
-            cd ~/tka && LIVE_CHECK=1 sh scripts/preflight-production.sh
+            cd ~/tka
+            for attempt in $(seq 1 12); do
+              if LIVE_CHECK=1 sh scripts/preflight-production.sh; then
+                break
+              fi
+              if [ "$attempt" -eq 12 ]; then
+                echo "Live check gagal setelah $attempt percobaan"
+                exit 1
+              fi
+              echo "Live check belum siap (percobaan $attempt/12), menunggu 10 detik..."
+              sleep 10
+            done
 
   notify:
     name: Post-deploy health check
