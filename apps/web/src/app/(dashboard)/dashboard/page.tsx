@@ -322,10 +322,10 @@ function DashboardContent() {
       {activeView === "ranking" && <section className="dashboard-section panel-view">
         <div className="section-heading"><div><p className="eyebrow">Ranking global</p><h2>Peringkat persentil jenjang {rankingLevel}</h2></div><span className="muted">Maksimal 100 siswa</span></div>
         <div className="content-subtabs" style={{display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
-          <span style={{fontWeight:700,color:"#3d4257"}}>Jenjang</span>
+          <span style={{fontWeight:700,color:"var(--ink)"}}>Jenjang</span>
           {(["SD", "SMP", "SMA"] as const).map((tab) => <button key={tab} className={rankingLevel === tab ? "active" : ""} onClick={() => setRankingLevel(tab)}>{tab}</button>)}
-          <span style={{width:1,height:20,background:"#dfe2eb",margin:"0 4px"}}/>
-          <span style={{fontWeight:700,color:"#3d4257"}}>Urutkan</span>
+          <span style={{width:1,height:20,background:"var(--border)",margin:"0 4px"}}/>
+          <span style={{fontWeight:700,color:"var(--ink)"}}>Urutkan</span>
           <button className={rankingMode === "score" ? "active" : ""} onClick={() => setRankingMode("score")}>Persentil</button>
           <button className={rankingMode === "activity" ? "active" : ""} onClick={() => setRankingMode("activity")}>Aktivitas</button>
         </div>
