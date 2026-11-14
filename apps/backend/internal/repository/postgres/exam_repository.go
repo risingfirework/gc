@@ -222,6 +222,7 @@ func (r *ExamRepository) StartOrGetUserExam(ctx context.Context, userID, examID 
 func (r *ExamRepository) GetUserExam(ctx context.Context, userExamID, userID string) (*domain.UserExam, *domain.Exam, error) {
 	const query = `
 		SELECT ue.id, ue.user_id, ue.exam_id, ue.status, ue.started_at, ue.finished_at, ue.total_score,
+		       ue.device_id, ue.paused_at, ue.paused_seconds,
 		       e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method, e.created_at,
 		       p.exam_type, e.screen_lock_enabled, e.screen_lock_seconds
 		FROM user_exams ue
@@ -233,6 +234,7 @@ func (r *ExamRepository) GetUserExam(ctx context.Context, userExamID, userID str
 	err := r.db.QueryRow(ctx, query, userExamID, userID).Scan(
 		&attempt.ID, &attempt.UserID, &attempt.ExamID, &attempt.Status,
 		&attempt.StartedAt, &attempt.FinishedAt, &attempt.TotalScore,
+		&attempt.DeviceID, &attempt.PausedAt, &attempt.PausedSeconds,
 		&exam.ID, &exam.PackageID, &exam.Title, &exam.DurationMinutes,
 		&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod, &exam.CreatedAt,
 		&exam.PackageExamType, &exam.ScreenLockEnabled, &exam.ScreenLockSeconds,
@@ -397,7 +399,8 @@ func (r *ExamRepository) ListExpiredUserExams(ctx context.Context, limit int) ([
 		FROM user_exams ue
 		JOIN exams e ON e.id = ue.exam_id
 		WHERE ue.status = 'ongoing'
-		  AND ue.started_at + make_interval(mins => e.duration_minutes) <= NOW()
+		  AND ue.paused_at IS NULL
+		  AND ue.started_at + make_interval(mins => e.duration_minutes) + (ue.paused_seconds * interval '1 second') <= NOW()
 		ORDER BY ue.started_at
 		LIMIT $1`
 	rows, err := r.db.Query(ctx, query, limit)
@@ -572,6 +575,98 @@ func (r *ExamRepository) GrantPackage(ctx context.Context, userID, packageID str
 		return domain.ErrPackageNotFound
 	}
 	return nil
+}
+
+func (r *ExamRepository) PauseUserExam(ctx context.Context, userExamID string, now time.Time) error {
+	tag, err := r.db.Exec(ctx, `UPDATE user_exams SET paused_at = $2 WHERE id = $1 AND status = 'ongoing' AND paused_at IS NULL`, userExamID, now)
+	if err != nil {
+		return fmt.Errorf("pause user exam: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrUserExamNotFound
+	}
+	return nil
+}
+
+func (r *ExamRepository) ResumeUserExam(ctx context.Context, userExamID string, now time.Time) (int, error) {
+	tx, err := r.db.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("begin resume: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var pausedAt time.Time
+	var pausedSeconds int
+	err = tx.QueryRow(ctx, `SELECT paused_at, paused_seconds FROM user_exams WHERE id = $1 AND status = 'ongoing' AND paused_at IS NOT NULL FOR UPDATE`, userExamID).Scan(&pausedAt, &pausedSeconds)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, domain.ErrUserExamNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("select paused: %w", err)
+	}
+	added := int(now.Sub(pausedAt).Seconds())
+	if added < 0 {
+		added = 0
+	}
+	newPaused := pausedSeconds + added
+	tag, err := tx.Exec(ctx, `UPDATE user_exams SET paused_at = NULL, paused_seconds = $2 WHERE id = $1`, userExamID, newPaused)
+	if err != nil {
+		return 0, fmt.Errorf("resume user exam: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return 0, domain.ErrUserExamNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit resume: %w", err)
+	}
+	return newPaused, nil
+}
+
+func (r *ExamRepository) SetUserExamDevice(ctx context.Context, userExamID, deviceID string) error {
+	if strings.TrimSpace(deviceID) == "" {
+		return nil
+	}
+	_, err := r.db.Exec(ctx, `UPDATE user_exams SET device_id = COALESCE(device_id, $2) WHERE id = $1`, userExamID, deviceID)
+	if err != nil {
+		return fmt.Errorf("set device: %w", err)
+	}
+	return nil
+}
+
+func (r *ExamRepository) ClearUserExamDevice(ctx context.Context, userExamID string) error {
+	_, err := r.db.Exec(ctx, `UPDATE user_exams SET device_id = NULL WHERE id = $1`, userExamID)
+	if err != nil {
+		return fmt.Errorf("clear device: %w", err)
+	}
+	return nil
+}
+
+func (r *ExamRepository) GetUserExamByID(ctx context.Context, userExamID string) (*domain.UserExam, *domain.Exam, error) {
+	const query = `
+		SELECT ue.id, ue.user_id, ue.exam_id, ue.status, ue.started_at, ue.finished_at, ue.total_score,
+		       ue.device_id, ue.paused_at, ue.paused_seconds,
+		       e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method, e.created_at,
+		       p.exam_type, e.screen_lock_enabled, e.screen_lock_seconds
+		FROM user_exams ue
+		JOIN exams e ON e.id = ue.exam_id
+		JOIN packages p ON p.id = e.package_id
+		WHERE ue.id = $1`
+	var attempt domain.UserExam
+	var exam domain.Exam
+	err := r.db.QueryRow(ctx, query, userExamID).Scan(
+		&attempt.ID, &attempt.UserID, &attempt.ExamID, &attempt.Status,
+		&attempt.StartedAt, &attempt.FinishedAt, &attempt.TotalScore,
+		&attempt.DeviceID, &attempt.PausedAt, &attempt.PausedSeconds,
+		&exam.ID, &exam.PackageID, &exam.Title, &exam.DurationMinutes,
+		&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod, &exam.CreatedAt,
+		&exam.PackageExamType, &exam.ScreenLockEnabled, &exam.ScreenLockSeconds,
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, domain.ErrUserExamNotFound
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("query user exam: %w", err)
+	}
+	return &attempt, &exam, nil
 }
 
 var _ domain.ExamRepository = (*ExamRepository)(nil)

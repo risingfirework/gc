@@ -64,9 +64,10 @@ type RegisterResponse struct {
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	DeviceID string `json:"device_id,omitempty"` // Accepted for client compatibility; JTI is the session authority.
+	Email     string `json:"email"`
+	Password  string `json:"password"`
+	DeviceID  string `json:"device_id,omitempty"`
+	ForceLogin bool   `json:"force_login,omitempty"`
 }
 
 type LoginResponse struct {

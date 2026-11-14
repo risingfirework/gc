@@ -126,6 +126,10 @@ type TeacherService interface {
 	// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang
 	// siswa pada ujian milik publisher ini.
 	ResetParticipantScreenLock(ctx context.Context, publisherID, examID, userExamID string) error
+	PauseParticipantExam(ctx context.Context, publisherID, examID, userExamID string) error
+	ResumeParticipantExam(ctx context.Context, publisherID, examID, userExamID string) error
+	ResetParticipantDevice(ctx context.Context, publisherID, examID, userExamID string) error
+	GetParticipantExamResult(ctx context.Context, publisherID, examID, userExamID string) (*ExamResultResponse, error)
 	UpdatePayoutAccount(ctx context.Context, publisherID string, input TeacherPayoutAccount) (*TeacherPayoutAccount, error)
 	CreatePayoutRequest(ctx context.Context, publisherID string, amount float64) (*TeacherWithdrawalRequest, error)
 	CancelPayoutRequest(ctx context.Context, publisherID, requestID string) (*TeacherWithdrawalRequest, error)

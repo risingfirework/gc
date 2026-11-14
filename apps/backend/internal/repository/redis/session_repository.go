@@ -12,18 +12,24 @@ import (
 )
 
 const defaultSessionPrefix = "tka:auth:session:"
+const defaultDevicePrefix = "tka:auth:device:"
 
 type SessionRepository struct {
 	client goredis.UniversalClient
 	prefix string
+	devicePrefix string
 }
 
 func NewSessionRepository(client goredis.UniversalClient) *SessionRepository {
-	return &SessionRepository{client: client, prefix: defaultSessionPrefix}
+	return &SessionRepository{client: client, prefix: defaultSessionPrefix, devicePrefix: defaultDevicePrefix}
 }
 
-func (r *SessionRepository) SetSession(ctx context.Context, userID, jti string, ttl time.Duration) error {
-	return r.client.Set(ctx, r.key(userID), jti, ttl).Err()
+func (r *SessionRepository) SetSession(ctx context.Context, userID, jti, deviceID string, ttl time.Duration) error {
+	pipe := r.client.Pipeline()
+	pipe.Set(ctx, r.key(userID), jti, ttl)
+	pipe.Set(ctx, r.deviceKey(userID), deviceID, ttl)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (r *SessionRepository) GetSession(ctx context.Context, userID string) (string, error) {
@@ -37,12 +43,26 @@ func (r *SessionRepository) GetSession(ctx context.Context, userID string) (stri
 	return jti, nil
 }
 
+func (r *SessionRepository) GetSessionDevice(ctx context.Context, userID string) (string, error) {
+	deviceID, err := r.client.Get(ctx, r.deviceKey(userID)).Result()
+	if errors.Is(err, goredis.Nil) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return deviceID, nil
+}
+
 func (r *SessionRepository) DeleteSession(ctx context.Context, userID string) error {
-	return r.client.Del(ctx, r.key(userID)).Err()
+	return r.client.Del(ctx, r.key(userID), r.deviceKey(userID)).Err()
 }
 
 func (r *SessionRepository) key(userID string) string {
 	return r.prefix + userID
+}
+func (r *SessionRepository) deviceKey(userID string) string {
+	return r.devicePrefix + userID
 }
 
 // MarkTOTPUsed menyimpan penanda kode TOTP yang sudah dipakai. Nilai balik

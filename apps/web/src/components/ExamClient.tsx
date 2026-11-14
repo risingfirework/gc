@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { APIError, api, ExamStartResponse, ScreenLockResponse, SiteSettings, SubmitExamResponse } from "@/services/api";
+import { APIError, api, ExamStartResponse, ScreenLockResponse, SiteSettings, SubmitExamResponse, SESSION_INVALID_EVENT } from "@/services/api";
 import { AntiCheatEvent, useAntiCheat } from "@/hooks/useAntiCheat";
 import { useCBTAutoSave } from "@/hooks/useCBTAutoSave";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -34,6 +34,8 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   const [screenLocked, setScreenLocked] = useState(false);
   const [screenLockSeconds, setScreenLockSeconds] = useState(0);
   const [screenLockViolations, setScreenLockViolations] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const online = useOnlineStatus();
   const submissionStarted = useRef(false);
   const clockOffsetRef = useRef(0);
@@ -50,14 +52,23 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
       setClockOffset(offset);
       setExam(payload);
       setRemainingSeconds(payload.remaining_seconds);
+      setPaused(Boolean(payload.paused));
+      // Merge jawaban server + localStorage (local menang jika ada).
+      const merged: Record<string, string> = { ...(payload.answers ?? {}) };
+      let doubtfulSet = new Set<string>();
       try {
         const stored = localStorage.getItem(`tka:cbt:${payload.user_exam_id}`);
         if (stored) {
           const parsed = JSON.parse(stored) as StoredExamState;
-          setAnswers(parsed.answers ?? {});
-          setDoubtful(new Set(parsed.doubtful ?? []));
+          for (const [k, v] of Object.entries(parsed.answers ?? {})) {
+            if (v) merged[k] = v;
+          }
+          doubtfulSet = new Set(parsed.doubtful ?? []);
         }
       } catch { localStorage.removeItem(`tka:cbt:${payload.user_exam_id}`); }
+      setAnswers(merged);
+      setDoubtful(doubtfulSet);
+      // Hydrasi status layar kunci dari server ditangani oleh effect terpisah.
     }).catch((reason: unknown) => {
       if (!active) return;
       const message = reason instanceof Error ? reason.message : "";
@@ -102,6 +113,7 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   useEffect(() => {
     if (!exam || result) return;
     const update = () => {
+      if (paused) return;
       const seconds = Math.max(0, Math.ceil((Date.parse(exam.ends_at) - (Date.now() + clockOffset)) / 1000));
       setRemainingSeconds(seconds);
       if (seconds === 0) void submitAttempt(true);
@@ -111,7 +123,7 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
     window.addEventListener("focus", update);
     document.addEventListener("visibilitychange", update);
     return () => { window.clearInterval(timer); window.removeEventListener("focus", update); document.removeEventListener("visibilitychange", update); };
-  }, [clockOffset, exam, result, submitAttempt]);
+  }, [clockOffset, exam, result, submitAttempt, paused]);
 
   const reportViolation = useCallback((event: AntiCheatEvent) => {
     setViolations((current) => [...current.slice(-49), event]);
@@ -146,6 +158,12 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
     setScreenLocked(true);
     setScreenLockSeconds(seconds);
   }, []);
+
+  useEffect(() => {
+    if (!exam || !exam.screen_lock_enabled || exam.exam_type !== "cbt") return;
+    api.examScreenLock(exam.user_exam_id).then(applyScreenLock).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exam?.user_exam_id, applyScreenLock]);
 
   const reportScreenLockViolation = useCallback(async (event: string) => {
     if (!exam || result || submissionStarted.current) return;
@@ -200,6 +218,34 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
     }, 2000);
     return () => window.clearInterval(poll);
   }, [applyScreenLock, exam, screenLocked]);
+
+  // Polling status timer untuk mendeteksi jeda/lanjut dari pengawas.
+  useEffect(() => {
+    if (!exam || result) return;
+    let active = true;
+    const poll = async () => {
+      try {
+        const t = await api.examTimer(exam.user_exam_id);
+        if (!active) return;
+        const offset = Date.parse(t.server_time) - Date.now();
+        clockOffsetRef.current = offset;
+        setClockOffset(offset);
+        setPaused(t.paused);
+        setRemainingSeconds(t.remaining_seconds);
+        setExam((prev) => prev ? { ...prev, ends_at: t.expires_at, remaining_seconds: t.remaining_seconds } : prev);
+      } catch { /* ignore */ }
+    };
+    void poll();
+    const id = window.setInterval(() => void poll(), 5000);
+    return () => { active = false; window.clearInterval(id); };
+  }, [exam, result]);
+
+  // Dengarkan sesi berakhir tanpa redirect paksa di halaman ujian.
+  useEffect(() => {
+    const handler = () => setSessionExpired(true);
+    window.addEventListener(SESSION_INVALID_EVENT, handler);
+    return () => window.removeEventListener(SESSION_INVALID_EVENT, handler);
+  }, []);
 
   // Peringatan native browser agar tab tidak ditutup begitu saja saat terkunci.
   useEffect(() => {
@@ -261,6 +307,7 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   const timerState = remainingSeconds <= 120 ? "critical" : remainingSeconds <= 600 ? "warn" : "";
   return <main className="cbt-page">
     {!online && <div className="connection-banner offline">Offline — jawaban ditahan di perangkat dan dikirim otomatis saat tersambung.</div>}
+    {paused && <div className="connection-banner saved">Ujian sedang dijeda oleh pengawas. Waktu berhenti sementara.</div>}
     {online && autoSaveState === "saved" && <div className="connection-banner saved">Jawaban tersimpan</div>}
     <div className="container">
       <header className="exam-header">
@@ -311,5 +358,6 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
           {unansweredCount > 0 && <p className="submit-summary-warning">Masih ada {unansweredCount} soal belum terjawab. Anda tetap dapat mengumpulkan ujian sekarang.</p>}
           <div className="verify-modal-actions"><button type="button" className="verify-cancel" disabled={submitting} onClick={() => setConfirmSubmit(false)}>Kembali ke ujian</button><button type="button" className="verify-confirm-approve" disabled={submitting} onClick={() => { setConfirmSubmit(false); void submitAttempt(false); }}>{submitting ? "Mengirim..." : "Ya, kumpulkan ujian"}</button></div></section></div>, document.body)}
     {screenLocked && createPortal(<div className="screen-lock-backdrop" role="alertdialog" aria-modal="true" aria-labelledby="screen-lock-title" onContextMenu={(event) => event.preventDefault()}><section className="screen-lock-card"><svg className="screen-lock-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M17 9V7a5 5 0 0 0-10 0v2H5v12h14V9h-2Zm-8-2a3 3 0 0 1 6 0v2H9V7Z"/></svg><h2 id="screen-lock-title">Layar terkunci</h2><p>Anda terdeteksi meninggalkan halaman ujian. Layar akan terbuka otomatis, atau hubungi pengawas untuk dibuka.</p><div className="screen-lock-countdown" aria-live="assertive">{screenLockSeconds}</div><small>Pelanggaran tercatat: {screenLockViolations}</small></section></div>, document.body)}
+    {sessionExpired && createPortal(<div className="verify-modal-backdrop" role="presentation"><section className="verify-modal" role="dialog" aria-modal="true"><p className="eyebrow">Sesi berakhir</p><h2>Sesi Anda berakhir</h2><p className="muted">Silakan masuk kembali untuk melanjutkan ujian. Jawaban yang sudah tersimpan tetap aman.</p><div className="verify-modal-actions"><Link className="button" href="/login?reason=session-expired">Masuk kembali</Link></div></section></div>, document.body)}
   </main>;
 }

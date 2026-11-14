@@ -73,7 +73,7 @@ func (s *CBTService) LookupCBT(ctx context.Context, userID, token string) ([]dom
 	return s.exams.LookupCBTByToken(ctx, provided, userID)
 }
 
-func (s *CBTService) StartExam(ctx context.Context, userID, examID, token string) (*domain.ExamStartResponse, error) {
+func (s *CBTService) StartExam(ctx context.Context, userID, examID, token, deviceID string) (*domain.ExamStartResponse, error) {
 	if !validUUID(userID) || !validUUID(examID) {
 		return nil, domain.ErrExamNotFound
 	}
@@ -117,31 +117,60 @@ func (s *CBTService) StartExam(ctx context.Context, userID, examID, token string
 	if err != nil {
 		return nil, err
 	}
+	// Binding perangkat: attempt yang sudah dimulai di perangkat lain ditolak.
+	if strings.TrimSpace(deviceID) != "" {
+		if attempt.DeviceID != "" && attempt.DeviceID != deviceID {
+			return nil, domain.ErrExamDeviceMismatch
+		}
+		if attempt.DeviceID == "" {
+			_ = s.exams.SetUserExamDevice(ctx, attempt.ID, deviceID)
+			attempt.DeviceID = deviceID
+		}
+	}
 	if attempt.Status == "submitted" {
 		return nil, domain.ErrExamAlreadySubmitted
 	}
-	expiresAt := attempt.StartedAt.Add(time.Duration(exam.DurationMinutes) * time.Minute)
-	if !now.Before(expiresAt) {
+	expiresAt := attempt.StartedAt.Add(time.Duration(exam.DurationMinutes)*time.Minute).Add(time.Duration(attempt.PausedSeconds) * time.Second)
+	paused := attempt.PausedAt != nil
+	if !paused && !now.Before(expiresAt) {
 		_, _ = s.SubmitExam(ctx, userID, attempt.ID)
 		return nil, domain.ErrExamExpired
 	}
-	timer := domain.ExamTimer{UserExamID: attempt.ID, UserID: userID, ExamID: examID, StartedAt: attempt.StartedAt, ExpiresAt: expiresAt}
+	timer := domain.ExamTimer{UserExamID: attempt.ID, UserID: userID, ExamID: examID, StartedAt: attempt.StartedAt, ExpiresAt: expiresAt, PausedAt: attempt.PausedAt, PausedSeconds: attempt.PausedSeconds}
 	if err := s.cache.SetTimer(ctx, timer); err != nil {
-		// PostgreSQL timestamps remain authoritative; SyncAnswer will use its durable fallback.
 		s.logger.WarnContext(ctx, "Redis timer unavailable; using database fallback", "user_exam_id", attempt.ID, "error", err)
+	}
+	// Hidrasi jawaban tersimpan.
+	answers := map[string]string{}
+	if pgAnswers, dbErr := s.exams.GetPersistedAnswers(ctx, attempt.ID, userID); dbErr == nil {
+		for q, a := range pgAnswers {
+			answers[q] = a
+		}
+	}
+	if cached, cErr := s.cache.GetAnswers(ctx, attempt.ID); cErr == nil {
+		for q, a := range cached {
+			answers[q] = a
+		}
 	}
 	publicQuestions := applyDisplayShuffle(questions, s.userExamShuffle(ctx, attempt.ID))
 	if exam.TotalQuestions > 0 && len(publicQuestions) > exam.TotalQuestions {
 		s.logger.WarnContext(ctx, "exam question count exceeds total_questions", "exam_id", exam.ID, "total_questions", exam.TotalQuestions, "loaded", len(publicQuestions))
 		publicQuestions = publicQuestions[:exam.TotalQuestions]
 	}
+	remaining := remainingSeconds(expiresAt, now)
+	if paused && attempt.PausedAt != nil {
+		remaining = remainingSeconds(expiresAt, *attempt.PausedAt)
+	}
 	return &domain.ExamStartResponse{
 		UserExamID: attempt.ID, ExamID: exam.ID, Title: exam.Title, Status: attempt.Status,
 		ServerTime: now, StartedAt: attempt.StartedAt, EndsAt: expiresAt,
-		RemainingSeconds: remainingSeconds(expiresAt, now), DurationMinutes: exam.DurationMinutes,
+		RemainingSeconds: remaining, DurationMinutes: exam.DurationMinutes,
 		ExamType:          exam.PackageExamType,
 		ScreenLockEnabled: s.screenLockEnforced(exam.PackageExamType, exam.ScreenLockEnabled),
-		Questions:         publicQuestions,
+		Paused:           paused,
+		PausedAt:         attempt.PausedAt,
+		Answers:          answers,
+		Questions:        publicQuestions,
 	}, nil
 }
 
@@ -269,6 +298,10 @@ func (s *CBTService) SyncAnswer(ctx context.Context, userID string, input domain
 		return nil, domain.ErrInvalidAnswer
 	}
 	now := s.now().UTC()
+	// Cek jeda.
+	if t, err := s.cache.GetTimer(ctx, input.ExamID); err == nil && t != nil && t.UserID == userID && t.PausedAt != nil {
+		return nil, domain.ErrExamPaused
+	}
 	remaining, err := s.cache.SaveAnswer(ctx, input.ExamID, userID, input.QuestionID, input.SelectedOption, now)
 	if err == nil {
 		return &domain.SyncAnswerResponse{Saved: true, SyncedAt: now, RemainingSeconds: int64(math.Ceil(remaining.Seconds()))}, nil
@@ -292,7 +325,10 @@ func (s *CBTService) SyncAnswer(ctx context.Context, userID string, input domain
 	if attempt.Status == "submitted" {
 		return nil, domain.ErrExamAlreadySubmitted
 	}
-	expiresAt := attempt.StartedAt.Add(time.Duration(exam.DurationMinutes) * time.Minute)
+	if attempt.PausedAt != nil {
+		return nil, domain.ErrExamPaused
+	}
+	expiresAt := attempt.StartedAt.Add(time.Duration(exam.DurationMinutes)*time.Minute).Add(time.Duration(attempt.PausedSeconds) * time.Second)
 	if !now.Before(expiresAt) {
 		_, _ = s.SubmitExam(ctx, userID, input.ExamID)
 		return nil, domain.ErrExamExpired
@@ -407,6 +443,98 @@ func (s *CBTService) grantPackageAccess(ctx context.Context, userID, packageID s
 	if err := s.access.GrantPackage(ctx, userID, packageID, s.now().UTC()); err != nil {
 		s.logger.WarnContext(ctx, "failed to grant package access after submit", "package_id", packageID, "error", err)
 	}
+}
+
+func (s *CBTService) GetTimerStatus(ctx context.Context, userID, userExamID string) (*domain.ExamTimerStatus, error) {
+	if !validUUID(userID) || !validUUID(userExamID) {
+		return nil, domain.ErrUserExamNotFound
+	}
+	attempt, exam, err := s.exams.GetUserExam(ctx, userExamID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if attempt.Status == "submitted" {
+		return nil, domain.ErrExamAlreadySubmitted
+	}
+	now := s.now().UTC()
+	expiresAt := attempt.StartedAt.Add(time.Duration(exam.DurationMinutes)*time.Minute).Add(time.Duration(attempt.PausedSeconds) * time.Second)
+	paused := attempt.PausedAt != nil
+	remaining := remainingSeconds(expiresAt, now)
+	if paused && attempt.PausedAt != nil {
+		remaining = remainingSeconds(expiresAt, *attempt.PausedAt)
+	}
+	// refresh timer cache
+	_ = s.cache.SetTimer(ctx, domain.ExamTimer{UserExamID: attempt.ID, UserID: userID, ExamID: exam.ID, StartedAt: attempt.StartedAt, ExpiresAt: expiresAt, PausedAt: attempt.PausedAt, PausedSeconds: attempt.PausedSeconds})
+	return &domain.ExamTimerStatus{UserExamID: userExamID, RemainingSeconds: remaining, Paused: paused, PausedAt: attempt.PausedAt, ServerTime: now, ExpiresAt: expiresAt}, nil
+}
+
+func (s *CBTService) PauseUserExam(ctx context.Context, userExamID string) error {
+	if !validUUID(userExamID) {
+		return domain.ErrUserExamNotFound
+	}
+	attempt, exam, err := s.exams.GetUserExamByID(ctx, userExamID)
+	if err != nil {
+		return err
+	}
+	if attempt.Status == "submitted" {
+		return domain.ErrExamAlreadySubmitted
+	}
+	now := s.now().UTC()
+	if err := s.exams.PauseUserExam(ctx, userExamID, now); err != nil {
+		return err
+	}
+	// update cache
+	expiresAt := attempt.StartedAt.Add(time.Duration(exam.DurationMinutes)*time.Minute).Add(time.Duration(attempt.PausedSeconds) * time.Second)
+	pausedAt := now
+	_ = s.cache.SetTimer(ctx, domain.ExamTimer{UserExamID: attempt.ID, UserID: attempt.UserID, ExamID: exam.ID, StartedAt: attempt.StartedAt, ExpiresAt: expiresAt, PausedAt: &pausedAt, PausedSeconds: attempt.PausedSeconds})
+	return nil
+}
+
+func (s *CBTService) ResumeUserExam(ctx context.Context, userExamID string) error {
+	if !validUUID(userExamID) {
+		return domain.ErrUserExamNotFound
+	}
+	attempt, exam, err := s.exams.GetUserExamByID(ctx, userExamID)
+	if err != nil {
+		return err
+	}
+	if attempt.Status == "submitted" {
+		return domain.ErrExamAlreadySubmitted
+	}
+	now := s.now().UTC()
+	newPaused, err := s.exams.ResumeUserExam(ctx, userExamID, now)
+	if err != nil {
+		return err
+	}
+	expiresAt := attempt.StartedAt.Add(time.Duration(exam.DurationMinutes)*time.Minute).Add(time.Duration(newPaused) * time.Second)
+	_ = s.cache.SetTimer(ctx, domain.ExamTimer{UserExamID: attempt.ID, UserID: attempt.UserID, ExamID: exam.ID, StartedAt: attempt.StartedAt, ExpiresAt: expiresAt, PausedSeconds: newPaused})
+	return nil
+}
+
+func (s *CBTService) ResetUserExamDevice(ctx context.Context, userExamID string) error {
+	if !validUUID(userExamID) {
+		return domain.ErrUserExamNotFound
+	}
+	return s.exams.ClearUserExamDevice(ctx, userExamID)
+}
+
+func (s *CBTService) GetUserExamAnswers(ctx context.Context, userExamID, userID string) (map[string]string, error) {
+	attempt, _, err := s.exams.GetUserExam(ctx, userExamID, userID)
+	if err != nil {
+		return nil, err
+	}
+	answers := map[string]string{}
+	if pg, err := s.exams.GetPersistedAnswers(ctx, attempt.ID, userID); err == nil {
+		for k, v := range pg {
+			answers[k] = v
+		}
+	}
+	if cached, err := s.cache.GetAnswers(ctx, attempt.ID); err == nil {
+		for k, v := range cached {
+			answers[k] = v
+		}
+	}
+	return answers, nil
 }
 
 func (s *CBTService) AutoSubmitTask(ctx context.Context) error {

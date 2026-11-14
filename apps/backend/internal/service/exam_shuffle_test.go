@@ -130,7 +130,7 @@ func TestStartExamAppliesPersistedShuffle(t *testing.T) {
 			testQuestionTwo: {"A", "B"},
 		},
 	}
-	response, err := service.StartExam(context.Background(), testUserID, testExamID, "")
+	response, err := service.StartExam(context.Background(), testUserID, testExamID, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

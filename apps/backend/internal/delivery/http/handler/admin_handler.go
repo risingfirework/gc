@@ -432,6 +432,35 @@ func (h *AdminHandler) ResetParticipantScreenLock(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, map[string]any{"reset": true})
 }
 
+func (h *AdminHandler) PauseParticipantExam(w http.ResponseWriter, r *http.Request) {
+	if err := h.service.PauseParticipantExam(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "userExamId")); err != nil {
+		if writeAdminError(h.logger, w, r, err) { return }
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"paused": true})
+}
+
+func (h *AdminHandler) ResumeParticipantExam(w http.ResponseWriter, r *http.Request) {
+	if err := h.service.ResumeParticipantExam(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "userExamId")); err != nil {
+		if writeAdminError(h.logger, w, r, err) { return }
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"resumed": true})
+}
+
+func (h *AdminHandler) ResetParticipantDevice(w http.ResponseWriter, r *http.Request) {
+	if err := h.service.ResetParticipantDevice(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "userExamId")); err != nil {
+		if writeAdminError(h.logger, w, r, err) { return }
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reset": true})
+}
+
+func (h *AdminHandler) ParticipantExamResult(w http.ResponseWriter, r *http.Request) {
+	result, err := h.service.GetParticipantExamResult(r.Context(), chi.URLParam(r, "id"), chi.URLParam(r, "userExamId"))
+	if err != nil {
+		if writeAdminError(h.logger, w, r, err) { return }
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (h *AdminHandler) CreateQuestion(w http.ResponseWriter, r *http.Request) {
 	var input domain.AdminQuestionRequest
 	if decodeJSON(w, r, &input) != nil {

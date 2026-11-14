@@ -49,8 +49,9 @@ type ProfileUpdate struct {
 }
 
 type SessionRepository interface {
-	SetSession(ctx context.Context, userID, jti string, ttl time.Duration) error
+	SetSession(ctx context.Context, userID, jti, deviceID string, ttl time.Duration) error
 	GetSession(ctx context.Context, userID string) (string, error)
+	GetSessionDevice(ctx context.Context, userID string) (string, error)
 	DeleteSession(ctx context.Context, userID string) error
 }
 
@@ -95,6 +96,7 @@ type PasswordResetMailer interface {
 type GoogleAuthRequest struct {
 	IDToken     string `json:"id_token"`
 	SchoolLevel string `json:"school_level"`
+	DeviceID    string `json:"device_id,omitempty"`
 }
 
 type AuthService interface {
@@ -108,7 +110,7 @@ type AuthService interface {
 	ValidateAccessToken(ctx context.Context, token string) (*AuthClaims, error)
 	ForgotPassword(ctx context.Context, input ForgotPasswordRequest) (*ForgotPasswordResponse, error)
 	ResetPassword(ctx context.Context, input ResetPasswordRequest) error
-	Verify2FA(ctx context.Context, mfaToken, code string) (*LoginResponse, error)
+	Verify2FA(ctx context.Context, mfaToken, code, deviceID string) (*LoginResponse, error)
 	Setup2FA(ctx context.Context, claims AuthClaims) (*TwoFactorSetupResponse, error)
 	Enable2FA(ctx context.Context, claims AuthClaims, code, password string) error
 	Disable2FA(ctx context.Context, claims AuthClaims, code, password string) error

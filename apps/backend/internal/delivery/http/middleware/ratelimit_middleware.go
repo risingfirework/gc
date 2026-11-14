@@ -65,7 +65,7 @@ func rateLimitKey(r *http.Request, trustProxy bool) (string, []byte) {
 	raw, _ := io.ReadAll(r.Body)
 	email := ""
 
-	if strings.HasSuffix(r.URL.Path, "/login") && len(raw) > 0 {
+	if (strings.HasSuffix(r.URL.Path, "/login") || strings.HasSuffix(r.URL.Path, "/register")) && len(raw) > 0 {
 		var parsed struct {
 			Email string `json:"email"`
 		}

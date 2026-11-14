@@ -25,14 +25,14 @@ type authStub struct {
 }
 
 type cbtStub struct {
-	start func(context.Context, string, string, string) (*domain.ExamStartResponse, error)
+	start func(context.Context, string, string, string, string) (*domain.ExamStartResponse, error)
 }
 
 func (s cbtStub) LookupCBT(context.Context, string, string) ([]domain.CBTLookupPackage, error) {
 	return nil, nil
 }
-func (s cbtStub) StartExam(ctx context.Context, userID, examID, token string) (*domain.ExamStartResponse, error) {
-	return s.start(ctx, userID, examID, token)
+func (s cbtStub) StartExam(ctx context.Context, userID, examID, token, deviceID string) (*domain.ExamStartResponse, error) {
+	return s.start(ctx, userID, examID, token, deviceID)
 }
 func (s cbtStub) ListPackageExams(context.Context, string, string) ([]domain.ExamSummary, error) {
 	return nil, nil
@@ -52,6 +52,14 @@ func (s cbtStub) ReportViolation(context.Context, string, string, string) (*doma
 func (s cbtStub) GetScreenLock(context.Context, string, string) (*domain.ReportViolationResponse, error) {
 	return &domain.ReportViolationResponse{}, nil
 }
+
+func (s cbtStub) GetTimerStatus(context.Context, string, string) (*domain.ExamTimerStatus, error) {
+	return &domain.ExamTimerStatus{}, nil
+}
+func (s cbtStub) PauseUserExam(context.Context, string) error { return nil }
+func (s cbtStub) ResumeUserExam(context.Context, string) error { return nil }
+func (s cbtStub) ResetUserExamDevice(context.Context, string) error { return nil }
+func (s cbtStub) GetUserExamAnswers(context.Context, string, string) (map[string]string, error) { return nil, nil }
 
 func (s authStub) Register(ctx context.Context, input domain.RegisterRequest) (*domain.RegisterResponse, error) {
 	return s.register(ctx, input)
@@ -92,7 +100,7 @@ func (s authStub) ResetPassword(ctx context.Context, input domain.ResetPasswordR
 	}
 	return s.reset(ctx, input)
 }
-func (s authStub) Verify2FA(context.Context, string, string) (*domain.LoginResponse, error) {
+func (s authStub) Verify2FA(context.Context, string, string, string) (*domain.LoginResponse, error) {
 	return nil, domain.ErrInvalid2FACode
 }
 func (s authStub) Setup2FA(context.Context, domain.AuthClaims) (*domain.TwoFactorSetupResponse, error) {
@@ -268,7 +276,7 @@ func TestCBTRouteRequiresJWTAndPassesAuthenticatedUser(t *testing.T) {
 			return &domain.AuthClaims{UserID: userID, JTI: "jti"}, nil
 		},
 	}
-	cbt := cbtStub{start: func(_ context.Context, gotUserID, gotExamID, gotToken string) (*domain.ExamStartResponse, error) {
+	cbt := cbtStub{start: func(_ context.Context, gotUserID, gotExamID, gotToken, _ string) (*domain.ExamStartResponse, error) {
 		if gotUserID != userID || gotExamID != examID {
 			t.Fatalf("user=%s exam=%s", gotUserID, gotExamID)
 		}

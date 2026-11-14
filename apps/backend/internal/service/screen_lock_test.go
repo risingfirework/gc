@@ -313,7 +313,7 @@ func TestStartExamMenyertakanFlagPenguncianLayar(t *testing.T) {
 		service := NewCBTService(exams, &fakeCBTRepository{}, slog.New(slog.NewTextHandler(io.Discard, nil))).WithScreenLockRepository(locks)
 		service.now = func() time.Time { return now }
 
-		response, err := service.StartExam(context.Background(), testUserID, testExamID, tc.token)
+		response, err := service.StartExam(context.Background(), testUserID, testExamID, tc.token, "")
 		if err != nil {
 			t.Fatalf("StartExam(%s) error: %v", tc.examType, err)
 		}

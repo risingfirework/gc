@@ -78,6 +78,14 @@ func (f *fakeExamRepository) SubmitUserExam(_ context.Context, _, _ string, answ
 func (f *fakeExamRepository) ListExpiredUserExams(context.Context, int) ([]domain.ExpiredUserExam, error) {
 	return f.expired, nil
 }
+func (f *fakeExamRepository) PauseUserExam(context.Context, string, time.Time) error { return nil }
+func (f *fakeExamRepository) ResumeUserExam(context.Context, string, time.Time) (int, error) { return f.attempt.PausedSeconds, nil }
+func (f *fakeExamRepository) SetUserExamDevice(context.Context, string, string) error { return nil }
+func (f *fakeExamRepository) ClearUserExamDevice(context.Context, string) error { return nil }
+func (f *fakeExamRepository) GetUserExamByID(context.Context, string) (*domain.UserExam, *domain.Exam, error) {
+	attempt, exam := f.attempt, f.exam
+	return &attempt, &exam, nil
+}
 
 type fakeExamAccessRepository struct {
 	active  map[string]bool
@@ -131,6 +139,13 @@ func (f *fakeCBTRepository) LockAnswersForSubmit(context.Context, string, string
 }
 func (f *fakeCBTRepository) ReleaseSubmitLock(context.Context, string, string) error { return nil }
 func (f *fakeCBTRepository) DeleteState(context.Context, string) error               { f.deleted = true; return nil }
+func (f *fakeCBTRepository) GetAnswers(context.Context, string) (map[string]string, error) {
+	result := make(map[string]string, len(f.answers))
+	for k, v := range f.answers {
+		result[k] = v
+	}
+	return result, nil
+}
 
 func newCBTFixture() (*CBTService, *fakeExamRepository, *fakeCBTRepository) {
 	now := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
@@ -151,7 +166,7 @@ func newCBTFixture() (*CBTService, *fakeExamRepository, *fakeCBTRepository) {
 
 func TestStartExamDoesNotExposeCorrectAnswers(t *testing.T) {
 	service, _, cache := newCBTFixture()
-	response, err := service.StartExam(context.Background(), testUserID, testExamID, "")
+	response, err := service.StartExam(context.Background(), testUserID, testExamID, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,7 +258,7 @@ func TestStartExamAllowsCBTWithTokenWithoutOwnership(t *testing.T) {
 	exams.exam.PackageID = testPackageID
 	service.access = &fakeExamAccessRepository{active: map[string]bool{}}
 
-	if _, err := service.StartExam(context.Background(), testUserID, testExamID, "ABC123"); err != nil {
+	if _, err := service.StartExam(context.Background(), testUserID, testExamID, "ABC123", ""); err != nil {
 		t.Fatalf("CBT with a valid token must start without ownership, got %v", err)
 	}
 }
@@ -254,7 +269,7 @@ func TestStartExamRejectsSellWithoutOwnership(t *testing.T) {
 	exams.exam.PackageID = testPackageID
 	service.access = &fakeExamAccessRepository{active: map[string]bool{}}
 
-	if _, err := service.StartExam(context.Background(), testUserID, testExamID, ""); !errors.Is(err, domain.ErrExamForbidden) {
+	if _, err := service.StartExam(context.Background(), testUserID, testExamID, "", ""); !errors.Is(err, domain.ErrExamForbidden) {
 		t.Fatalf("sell package without ownership must be forbidden, got %v", err)
 	}
 }

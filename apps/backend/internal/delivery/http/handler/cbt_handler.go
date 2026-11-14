@@ -40,7 +40,7 @@ func (h *CBTHandler) StartExam(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "session invalid")
 		return
 	}
-	response, err := h.cbt.StartExam(r.Context(), claims.UserID, chi.URLParam(r, "id"), r.URL.Query().Get("cbt_token"))
+	response, err := h.cbt.StartExam(r.Context(), claims.UserID, chi.URLParam(r, "id"), r.URL.Query().Get("cbt_token"), r.Header.Get("X-Device-ID"))
 	if err != nil {
 		h.handleError(w, r, err)
 		return
@@ -135,6 +135,20 @@ func (h *CBTHandler) GetScreenLock(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, response)
 }
 
+func (h *CBTHandler) GetTimer(w http.ResponseWriter, r *http.Request) {
+	claims, ok := middleware.ClaimsFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "session invalid")
+		return
+	}
+	response, err := h.cbt.GetTimerStatus(r.Context(), claims.UserID, chi.URLParam(r, "id"))
+	if err != nil {
+		h.handleError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
+}
+
 func (h *CBTHandler) handleError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, domain.ErrExamNotFound), errors.Is(err, domain.ErrUserExamNotFound), errors.Is(err, domain.ErrQuestionNotFound):
@@ -143,7 +157,7 @@ func (h *CBTHandler) handleError(w http.ResponseWriter, r *http.Request, err err
 		writeError(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, domain.ErrInvalidAnswer):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
-	case errors.Is(err, domain.ErrExamExpired), errors.Is(err, domain.ErrExamAlreadySubmitted), errors.Is(err, domain.ErrExamSubmissionInProgress), errors.Is(err, domain.ErrExamStillRunning):
+	case errors.Is(err, domain.ErrExamExpired), errors.Is(err, domain.ErrExamAlreadySubmitted), errors.Is(err, domain.ErrExamSubmissionInProgress), errors.Is(err, domain.ErrExamStillRunning), errors.Is(err, domain.ErrExamPaused), errors.Is(err, domain.ErrExamDeviceMismatch):
 		writeError(w, http.StatusConflict, err.Error())
 	default:
 		h.logger.ErrorContext(r.Context(), "CBT request failed", "error", err)

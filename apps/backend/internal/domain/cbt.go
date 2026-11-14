@@ -25,6 +25,9 @@ var (
 	ErrScoreNotReleased         = errors.New("nilai ujian belum dirilis oleh penyelenggara")
 	ErrScreenLockNotCBT         = errors.New("penguncian layar hanya berlaku untuk mode ujian CBT")
 	ErrScreenLockNotLocked      = errors.New("layar siswa tidak sedang terkunci")
+	ErrExamPaused              = errors.New("ujian sedang dijeda oleh pengawas")
+	ErrExamDeviceMismatch      = errors.New("ujian sedang dibuka di perangkat lain")
+	ErrDeviceConflict          = errors.New("akun sedang digunakan di perangkat lain")
 )
 
 // Mode rilis nilai ujian CBT.
@@ -64,11 +67,22 @@ type SubmitExamResponse struct {
 }
 
 type ExamTimer struct {
-	UserExamID string
-	UserID     string
-	ExamID     string
-	StartedAt  time.Time
-	ExpiresAt  time.Time
+	UserExamID     string
+	UserID         string
+	ExamID         string
+	StartedAt      time.Time
+	ExpiresAt      time.Time
+	PausedAt       *time.Time
+	PausedSeconds  int
+}
+
+type ExamTimerStatus struct {
+	UserExamID       string     `json:"user_exam_id"`
+	RemainingSeconds int64      `json:"remaining_seconds"`
+	Paused           bool       `json:"paused"`
+	PausedAt         *time.Time `json:"paused_at,omitempty"`
+	ServerTime       time.Time  `json:"server_time"`
+	ExpiresAt        time.Time  `json:"expires_at"`
 }
 
 type ExpiredUserExam struct {
@@ -223,6 +237,11 @@ type ExamRepository interface {
 	GetPersistedAnswers(ctx context.Context, userExamID, userID string) (map[string]string, error)
 	SubmitUserExam(ctx context.Context, userExamID, userID string, answers []UserAnswer, score float64, finishedAt time.Time) (*UserExam, error)
 	ListExpiredUserExams(ctx context.Context, limit int) ([]ExpiredUserExam, error)
+	PauseUserExam(ctx context.Context, userExamID string, now time.Time) error
+	ResumeUserExam(ctx context.Context, userExamID string, now time.Time) (int, error)
+	SetUserExamDevice(ctx context.Context, userExamID, deviceID string) error
+	ClearUserExamDevice(ctx context.Context, userExamID string) error
+	GetUserExamByID(ctx context.Context, userExamID string) (*UserExam, *Exam, error)
 }
 
 type ExamAccessRepository interface {
@@ -259,11 +278,12 @@ type CBTRepository interface {
 	LockAnswersForSubmit(ctx context.Context, userExamID, userID string) (map[string]string, error)
 	ReleaseSubmitLock(ctx context.Context, userExamID, userID string) error
 	DeleteState(ctx context.Context, userExamID string) error
+	GetAnswers(ctx context.Context, userExamID string) (map[string]string, error)
 }
 
 type CBTService interface {
 	LookupCBT(ctx context.Context, userID, token string) ([]CBTLookupPackage, error)
-	StartExam(ctx context.Context, userID, examID, token string) (*ExamStartResponse, error)
+	StartExam(ctx context.Context, userID, examID, token, deviceID string) (*ExamStartResponse, error)
 	ListPackageExams(ctx context.Context, userID, packageID string) ([]ExamSummary, error)
 	SyncAnswer(ctx context.Context, userID string, input SyncAnswerRequest) (*SyncAnswerResponse, error)
 	SubmitExam(ctx context.Context, userID, userExamID string) (*SubmitExamResponse, error)
@@ -273,4 +293,14 @@ type CBTService interface {
 	ReportViolation(ctx context.Context, userID, userExamID, event string) (*ReportViolationResponse, error)
 	// GetScreenLock mengembalikan status kunci terkini untuk polling klien.
 	GetScreenLock(ctx context.Context, userID, userExamID string) (*ReportViolationResponse, error)
+	// GetTimerStatus mengembalikan sisa waktu dan status jeda untuk polling siswa.
+	GetTimerStatus(ctx context.Context, userID, userExamID string) (*ExamTimerStatus, error)
+	// PauseUserExam menjeda timer seorang peserta (dipanggil pengawas).
+	PauseUserExam(ctx context.Context, userExamID string) error
+	// ResumeUserExam melanjutkan timer seorang peserta yang dijeda.
+	ResumeUserExam(ctx context.Context, userExamID string) error
+	// ResetUserExamDevice menghapus binding perangkat sebuah attempt.
+	ResetUserExamDevice(ctx context.Context, userExamID string) error
+	// GetUserExamAnswers mengembalikan jawaban tersimpan (display frame).
+	GetUserExamAnswers(ctx context.Context, userExamID, userID string) (map[string]string, error)
 }

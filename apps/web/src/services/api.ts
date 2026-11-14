@@ -14,21 +14,53 @@ declare module "axios" {
 
 let refreshPromise: Promise<boolean> | null = null;
 
+// Koordinasi refresh lintas tab agar token sekali-pakai tidak dikonsumsi dua kali.
+function broadcastRefreshed(token: string, user: User) {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return;
+  try { const bc = new BroadcastChannel("tka_auth_refresh"); bc.postMessage({ token, user }); bc.close(); } catch { /* ignore */ }
+}
+if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+  try {
+    const bc = new BroadcastChannel("tka_auth_refresh");
+    bc.onmessage = (ev) => {
+      const data = ev.data as { token?: string; user?: User } | null;
+      if (data?.token) tokenStore.set(data.token, data.user);
+    };
+  } catch { /* ignore */ }
+}
+
 async function tryRefreshSession(): Promise<boolean> {
+  // Jika tab lain sedang refresh, tunggu sebentar lalu cek token.
+  const lockKey = "tka_refresh_lock";
+  const now = Date.now();
+  const lock = localStorage.getItem(lockKey);
+  if (lock && Number(lock) > now) {
+    // tunggu sampai lock habis
+    await new Promise((resolve) => setTimeout(resolve, Math.min(Number(lock) - now + 50, 1000)));
+    // jika token sudah diperbarui tab lain, anggap sukses
+    if (accessToken) return true;
+  }
+  // acquire lock
+  localStorage.setItem(lockKey, String(Date.now() + 5000));
   try {
     const response = (await axios.post<LoginResponse>(`${http.defaults.baseURL}/auth/refresh`, {}, { headers: { "Content-Type": "application/json", Accept: "application/json" }, timeout: 10_000, withCredentials: true })).data;
     if (!response.access_token) return false;
     tokenStore.set(response.access_token, response.user);
+    broadcastRefreshed(response.access_token, response.user);
     return true;
   } catch {
     return false;
+  } finally {
+    localStorage.removeItem(lockKey);
   }
 }
 
 function expireSession(message: string) {
   tokenStore.clear();
   window.dispatchEvent(new CustomEvent(SESSION_INVALID_EVENT, { detail: message }));
-  if (!window.location.pathname.endsWith("/login")) window.location.replace("/login?reason=session-expired");
+  const path = window.location.pathname;
+  const isExamPage = path.includes("/cbt/") || path.includes("/exam/");
+  if (!isExamPage && !path.endsWith("/login")) window.location.replace("/login?reason=session-expired");
 }
 
 export class APIError extends Error {
@@ -45,10 +77,18 @@ export const http = axios.create({
   headers: { "Content-Type": "application/json", Accept: "application/json" },
 });
 
+function getDeviceID(): string {
+  if (typeof window === "undefined") return "";
+  let id = localStorage.getItem("tka_device_id");
+  if (!id) { id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2); localStorage.setItem("tka_device_id", id); }
+  return id;
+}
 http.interceptors.request.use((config) => {
   if (typeof window !== "undefined") {
     const token = accessToken;
     if (token) config.headers.Authorization = `Bearer ${token}`;
+    const deviceID = getDeviceID();
+    if (deviceID) config.headers["X-Device-ID"] = deviceID;
   }
   return config;
 });
@@ -94,8 +134,9 @@ export type PresentationType = "single" | "group";
 export type TKAQuestionFields = { question_type: QuestionType; presentation_type: PresentationType; group_code: string; stimulus_text: string; question_image_url: string; stimulus_image_url: string; question_audio_url?: string; question_video_url?: string; explanation_video_url?: string; category_labels: string[] };
 export type ExamQuestion = { id: string; subject_name: string; chapter_name?: string; content_text: string; options: QuestionOption[] } & TKAQuestionFields;
 export type ExamResultQuestion = { id: string; question_type: string; presentation_type: string; question_image_url?: string; question_audio_url?: string; question_video_url?: string; stimulus_image_url?: string; correct_answer: string; score_weight: number };
-export type ExamStartResponse = { user_exam_id: string; exam_id: string; title: string; status: "ongoing"; server_time: string; started_at: string; ends_at: string; remaining_seconds: number; duration_minutes: number; remaining_tokens?: number; exam_type?: string; screen_lock_enabled?: boolean; questions: ExamQuestion[] };
+export type ExamStartResponse = { user_exam_id: string; exam_id: string; title: string; status: "ongoing"; server_time: string; started_at: string; ends_at: string; remaining_seconds: number; duration_minutes: number; remaining_tokens?: number; exam_type?: string; screen_lock_enabled?: boolean; paused?: boolean; paused_at?: string; answers?: Record<string, string>; questions: ExamQuestion[] };
 export type SyncAnswerResponse = { saved: boolean; synced_at: string; remaining_seconds: number };
+export type ExamTimerStatus = { user_exam_id: string; remaining_seconds: number; paused: boolean; paused_at?: string; server_time: string; expires_at: string };
 export type ScreenLockResponse = { user_exam_id: string; locked: boolean; enforced: boolean; lock_seconds: number; unlock_until?: string; violation_count: number; last_violation_at?: string; server_time: string };
 export type SubmitExamResponse = { user_exam_id: string; exam_id: string; status: "submitted"; finished_at: string; total_score: number; passing_score: number; passed: boolean };
 export type Package = { id: string; title: string; kode: string; description: string; price: number; validity_days: number; status: Status; jenjang: string; exam_type: "sell" | "cbt"; publisher_email?: string; sales_count:number; view_count:number; exam_count:number; question_count:number; created_at: string };
@@ -157,7 +198,7 @@ export type AdminPackagesPage = AdminPage<AdminPackage> & { counts: { active: nu
 export type CBTLookupExam = { exam_id: string; title: string; duration_minutes: number; total_questions: number; passing_score: number; submitted: boolean; publish_pembahasan: boolean; score_release?: string; score_released?: boolean; review_available?: boolean; user_exam_id?: string };
 export type CBTLookupPackage = { id: string; title: string; kode: string; jenjang: string; price: number; exams: CBTLookupExam[] };
 export type CBTPublishSetting = { exam_id: string; package_id: string; package_title: string; package_kode: string; jenjang: string; exam_title: string; duration_minutes: number; total_questions: number; passing_score: number; shuffle_questions: boolean; shuffle_options: boolean; publish_pembahasan: boolean; score_release: string; screen_lock_enabled: boolean; screen_lock_seconds: number; participated: number; publisher_email: string };
-export type CBTParticipant = { user_exam_id: string; user_id: string; name: string; email: string; school_level: string; status: "ongoing" | "submitted"; started_at?: string; finished_at?: string; total_questions: number; current_question?: number; total_score: number; passing_score: number; passed: boolean; screen_locked?: boolean; lock_until?: string; lock_count?: number; last_lock_at?: string };
+export type CBTParticipant = { user_exam_id: string; user_id: string; name: string; email: string; school_level: string; status: "ongoing" | "submitted"; started_at?: string; finished_at?: string; total_questions: number; current_question?: number; total_score: number; passing_score: number; passed: boolean; screen_locked?: boolean; lock_until?: string; lock_count?: number; last_lock_at?: string; paused_at?: string; paused_seconds?: number; paused?: boolean };
 export type AdminDashboardData = { overview: AdminOverview; levels: string[]; jenjangs: MasterItem[]; mapels: MasterItem[]; academic_years: MasterItem[]; kategoris: MasterItem[]; kelas: MasterItem[]; users: User[]; packages: AdminPackage[]; exams: AdminExam[]; transactions: AdminTransaction[]; questions: AdminQuestion[] };
 export type TeacherOverview = { total_packages: number; total_exams: number; total_questions: number; total_sales: number; total_revenue: number };
 export type TeacherDashboardData = { overview: TeacherOverview; levels: string[]; mapels: MasterItem[]; academic_years: MasterItem[]; kategoris: MasterItem[]; kelas: MasterItem[]; packages: AdminPackage[]; exams: AdminExam[]; questions: AdminQuestion[]; transactions: AdminTransaction[]; finance_settings:FinanceSettings; commission_summary:TeacherCommissionSummary; commissions:TeacherCommission[]; payouts:TeacherPayout[]; payout_account:TeacherPayoutAccount; payout_requests:TeacherWithdrawalRequest[] };
@@ -206,13 +247,13 @@ export const api = {
   async register(email: string, password: string, schoolLevel: User["school_level"], role: "student" | "teacher" = "student", referralCode?: string, teacherKtp?: string) {
     return (await http.post<{ user: User }>("/auth/register", { email, password, school_level: schoolLevel, role, ...(role === "teacher" && teacherKtp ? { teacher_ktp: teacherKtp } : {}), ...(referralCode ? { referral_code: referralCode } : {}) })).data;
   },
-  async login(email: string, password: string) {
-    const response = (await http.post<LoginResponse>("/auth/login", { email, password })).data;
+  async login(email: string, password: string, forceLogin = false) {
+    const response = (await http.post<LoginResponse>("/auth/login", { email, password, device_id: getDeviceID(), force_login: forceLogin })).data;
     if (response.access_token) tokenStore.set(response.access_token, response.user);
     return response;
   },
   async verify2FA(mfaToken: string, code: string) {
-    const response = (await http.post<LoginResponse>("/auth/verify-2fa", { mfa_token: mfaToken, code })).data;
+    const response = (await http.post<LoginResponse>("/auth/verify-2fa", { mfa_token: mfaToken, code, device_id: getDeviceID() })).data;
     if (response.access_token) tokenStore.set(response.access_token, response.user);
     return response;
   },
@@ -222,7 +263,7 @@ export const api = {
   async forgotPassword(email:string) { return (await http.post<{message:string;reset_url?:string}>("/auth/forgot-password", {email})).data; },
   async resetPassword(token:string,newPassword:string) { return (await http.post<{message:string}>("/auth/reset-password", {token,new_password:newPassword})).data; },
   async loginWithGoogle(idToken: string, schoolLevel?: User["school_level"]) {
-    const response = (await http.post<LoginResponse>("/auth/google", { id_token: idToken, school_level: schoolLevel })).data;
+    const response = (await http.post<LoginResponse>("/auth/google", { id_token: idToken, school_level: schoolLevel, device_id: getDeviceID() })).data;
     if (response.access_token) tokenStore.set(response.access_token, response.user);
     return response;
   },
@@ -277,6 +318,10 @@ export const api = {
   async adminCBTParticipants(examID: string) { return (await http.get<{ items: CBTParticipant[] }>(`/admin/cbt-settings/${examID}/participants`)).data.items; },
   async adminUnlockCBTParticipant(examID: string, userExamID: string) { await http.post(`/admin/cbt-settings/${examID}/participants/${userExamID}/unlock`, {}); },
   async adminResetCBTParticipant(examID: string, userExamID: string) { await http.post(`/admin/cbt-settings/${examID}/participants/${userExamID}/reset`, {}); },
+  async adminPauseCBTParticipant(examID: string, userExamID: string) { await http.post(`/admin/cbt-settings/${examID}/participants/${userExamID}/pause`, {}); },
+  async adminResumeCBTParticipant(examID: string, userExamID: string) { await http.post(`/admin/cbt-settings/${examID}/participants/${userExamID}/resume`, {}); },
+  async adminResetCBTParticipantDevice(examID: string, userExamID: string) { await http.post(`/admin/cbt-settings/${examID}/participants/${userExamID}/reset-device`, {}); },
+  async adminParticipantExamResult(examID: string, userExamID: string) { return (await http.get<ExamResult>(`/admin/cbt-settings/${examID}/participants/${userExamID}/result`)).data; },
   async teacherCBTSettings() { return (await http.get<{ items: CBTPublishSetting[] }>("/teacher/cbt-settings")).data.items; },
   async teacherSetCBTPublish(examID: string, publishPembahasan: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}`, { publish_pembahasan: publishPembahasan })).data.item; },
   async teacherSetCBTShuffle(examID: string, shuffleQuestions: boolean, shuffleOptions: boolean) { return (await http.patch<{ item: CBTPublishSetting }>(`/teacher/cbt-settings/${examID}/shuffle`, { shuffle_questions: shuffleQuestions, shuffle_options: shuffleOptions })).data.item; },
@@ -285,6 +330,10 @@ export const api = {
   async teacherCBTParticipants(examID: string) { return (await http.get<{ items: CBTParticipant[] }>(`/teacher/cbt-settings/${examID}/participants`)).data.items; },
   async teacherUnlockCBTParticipant(examID: string, userExamID: string) { await http.post(`/teacher/cbt-settings/${examID}/participants/${userExamID}/unlock`, {}); },
   async teacherResetCBTParticipant(examID: string, userExamID: string) { await http.post(`/teacher/cbt-settings/${examID}/participants/${userExamID}/reset`, {}); },
+  async teacherPauseCBTParticipant(examID: string, userExamID: string) { await http.post(`/teacher/cbt-settings/${examID}/participants/${userExamID}/pause`, {}); },
+  async teacherResumeCBTParticipant(examID: string, userExamID: string) { await http.post(`/teacher/cbt-settings/${examID}/participants/${userExamID}/resume`, {}); },
+  async teacherResetCBTParticipantDevice(examID: string, userExamID: string) { await http.post(`/teacher/cbt-settings/${examID}/participants/${userExamID}/reset-device`, {}); },
+  async teacherParticipantExamResult(examID: string, userExamID: string) { return (await http.get<ExamResult>(`/teacher/cbt-settings/${examID}/participants/${userExamID}/result`)).data; },
   async syncAnswer(examID: string, questionID: string, selectedOption: string) {
     return (await http.post<SyncAnswerResponse>("/cbt/answers/sync", { exam_id: examID, question_id: questionID, selected_option: selectedOption })).data;
   },
@@ -292,6 +341,7 @@ export const api = {
   async examResult(userExamID: string) { return (await http.get<ExamResult>(`/exams/${userExamID}/result`)).data; },
   async reportCBTViolation(userExamID: string, event: string) { return (await http.post<ScreenLockResponse>("/cbt/violations", { user_exam_id: userExamID, event })).data; },
   async examScreenLock(userExamID: string) { return (await http.get<ScreenLockResponse>(`/exams/${userExamID}/screen-lock`)).data; },
+  async examTimer(userExamID: string) { return (await http.get<ExamTimerStatus>(`/exams/${userExamID}/timer`)).data; },
   async globalRanking(jenjang?: string, page: number = 1, perPage: number = 50, mode?: string) {
     const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
     if (jenjang) params.set("jenjang", jenjang);

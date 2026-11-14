@@ -83,10 +83,12 @@ type GlobalRankingEntry struct {
 
 type AnalyticsRepository interface {
 	GetExamResult(ctx context.Context, userID, userExamID string) (*ExamResultResponse, error)
+	GetExamResultByAttempt(ctx context.Context, userExamID string) (*ExamResultResponse, error)
 	ListGlobalRanking(ctx context.Context, currentUserID, level, mode string, limit, offset int) ([]GlobalRankingEntry, int, error)
 }
 
 type ExamAnalyticsService interface {
 	GetResult(ctx context.Context, userID, userExamID string) (*ExamResultResponse, error)
+	GetParticipantResult(ctx context.Context, userExamID string) (*ExamResultResponse, error)
 	GetGlobalRanking(ctx context.Context, currentUserID, level, mode string, page, perPage int) (Page[GlobalRankingEntry], error)
 }

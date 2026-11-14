@@ -151,6 +151,131 @@ func (r *AnalyticsRepository) GetExamResult(ctx context.Context, userID, userExa
 	return &result, nil
 }
 
+// GetExamResultByAttempt mengembalikan hasil ujian untuk admin/guru tanpa
+// memeriksa kepemilikan dan tanpa gating rilis nilai.
+func (r *AnalyticsRepository) GetExamResultByAttempt(ctx context.Context, userExamID string) (*domain.ExamResultResponse, error) {
+	const headerQuery = `
+		SELECT ue.id, ue.exam_id, e.title, ue.status, e.scoring_method, ue.started_at, ue.finished_at, ue.total_score, e.passing_score,
+		       p.exam_type, e.publish_pembahasan, e.score_release
+		FROM user_exams ue JOIN exams e ON e.id = ue.exam_id JOIN packages p ON p.id = e.package_id
+		WHERE ue.id = $1`
+	var result domain.ExamResultResponse
+	var examType string
+	var publishPembahasan bool
+	var scoreRelease string
+	err := r.db.QueryRow(ctx, headerQuery, userExamID).Scan(&result.UserExamID, &result.ExamID, &result.Title, &result.Status, &result.ScoringMethod, &result.StartedAt, &result.FinishedAt, &result.TotalScore, &result.PassingScore, &examType, &publishPembahasan, &scoreRelease)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrUserExamNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query exam result: %w", err)
+	}
+	if result.Status != "submitted" {
+		return nil, domain.ErrExamStillRunning
+	}
+	result.ReviewAvailable = true
+	result.Passed = result.TotalScore >= result.PassingScore
+
+	const detailQuery = `
+		SELECT q.id, q.subject_name, q.chapter_name, q.content_text, q.question_type, q.presentation_type,
+		       COALESCE(q.group_code,''), q.stimulus_text, q.question_image_url, q.stimulus_image_url,
+		       q.category_labels_json, q.options_json, q.correct_answer, q.score_weight,
+		       q.explanation_text, q.explanation_video_url,
+		       q.question_audio_url, q.question_video_url,
+		       ua.selected_option, COALESCE(ua.is_correct, false)
+		FROM questions q
+		LEFT JOIN user_answers ua ON ua.question_id = q.id AND ua.user_exam_id = $1
+		WHERE q.exam_id = $2 ORDER BY q.subject_name, q.chapter_name, q.id`
+	rows, err := r.db.Query(ctx, detailQuery, userExamID, result.ExamID)
+	if err != nil {
+		return nil, fmt.Errorf("query result details: %w", err)
+	}
+	defer rows.Close()
+	type accumulator struct {
+		correct, wrong, unanswered, total int
+		correctWeight, totalWeight        float64
+	}
+	bySubject := make(map[string]*accumulator)
+	byChapter := make(map[string]*accumulator)
+	order := make([]string, 0)
+	chapterOrder := make([]string, 0)
+	for rows.Next() {
+		var review domain.AnswerReview
+		var rawOptions, rawCategoryLabels []byte
+		if err := rows.Scan(&review.QuestionID, &review.SubjectName, &review.ChapterName, &review.ContentText, &review.QuestionType, &review.PresentationType, &review.GroupCode, &review.StimulusText, &review.QuestionImageURL, &review.StimulusImageURL, &rawCategoryLabels, &rawOptions, &review.CorrectAnswer, &review.ScoreWeight, &review.ExplanationText, &review.ExplanationVideoURL, &review.QuestionAudioURL, &review.QuestionVideoURL, &review.SelectedOption, &review.IsCorrect); err != nil {
+			return nil, fmt.Errorf("scan result detail: %w", err)
+		}
+		if err := json.Unmarshal(rawCategoryLabels, &review.CategoryLabels); err != nil {
+			return nil, fmt.Errorf("decode result category labels: %w", err)
+		}
+		if err := json.Unmarshal(rawOptions, &review.Options); err != nil {
+			return nil, fmt.Errorf("decode result options: %w", err)
+		}
+		stats := bySubject[review.SubjectName]
+		if stats == nil {
+			stats = &accumulator{}
+			bySubject[review.SubjectName] = stats
+			order = append(order, review.SubjectName)
+		}
+		chapter := review.ChapterName
+		if chapter == "" {
+			chapter = "Belum dikelompokkan"
+		}
+		chapterStats := byChapter[chapter]
+		if chapterStats == nil {
+			chapterStats = &accumulator{}
+			byChapter[chapter] = chapterStats
+			chapterOrder = append(chapterOrder, chapter)
+		}
+		stats.total++
+		chapterStats.total++
+		stats.totalWeight += review.ScoreWeight
+		chapterStats.totalWeight += review.ScoreWeight
+		switch {
+		case review.SelectedOption == nil:
+			stats.unanswered++
+			chapterStats.unanswered++
+			result.Unanswered++
+		case review.IsCorrect:
+			stats.correct++
+			chapterStats.correct++
+			stats.correctWeight += review.ScoreWeight
+			chapterStats.correctWeight += review.ScoreWeight
+			result.CorrectAnswers++
+		default:
+			stats.wrong++
+			chapterStats.wrong++
+			result.WrongAnswers++
+		}
+		result.Review = append(result.Review, review)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate result details: %w", err)
+	}
+	result.Subjects = make([]domain.SubjectResult, 0, len(order))
+	result.Chapters = make([]domain.ChapterResult, 0, len(chapterOrder))
+	for _, name := range order {
+		stats := bySubject[name]
+		score := 0.0
+		if stats.totalWeight > 0 {
+			score = math.Round(stats.correctWeight/stats.totalWeight*10000) / 100
+		}
+		result.Subjects = append(result.Subjects, domain.SubjectResult{SubjectName: name, CorrectAnswers: stats.correct, WrongAnswers: stats.wrong, Unanswered: stats.unanswered, TotalQuestions: stats.total, Score: score})
+	}
+	for _, name := range chapterOrder {
+		stats := byChapter[name]
+		score := 0.0
+		if stats.totalWeight > 0 {
+			score = math.Round(stats.correctWeight/stats.totalWeight*10000) / 100
+		}
+		result.Chapters = append(result.Chapters, domain.ChapterResult{ChapterName: name, CorrectAnswers: stats.correct, WrongAnswers: stats.wrong, Unanswered: stats.unanswered, TotalQuestions: stats.total, Score: score})
+	}
+	if result.Review == nil {
+		result.Review = []domain.AnswerReview{}
+	}
+	return &result, nil
+}
+
 func (r *AnalyticsRepository) ListGlobalRanking(ctx context.Context, currentUserID, level, mode string, limit, offset int) ([]domain.GlobalRankingEntry, int, error) {
 	countQuery := `
 		SELECT COUNT(*) FROM (

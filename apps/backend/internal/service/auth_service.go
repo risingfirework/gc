@@ -76,6 +76,7 @@ type accessTokenClaims struct {
 // mfaTokenClaims membawa Subject=user.ID untuk langkah kedua login 2FA.
 type mfaTokenClaims struct {
 	TokenUse string `json:"token_use"`
+	DeviceID string `json:"device_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -240,22 +241,33 @@ func (s *AuthService) Login(ctx context.Context, input domain.LoginRequest) (*do
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(input.Password)) != nil {
 		return nil, domain.ErrInvalidCredentials
 	}
+	deviceID := strings.TrimSpace(input.DeviceID)
+	// Tolak login dari perangkat lain kecuali pengguna memaksa masuk.
+	if !input.ForceLogin {
+		activeDevice, _ := s.sessions.GetSessionDevice(ctx, user.ID)
+		if activeDevice != "" && deviceID != "" && activeDevice != deviceID {
+			return nil, domain.ErrDeviceConflict
+		}
+	}
 	if user.TOTPEnabled {
-		mfaToken, err := s.issueMFAToken(user.ID)
+		mfaToken, err := s.issueMFAToken(user.ID, deviceID)
 		if err != nil {
 			return nil, err
 		}
 		return &domain.LoginResponse{Requires2FA: true, MFAToken: mfaToken, User: publicUser(*user)}, nil
 	}
-	return s.issueSession(ctx, *user)
+	return s.issueSession(ctx, *user, deviceID)
 }
 
 // Verify2FA melengkapi login dua langkah: mfa_token dari langkah pertama
 // dipetakan ke akun, lalu kode TOTP diverifikasi sebelum sesi penuh diterbitkan.
-func (s *AuthService) Verify2FA(ctx context.Context, mfaToken, code string) (*domain.LoginResponse, error) {
-	userID, err := s.parseMFAToken(mfaToken)
+func (s *AuthService) Verify2FA(ctx context.Context, mfaToken, code string, deviceID string) (*domain.LoginResponse, error) {
+	userID, claimedDevice, err := s.parseMFAToken(mfaToken)
 	if err != nil {
 		return nil, domain.ErrSessionInvalid
+	}
+	if claimedDevice != "" && deviceID == "" {
+		deviceID = claimedDevice
 	}
 	user, err := s.users.FindByID(ctx, userID)
 	if err != nil {
@@ -280,7 +292,11 @@ func (s *AuthService) Verify2FA(ctx context.Context, mfaToken, code string) (*do
 			return nil, domain.ErrInvalid2FACode
 		}
 	}
-	return s.issueSession(ctx, *user)
+	activeDevice, _ := s.sessions.GetSessionDevice(ctx, user.ID)
+	if activeDevice != "" && deviceID != "" && activeDevice != deviceID {
+		return nil, domain.ErrDeviceConflict
+	}
+	return s.issueSession(ctx, *user, deviceID)
 }
 
 // Setup2FA menyiapkan seed TOTP baru (dipertahankan bila belum diaktifkan)
@@ -395,10 +411,10 @@ func (s *AuthService) LoginWithGoogle(ctx context.Context, input domain.GoogleAu
 		}
 		user = &newUser
 	}
-	return s.issueSession(ctx, *user)
+	return s.issueSession(ctx, *user, input.DeviceID)
 }
 
-func (s *AuthService) issueSession(ctx context.Context, user domain.User) (*domain.LoginResponse, error) {
+func (s *AuthService) issueSession(ctx context.Context, user domain.User, deviceID string) (*domain.LoginResponse, error) {
 	now := s.now().UTC()
 	expiresAt := now.Add(s.tokenTTL)
 	jti := uuid.NewString()
@@ -414,7 +430,7 @@ func (s *AuthService) issueSession(ctx context.Context, user domain.User) (*doma
 		return nil, fmt.Errorf("sign access token: %w", err)
 	}
 	// A successful login atomically replaces this user's previous JTI.
-	if err := s.sessions.SetSession(ctx, user.ID, jti, s.tokenTTL); err != nil {
+	if err := s.sessions.SetSession(ctx, user.ID, jti, deviceID, s.tokenTTL); err != nil {
 		return nil, fmt.Errorf("store session: %w", err)
 	}
 	response := &domain.LoginResponse{AccessToken: token, TokenType: "Bearer", ExpiresIn: int64(s.tokenTTL.Seconds()), User: publicUser(user)}
@@ -472,10 +488,11 @@ func (s *AuthService) Refresh(ctx context.Context, rawToken string) (*domain.Log
 	if err != nil {
 		return nil, fmt.Errorf("find refresh owner: %w", err)
 	}
+	deviceID, _ := s.sessions.GetSessionDevice(ctx, row.UserID)
 	if err := s.refreshes.Revoke(ctx, hash[:]); err != nil {
 		return nil, fmt.Errorf("revoke refresh token: %w", err)
 	}
-	return s.issueSession(ctx, *user)
+	return s.issueSession(ctx, *user, deviceID)
 }
 
 func (s *AuthService) ValidateAccessToken(ctx context.Context, rawToken string) (*domain.AuthClaims, error) {
@@ -612,10 +629,11 @@ func normalizeTeacherKTP(value string) (string, error) {
 	return ktp, nil
 }
 
-func (s *AuthService) issueMFAToken(userID string) (string, error) {
+func (s *AuthService) issueMFAToken(userID, deviceID string) (string, error) {
 	now := s.now().UTC()
 	claims := mfaTokenClaims{
 		TokenUse: tokenUseMFA,
+		DeviceID: deviceID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: s.issuer, Subject: userID,
 			IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(mfaTokenTTL)),
@@ -628,7 +646,7 @@ func (s *AuthService) issueMFAToken(userID string) (string, error) {
 	return token, nil
 }
 
-func (s *AuthService) parseMFAToken(raw string) (string, error) {
+func (s *AuthService) parseMFAToken(raw string) (string, string, error) {
 	claims := &mfaTokenClaims{}
 	token, err := jwt.ParseWithClaims(raw, claims,
 		func(token *jwt.Token) (any, error) { return s.secret, nil },
@@ -636,9 +654,9 @@ func (s *AuthService) parseMFAToken(raw string) (string, error) {
 		jwt.WithIssuer(s.issuer), jwt.WithExpirationRequired(),
 	)
 	if err != nil || !token.Valid || claims.Subject == "" || claims.TokenUse != tokenUseMFA {
-		return "", domain.ErrSessionInvalid
+		return "", "", domain.ErrSessionInvalid
 	}
-	return claims.Subject, nil
+	return claims.Subject, claims.DeviceID, nil
 }
 
 func (s *AuthService) totpIssuer() string {

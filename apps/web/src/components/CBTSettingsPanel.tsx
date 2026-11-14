@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CBTParticipant, CBTPublishSetting } from "@/services/api";
 import ConfirmModal from "./ConfirmModal";
 
-export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, onScreenLock, onScoreRelease, loadParticipants, unlockParticipant, resetParticipant }: { items: CBTPublishSetting[]; saving: boolean; onToggle: (item: CBTPublishSetting, publish: boolean) => Promise<void> | void; onShuffle: (item: CBTPublishSetting, shuffleQuestions: boolean, shuffleOptions: boolean) => Promise<void> | void; onScreenLock: (item: CBTPublishSetting, screenLockEnabled: boolean, screenLockSeconds: number) => Promise<void> | void; onScoreRelease: (item: CBTPublishSetting, scoreRelease: string) => Promise<void> | void; loadParticipants: (examID: string) => Promise<CBTParticipant[]>; unlockParticipant?: (examID: string, userExamID: string) => Promise<void>; resetParticipant?: (examID: string, userExamID: string) => Promise<void> }) {
+export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, onScreenLock, onScoreRelease, loadParticipants, unlockParticipant, resetParticipant, pauseParticipant, resumeParticipant, resetParticipantDevice, printParticipantResult }: { items: CBTPublishSetting[]; saving: boolean; onToggle: (item: CBTPublishSetting, publish: boolean) => Promise<void> | void; onShuffle: (item: CBTPublishSetting, shuffleQuestions: boolean, shuffleOptions: boolean) => Promise<void> | void; onScreenLock: (item: CBTPublishSetting, screenLockEnabled: boolean, screenLockSeconds: number) => Promise<void> | void; onScoreRelease: (item: CBTPublishSetting, scoreRelease: string) => Promise<void> | void; loadParticipants: (examID: string) => Promise<CBTParticipant[]>; unlockParticipant?: (examID: string, userExamID: string) => Promise<void>; resetParticipant?: (examID: string, userExamID: string) => Promise<void>; pauseParticipant?: (examID: string, userExamID: string) => Promise<void>; resumeParticipant?: (examID: string, userExamID: string) => Promise<void>; resetParticipantDevice?: (examID: string, userExamID: string) => Promise<void>; printParticipantResult?: (examID: string, userExamID: string) => Promise<void> }) {
   const [confirmItem, setConfirmItem] = useState<{ item: CBTPublishSetting; publish: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedExam, setSelectedExam] = useState<CBTPublishSetting | null>(null);
@@ -15,6 +15,7 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, o
   const [unlockError, setUnlockError] = useState("");
   const [resetting, setResetting] = useState<string | null>(null);
   const [resetError, setResetError] = useState("");
+  const [pausing, setPausing] = useState<string | null>(null);
 
   const openParticipants = async (item: CBTPublishSetting) => {
     if (selectedExam?.exam_id === item.exam_id) {
@@ -34,6 +35,21 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, o
       setParticipantsLoading(false);
     }
   };
+
+  // Auto-refresh daftar peserta setiap 8 detik.
+  useEffect(() => {
+    if (!selectedExam) return;
+    let active = true;
+    const id = window.setInterval(async () => {
+      if (!active) return;
+      try {
+        const fresh = await loadParticipants(selectedExam.exam_id);
+        if (active) setParticipants(fresh);
+      } catch { /* ignore */ }
+    }, 8000);
+    return () => { active = false; window.clearInterval(id); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedExam?.exam_id, loadParticipants]);
 
   const runUnlock = async (participant: CBTParticipant) => {
     if (!selectedExam || !unlockParticipant || unlocking) return;
@@ -60,6 +76,36 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, o
       setResetError(reason instanceof Error ? reason.message : "Gagal mereset blokir.");
     } finally {
       setResetting(null);
+    }
+  };
+
+  const runPauseToggle = async (participant: CBTParticipant) => {
+    if (!selectedExam || pausing) return;
+    setPausing(participant.user_exam_id);
+    try {
+      if (participant.paused) {
+        if (resumeParticipant) await resumeParticipant(selectedExam.exam_id, participant.user_exam_id);
+        setParticipants((current) => current.map((item) => item.user_exam_id === participant.user_exam_id ? { ...item, paused: false, paused_at: undefined } : item));
+      } else {
+        if (pauseParticipant) await pauseParticipant(selectedExam.exam_id, participant.user_exam_id);
+        setParticipants((current) => current.map((item) => item.user_exam_id === participant.user_exam_id ? { ...item, paused: true, paused_at: new Date().toISOString() } : item));
+      }
+    } catch {
+      // ignore
+    } finally {
+      setPausing(null);
+    }
+  };
+
+  const runResetDevice = async (participant: CBTParticipant) => {
+    if (!selectedExam || !resetParticipantDevice) return;
+    setPausing(participant.user_exam_id);
+    try {
+      await resetParticipantDevice(selectedExam.exam_id, participant.user_exam_id);
+    } catch {
+      // ignore
+    } finally {
+      setPausing(null);
     }
   };
 
@@ -94,7 +140,14 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, o
           </tbody></table></div>}
       </div>
       {selectedExam && <div className="card cbt-participants-card">
-        <div className="section-heading"><div><p className="eyebrow">Peserta ujian</p><h3>{selectedExam.exam_title}</h3><p className="muted">Siswa yang sedang mengerjakan atau sudah menyelesaikan ujian CBT ini.</p></div><button type="button" className="button secondary small-btn" onClick={() => { setSelectedExam(null); setParticipants([]); }}>Tutup</button></div>
+        <div className="section-heading"><div><p className="eyebrow">Peserta ujian</p><h3>{selectedExam.exam_title}</h3><p className="muted">Siswa yang sedang mengerjakan atau sudah menyelesaikan ujian CBT ini.</p></div><div className="user-row-actions"><button type="button" className="button secondary small-btn" onClick={() => window.print()}>Cetak</button><button type="button" className="button secondary small-btn" onClick={() => {
+          const rows = [["Nama","Email","Jenjang","Status","Nilai","Lulus"]];
+          participants.forEach((p) => rows.push([p.name||"", p.email, p.school_level||"", p.status, String(p.total_score), p.passed?"Lulus":"Belum"]));
+          const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\\n");
+          const blob = new Blob([csv], { type: "text/csv" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a"); a.href = url; a.download = `peserta-${selectedExam.exam_id}.csv`; a.click(); URL.revokeObjectURL(url);
+        }}>Export CSV</button><button type="button" className="button secondary small-btn" onClick={() => { setSelectedExam(null); setParticipants([]); }}>Tutup</button></div></div>
         {participantsError && <p className="error">{participantsError}</p>}
         {unlockError && <p className="error">{unlockError}</p>}
         {resetError && <p className="error">{resetError}</p>}
@@ -105,7 +158,7 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, o
           const finishedStr = participant.finished_at ? new Date(participant.finished_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
           const lockUntilStr = participant.lock_until ? new Date(participant.lock_until).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
           const violations = participant.lock_count ?? 0;
-          return <tr key={participant.user_exam_id} className={ongoing ? "active-row" : ""}><td>{participant.name || "—"}</td><td>{participant.email}</td><td>{participant.school_level || "—"}</td><td>{ongoing ? `Soal ${participant.current_question}/${participant.total_questions}` : `${participant.total_questions} soal`}</td><td>{ongoing ? <span className="status-pill ongoing">Sedang mengerjakan</span> : <span>{<span className="status-pill paid">Selesai</span>} <small className="cbt-hint">· {participant.passed ? "Lulus" : "Belum lulus"}</small></span>}</td><td>{!ongoing ? <span className="cbt-hint">—</span> : <div className="user-row-actions">{locked ? <span className="status-pill rejected">Terkunci</span> : <span className="cbt-hint">Normal</span>}{unlockParticipant && locked && <button type="button" className="table-action" disabled={unlocking === participant.user_exam_id} onClick={() => void runUnlock(participant)}>{unlocking === participant.user_exam_id ? "Membuka..." : "Buka blokir"}</button>}{resetParticipant && violations > 0 && <button type="button" className="danger-action" disabled={resetting === participant.user_exam_id} onClick={() => void runReset(participant)}>{resetting === participant.user_exam_id ? "Mereset..." : "Reset blokir"}</button>}<small className="cbt-hint">{violations}×{lockUntilStr ? ` · sampai ${lockUntilStr}` : ""}</small></div>}</td><td>{ongoing ? <span className="cbt-hint">Mulai {startedStr}</span> : finishedStr}</td></tr>;
+          return <tr key={participant.user_exam_id} className={ongoing ? "active-row" : ""}><td>{participant.name || "—"}</td><td>{participant.email}</td><td>{participant.school_level || "—"}</td><td>{ongoing ? `Soal ${participant.current_question}/${participant.total_questions}` : `${participant.total_questions} soal`}</td><td>{ongoing ? <span className="status-pill ongoing">Sedang mengerjakan</span> : <span>{<span className="status-pill paid">Selesai</span>} <small className="cbt-hint">· {participant.passed ? "Lulus" : "Belum lulus"}</small></span>}{ongoing && (pauseParticipant || resumeParticipant) && <div className="user-row-actions"><button type="button" className="table-action" disabled={pausing === participant.user_exam_id} onClick={() => void runPauseToggle(participant)}>{pausing === participant.user_exam_id ? "..." : participant.paused ? "Lanjutkan" : "Jeda"}</button>{resetParticipantDevice && <button type="button" className="table-action" disabled={pausing === participant.user_exam_id} onClick={() => void runResetDevice(participant)}>Reset perangkat</button>}</div>}</td><td>{!ongoing ? <span className="cbt-hint">—</span> : <div className="user-row-actions">{locked ? <span className="status-pill rejected">Terkunci</span> : <span className="cbt-hint">Normal</span>}{unlockParticipant && locked && <button type="button" className="table-action" disabled={unlocking === participant.user_exam_id} onClick={() => void runUnlock(participant)}>{unlocking === participant.user_exam_id ? "Membuka..." : "Buka blokir"}</button>}{resetParticipant && violations > 0 && <button type="button" className="danger-action" disabled={resetting === participant.user_exam_id} onClick={() => void runReset(participant)}>{resetting === participant.user_exam_id ? "Mereset..." : "Reset blokir"}</button>}<small className="cbt-hint">{violations}×{lockUntilStr ? ` · sampai ${lockUntilStr}` : ""}</small></div>}</td><td>{ongoing ? <span className="cbt-hint">Mulai {startedStr}{participant.paused ? " · DIJEDA" : ""}</span> : <span>{finishedStr}{printParticipantResult && <button type="button" className="table-action" onClick={() => void printParticipantResult(selectedExam!.exam_id, participant.user_exam_id)}>Cetak hasil</button>}</span>}</td></tr>;
         })}</tbody></table></div>}
       </div>}
       {confirmItem && <ConfirmModal title={confirmItem.publish ? "Publish pembahasan?" : "Tarik pembahasan?"} message={confirmItem.publish ? `Siswa yang sudah mengerjakan "${confirmItem.item.exam_title}" akan dapat melihat analitik dan pembahasan hasilnya.` : `Siswa yang sudah mengerjakan "${confirmItem.item.exam_title}" tidak akan bisa melihat analitik hasilnya lagi.`} busy={busy} confirmLabel={confirmItem.publish ? "Ya, publish" : "Ya, tarik"} onClose={() => !busy && setConfirmItem(null)} onConfirm={() => void runToggle()} />}

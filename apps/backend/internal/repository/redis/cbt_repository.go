@@ -73,12 +73,17 @@ func NewCBTRepository(client goredis.UniversalClient) *CBTRepository {
 func (r *CBTRepository) SetTimer(ctx context.Context, timer domain.ExamTimer) error {
 	retentionDeadline := timer.ExpiresAt.Add(examStateRetention)
 	_, err := r.client.TxPipelined(ctx, func(pipe goredis.Pipeliner) error {
-		pipe.HSet(ctx, timerKey(timer.UserExamID), map[string]any{
+		fields := map[string]any{
 			"user_id":            timer.UserID,
 			"exam_id":            timer.ExamID,
 			"started_at_unix_ms": timer.StartedAt.UnixMilli(),
 			"expires_at_unix_ms": timer.ExpiresAt.UnixMilli(),
-		})
+			"paused_seconds":     timer.PausedSeconds,
+		}
+		if timer.PausedAt != nil {
+			fields["paused_at_unix_ms"] = timer.PausedAt.UnixMilli()
+		}
+		pipe.HSet(ctx, timerKey(timer.UserExamID), fields)
 		pipe.HSetNX(ctx, timerKey(timer.UserExamID), "status", "ongoing")
 		pipe.ExpireAt(ctx, timerKey(timer.UserExamID), retentionDeadline)
 		return nil
@@ -105,10 +110,22 @@ func (r *CBTRepository) GetTimer(ctx context.Context, userExamID string) (*domai
 	if err != nil {
 		return nil, fmt.Errorf("decode timer expiry: %w", err)
 	}
-	return &domain.ExamTimer{
+	timer := &domain.ExamTimer{
 		UserExamID: userExamID, UserID: values["user_id"], ExamID: values["exam_id"],
 		StartedAt: time.UnixMilli(startedAtMS).UTC(), ExpiresAt: time.UnixMilli(expiresAtMS).UTC(),
-	}, nil
+	}
+	if v := values["paused_at_unix_ms"]; v != "" {
+		if ms, err := strconv.ParseInt(v, 10, 64); err == nil {
+			t := time.UnixMilli(ms).UTC()
+			timer.PausedAt = &t
+		}
+	}
+	if v := values["paused_seconds"]; v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			timer.PausedSeconds = n
+		}
+	}
+	return timer, nil
 }
 
 func (r *CBTRepository) SaveAnswer(
@@ -206,5 +223,13 @@ func (r *CBTRepository) DeleteState(ctx context.Context, userExamID string) erro
 // scripts and multi-key deletes stay atomic after moving from a single node.
 func timerKey(userExamID string) string   { return "EXAM_TIMER:{" + userExamID + "}" }
 func answersKey(userExamID string) string { return "EXAM_ANSWERS:{" + userExamID + "}" }
+
+func (r *CBTRepository) GetAnswers(ctx context.Context, userExamID string) (map[string]string, error) {
+	values, err := r.client.HGetAll(ctx, answersKey(userExamID)).Result()
+	if err != nil {
+		return nil, fmt.Errorf("get answers: %w", err)
+	}
+	return values, nil
+}
 
 var _ domain.CBTRepository = (*CBTRepository)(nil)

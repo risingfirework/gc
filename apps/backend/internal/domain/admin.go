@@ -558,6 +558,10 @@ type AdminService interface {
 	// ResetParticipantScreenLock menghapus catatan pelanggaran layar seorang
 	// siswa sehingga statusnya kembali normal.
 	ResetParticipantScreenLock(ctx context.Context, examID, userExamID string) error
+	PauseParticipantExam(ctx context.Context, examID, userExamID string) error
+	ResumeParticipantExam(ctx context.Context, examID, userExamID string) error
+	ResetParticipantDevice(ctx context.Context, examID, userExamID string) error
+	GetParticipantExamResult(ctx context.Context, examID, userExamID string) (*ExamResultResponse, error)
 	RefundTransaction(ctx context.Context, actorID, actorEmail, transactionID string, input RefundTransactionRequest) (*AdminTransaction, error)
 	ListAuditLogs(ctx context.Context) ([]AuditLogEntry, error)
 	ListTeacherVerifications(ctx context.Context, page, perPage int, status string) (Page[TeacherVerification], error)

@@ -21,6 +21,13 @@ func (s *ExamService) GetResult(ctx context.Context, userID, userExamID string) 
 	return s.analytics.GetExamResult(ctx, userID, userExamID)
 }
 
+func (s *ExamService) GetParticipantResult(ctx context.Context, userExamID string) (*domain.ExamResultResponse, error) {
+	if !validUUID(userExamID) {
+		return nil, domain.ErrUserExamNotFound
+	}
+	return s.analytics.GetExamResultByAttempt(ctx, userExamID)
+}
+
 func (s *ExamService) GetGlobalRanking(ctx context.Context, currentUserID, level, mode string, page, perPage int) (domain.Page[domain.GlobalRankingEntry], error) {
 	if !validUUID(currentUserID) {
 		return domain.Page[domain.GlobalRankingEntry]{}, domain.ErrInvalidInput

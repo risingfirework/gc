@@ -65,6 +65,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid email or password")
 			return
 		}
+		if errors.Is(err, domain.ErrDeviceConflict) {
+			writeError(w, http.StatusConflict, "akun sedang digunakan di perangkat lain. Paksa masuk?")
+			return
+		}
 		h.logger.ErrorContext(r.Context(), "login user", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
@@ -175,7 +179,7 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON request")
 		return
 	}
-	response, err := h.auth.Verify2FA(r.Context(), input.MFAToken, input.Code)
+	response, err := h.auth.Verify2FA(r.Context(), input.MFAToken, input.Code, r.Header.Get("X-Device-ID"))
 	if err != nil {
 		switch {
 		case errors.Is(err, domain.ErrSessionInvalid):

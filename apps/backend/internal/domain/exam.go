@@ -82,13 +82,16 @@ type QuestionResponse struct {
 }
 
 type UserExam struct {
-	ID         string
-	UserID     string
-	ExamID     string
-	Status     string
-	StartedAt  time.Time
-	FinishedAt *time.Time
-	TotalScore *float64
+	ID            string
+	UserID        string
+	ExamID        string
+	Status        string
+	StartedAt     time.Time
+	FinishedAt    *time.Time
+	TotalScore    *float64
+	DeviceID      string
+	PausedAt      *time.Time
+	PausedSeconds int
 }
 
 // UserExamShuffle adalah permutasi yang dipersistenkan per attempt (per
@@ -109,18 +112,21 @@ type UserAnswer struct {
 }
 
 type ExamStartResponse struct {
-	UserExamID       string    `json:"user_exam_id"`
-	ExamID           string    `json:"exam_id"`
-	Title            string    `json:"title"`
-	Status           string    `json:"status"`
-	ServerTime       time.Time `json:"server_time"`
-	StartedAt        time.Time `json:"started_at"`
-	EndsAt           time.Time `json:"ends_at"`
-	RemainingSeconds int64     `json:"remaining_seconds"`
-	DurationMinutes  int       `json:"duration_minutes"`
-	ExamType         string    `json:"exam_type"`
+	UserExamID       string             `json:"user_exam_id"`
+	ExamID           string             `json:"exam_id"`
+	Title            string             `json:"title"`
+	Status           string             `json:"status"`
+	ServerTime       time.Time          `json:"server_time"`
+	StartedAt        time.Time          `json:"started_at"`
+	EndsAt           time.Time          `json:"ends_at"`
+	RemainingSeconds int64              `json:"remaining_seconds"`
+	DurationMinutes  int                `json:"duration_minutes"`
+	ExamType         string             `json:"exam_type"`
 	// ScreenLockEnabled memberi tahu klien apakah mode ini menerapkan
 	// penguncian layar. Hanya true untuk mode CBT.
 	ScreenLockEnabled bool               `json:"screen_lock_enabled"`
+	Paused            bool               `json:"paused"`
+	PausedAt          *time.Time         `json:"paused_at,omitempty"`
+	Answers           map[string]string  `json:"answers,omitempty"`
 	Questions         []QuestionResponse `json:"questions"`
 }

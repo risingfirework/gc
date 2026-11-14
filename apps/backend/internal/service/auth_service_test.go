@@ -166,7 +166,7 @@ type fakeSessions struct {
 	byUser map[string]string
 }
 
-func (f *fakeSessions) SetSession(_ context.Context, userID, jti string, _ time.Duration) error {
+func (f *fakeSessions) SetSession(_ context.Context, userID, jti, _ string, _ time.Duration) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.byUser[userID] = jti
@@ -180,6 +180,9 @@ func (f *fakeSessions) GetSession(_ context.Context, userID string) (string, err
 		return "", domain.ErrSessionNotFound
 	}
 	return jti, nil
+}
+func (f *fakeSessions) GetSessionDevice(_ context.Context, userID string) (string, error) {
+	return "", nil
 }
 func (f *fakeSessions) DeleteSession(_ context.Context, userID string) error {
 	f.mu.Lock()
@@ -424,14 +427,14 @@ func Test2FALoginFlow(t *testing.T) {
 		t.Fatalf("unexpected step-one response: %+v", first)
 	}
 
-	if _, err := service.Verify2FA(context.Background(), first.MFAToken, "000000"); !errors.Is(err, domain.ErrInvalid2FACode) {
+	if _, err := service.Verify2FA(context.Background(), first.MFAToken, "000000", ""); !errors.Is(err, domain.ErrInvalid2FACode) {
 		t.Fatalf("verify with wrong code error = %v", err)
 	}
-	if _, err := service.Verify2FA(context.Background(), "not-a-token", computeCurrentTOTP(t, setup.Secret)); !errors.Is(err, domain.ErrSessionInvalid) {
+	if _, err := service.Verify2FA(context.Background(), "not-a-token", computeCurrentTOTP(t, setup.Secret), ""); !errors.Is(err, domain.ErrSessionInvalid) {
 		t.Fatalf("verify with bad mfa token error = %v", err)
 	}
 
-	second, err := service.Verify2FA(context.Background(), first.MFAToken, computeCurrentTOTP(t, setup.Secret))
+	second, err := service.Verify2FA(context.Background(), first.MFAToken, computeCurrentTOTP(t, setup.Secret), "")
 	if err != nil {
 		t.Fatalf("verify 2fa: %v", err)
 	}

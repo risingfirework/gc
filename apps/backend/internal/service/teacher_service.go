@@ -15,6 +15,8 @@ var payoutPhonePattern = regexp.MustCompile(`^(?:\+62|62|0)[0-9]{8,13}$`)
 type TeacherService struct {
 	repository domain.TeacherRepository
 	access     domain.CBTAccessService
+	analytics  domain.ExamAnalyticsService
+	cbt        domain.CBTService
 }
 
 func NewTeacherService(repository domain.TeacherRepository) *TeacherService {
@@ -25,6 +27,12 @@ func NewTeacherService(repository domain.TeacherRepository) *TeacherService {
 // dipasang (mis. pada unit test), pembuatan paket CBT berjalan tanpa gate.
 func (s *TeacherService) ConfigureCBTAccess(access domain.CBTAccessService) {
 	s.access = access
+}
+func (s *TeacherService) ConfigureAnalytics(analytics domain.ExamAnalyticsService) {
+	s.analytics = analytics
+}
+func (s *TeacherService) ConfigureCBT(cbt domain.CBTService) {
+	s.cbt = cbt
 }
 
 func (s *TeacherService) beginCBTCreation(ctx context.Context, publisherID string) (string, error) {
@@ -250,6 +258,59 @@ func (s *TeacherService) ResetParticipantScreenLock(ctx context.Context, publish
 		return domain.ErrInvalidInput
 	}
 	return s.repository.ResetParticipantScreenLock(ctx, publisherID, examID, userExamID)
+}
+
+func (s *TeacherService) verifyParticipantOwnership(ctx context.Context, publisherID, examID, userExamID string) error {
+	items, err := s.repository.ListCBTParticipants(ctx, publisherID, examID)
+	if err != nil {
+		return err
+	}
+	for _, p := range items {
+		if p.UserExamID == userExamID {
+			return nil
+		}
+	}
+	return domain.ErrExamForbidden
+}
+
+func (s *TeacherService) PauseParticipantExam(ctx context.Context, publisherID, examID, userExamID string) error {
+	if !validUUID(publisherID) || !validUUID(examID) || !validUUID(userExamID) || s.cbt == nil {
+		return domain.ErrInvalidInput
+	}
+	if err := s.verifyParticipantOwnership(ctx, publisherID, examID, userExamID); err != nil {
+		return err
+	}
+	return s.cbt.PauseUserExam(ctx, userExamID)
+}
+
+func (s *TeacherService) ResumeParticipantExam(ctx context.Context, publisherID, examID, userExamID string) error {
+	if !validUUID(publisherID) || !validUUID(examID) || !validUUID(userExamID) || s.cbt == nil {
+		return domain.ErrInvalidInput
+	}
+	if err := s.verifyParticipantOwnership(ctx, publisherID, examID, userExamID); err != nil {
+		return err
+	}
+	return s.cbt.ResumeUserExam(ctx, userExamID)
+}
+
+func (s *TeacherService) ResetParticipantDevice(ctx context.Context, publisherID, examID, userExamID string) error {
+	if !validUUID(publisherID) || !validUUID(examID) || !validUUID(userExamID) || s.cbt == nil {
+		return domain.ErrInvalidInput
+	}
+	if err := s.verifyParticipantOwnership(ctx, publisherID, examID, userExamID); err != nil {
+		return err
+	}
+	return s.cbt.ResetUserExamDevice(ctx, userExamID)
+}
+
+func (s *TeacherService) GetParticipantExamResult(ctx context.Context, publisherID, examID, userExamID string) (*domain.ExamResultResponse, error) {
+	if !validUUID(publisherID) || !validUUID(examID) || !validUUID(userExamID) || s.analytics == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	if err := s.verifyParticipantOwnership(ctx, publisherID, examID, userExamID); err != nil {
+		return nil, err
+	}
+	return s.analytics.GetParticipantResult(ctx, userExamID)
 }
 func (s *TeacherService) CreateQuestion(ctx context.Context, publisherID string, input domain.AdminQuestionRequest) (*domain.AdminQuestion, error) {
 	if err := s.requireVerifiedTeacher(ctx, publisherID); err != nil {

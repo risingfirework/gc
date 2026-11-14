@@ -23,10 +23,18 @@ type AdminService struct {
 	repository domain.AdminRepository
 	simpkb     *SIMPKBClient
 	payments   domain.PaymentRefundService
+	analytics  domain.ExamAnalyticsService
+	cbt        domain.CBTService
 }
 
 func (s *AdminService) ConfigurePaymentRefunds(payments domain.PaymentRefundService) {
 	s.payments = payments
+}
+func (s *AdminService) ConfigureAnalytics(analytics domain.ExamAnalyticsService) {
+	s.analytics = analytics
+}
+func (s *AdminService) ConfigureCBT(cbt domain.CBTService) {
+	s.cbt = cbt
 }
 
 func NewAdminService(repository domain.AdminRepository, simpkb ...*SIMPKBClient) *AdminService {
@@ -801,6 +809,46 @@ func (s *AdminService) ResetParticipantScreenLock(ctx context.Context, examID, u
 		return domain.ErrInvalidInput
 	}
 	return s.repository.ResetParticipantScreenLock(ctx, examID, userExamID)
+}
+
+func (s *AdminService) PauseParticipantExam(ctx context.Context, examID, userExamID string) error {
+	if !validUUID(examID) || !validUUID(userExamID) {
+		return domain.ErrInvalidInput
+	}
+	if s.cbt == nil {
+		return domain.ErrInvalidInput
+	}
+	return s.cbt.PauseUserExam(ctx, userExamID)
+}
+
+func (s *AdminService) ResumeParticipantExam(ctx context.Context, examID, userExamID string) error {
+	if !validUUID(examID) || !validUUID(userExamID) {
+		return domain.ErrInvalidInput
+	}
+	if s.cbt == nil {
+		return domain.ErrInvalidInput
+	}
+	return s.cbt.ResumeUserExam(ctx, userExamID)
+}
+
+func (s *AdminService) ResetParticipantDevice(ctx context.Context, examID, userExamID string) error {
+	if !validUUID(examID) || !validUUID(userExamID) {
+		return domain.ErrInvalidInput
+	}
+	if s.cbt == nil {
+		return domain.ErrInvalidInput
+	}
+	return s.cbt.ResetUserExamDevice(ctx, userExamID)
+}
+
+func (s *AdminService) GetParticipantExamResult(ctx context.Context, examID, userExamID string) (*domain.ExamResultResponse, error) {
+	if !validUUID(examID) || !validUUID(userExamID) {
+		return nil, domain.ErrInvalidInput
+	}
+	if s.analytics == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.analytics.GetParticipantResult(ctx, userExamID)
 }
 func validateAdminQuestion(input domain.AdminQuestionRequest) error {
 	if !validUUID(input.ExamID) {
