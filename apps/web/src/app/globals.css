@@ -1014,7 +1014,7 @@ input[type=checkbox],input[type=radio]{accent-color:#0093e8}
 .doubt-button.active{background:#b87900;color:#fff}
 
 /* Exam */
-.cbt-page{background:transparent}
+.cbt-page{user-select:none;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;background:transparent}
 .timer-box{background:rgba(255,86,86,.1);border-color:rgba(255,120,110,.35)}
 .exam-loader{border-color:rgba(255,255,255,.12);border-top-color:#00caf0}
 .option{background:rgba(255,255,255,.035);border-color:rgba(255,255,255,.11)}

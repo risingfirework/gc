@@ -247,6 +247,44 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
     return () => window.removeEventListener(SESSION_INVALID_EVENT, handler);
   }, []);
 
+  // Anti-cheat: blokir copy/paste/klik kanan/shortcut dan coba full-screen.
+  useEffect(() => {
+    if (!exam || result) return;
+    const block = (event: Event) => { event.preventDefault(); };
+    const keyBlock = (event: KeyboardEvent) => {
+      if (event.ctrlKey || event.metaKey) {
+        const key = event.key.toLowerCase();
+        if (["c", "v", "x", "u", "s", "p", "a"].includes(key)) event.preventDefault();
+      }
+      if (event.key === "F12" || (event.ctrlKey && event.shiftKey && ["i", "j", "c"].includes(event.key.toLowerCase()))) {
+        event.preventDefault();
+      }
+    };
+    document.addEventListener("contextmenu", block);
+    document.addEventListener("copy", block);
+    document.addEventListener("cut", block);
+    document.addEventListener("paste", block);
+    document.addEventListener("keydown", keyBlock);
+    const requestFullscreen = () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen?.().catch(() => undefined);
+      }
+    };
+    requestFullscreen();
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) requestFullscreen();
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("contextmenu", block);
+      document.removeEventListener("copy", block);
+      document.removeEventListener("cut", block);
+      document.removeEventListener("paste", block);
+      document.removeEventListener("keydown", keyBlock);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
+  }, [exam, result]);
+
   // Peringatan native browser agar tab tidak ditutup begitu saja saat terkunci.
   useEffect(() => {
     if (!screenLocked) return;
