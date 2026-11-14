@@ -32,10 +32,15 @@ func RateLimit(limiter domain.RateLimiter, limit int, window time.Duration, logg
 			}
 			allowed, err := limiter.Allow(r.Context(), key, limit, window)
 			if err != nil {
+				// Fail-closed: bila penyimpanan rate limit tidak tersedia,
+				// endpoint autentikasi tidak boleh berjalan tanpa proteksi.
 				if logger != nil {
-					logger.Warn("rate limiter unavailable; allowing request", "error", err)
+					logger.Error("rate limiter unavailable; rejecting request", "error", err)
 				}
-				next.ServeHTTP(w, r)
+				w.Header().Set("Retry-After", "30")
+				writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+					"error": "Layanan sedang sibuk. Coba lagi sebentar lagi.",
+				})
 				return
 			}
 			if !allowed {
@@ -52,6 +57,9 @@ func RateLimit(limiter domain.RateLimiter, limit int, window time.Duration, logg
 
 // rateLimitKey mengembalikan kunci rate limit. Untuk /login, pakai email
 // dari body JSON agar per-user. Untuk rute lain, pakai IP + rute.
+// Saat trustProxy aktif, X-Real-IP dari nginx diprioritaskan; entri terakhir
+// X-Forwarded-For dipakai sebagai fallback karena nginx menambahkan IP klien
+// asli di ujung rantai.
 func rateLimitKey(r *http.Request, trustProxy bool) (string, []byte) {
 	// Salin body agar bisa dibaca ulang.
 	raw, _ := io.ReadAll(r.Body)
@@ -74,10 +82,16 @@ func rateLimitKey(r *http.Request, trustProxy bool) (string, []byte) {
 
 func clientIP(r *http.Request, trustProxy bool) string {
 	if trustProxy {
+		if real := strings.TrimSpace(r.Header.Get("X-Real-IP")); net.ParseIP(real) != nil {
+			return real
+		}
 		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-			first := strings.TrimSpace(strings.Split(forwarded, ",")[0])
-			if net.ParseIP(first) != nil {
-				return first
+			parts := strings.Split(forwarded, ",")
+			for i := len(parts) - 1; i >= 0; i-- {
+				candidate := strings.TrimSpace(parts[i])
+				if net.ParseIP(candidate) != nil {
+					return candidate
+				}
 			}
 		}
 	}

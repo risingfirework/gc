@@ -403,13 +403,16 @@ func Test2FALoginFlow(t *testing.T) {
 		t.Fatalf("unexpected setup response: %+v", setup)
 	}
 
-	if err := service.Enable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, setup.Secret[:1]); err != nil && !errors.Is(err, domain.ErrInvalid2FACode) {
+	if err := service.Enable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, setup.Secret[:1], "strong-password"); err != nil && !errors.Is(err, domain.ErrInvalid2FACode) {
 		t.Fatalf("enable with bad code error = %v", err)
 	}
-	if err := service.Enable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, computeCurrentTOTP(t, setup.Secret)); err != nil {
+	if err := service.Enable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, computeCurrentTOTP(t, setup.Secret), "wrong-password"); !errors.Is(err, domain.ErrInvalidCredentials) {
+		t.Fatalf("enable with wrong password error = %v", err)
+	}
+	if err := service.Enable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, computeCurrentTOTP(t, setup.Secret), "strong-password"); err != nil {
 		t.Fatalf("enable 2fa: %v", err)
 	}
-	if err := service.Enable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, computeCurrentTOTP(t, setup.Secret)); !errors.Is(err, domain.Err2FAAlreadyEnabled) {
+	if err := service.Enable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, computeCurrentTOTP(t, setup.Secret), "strong-password"); !errors.Is(err, domain.Err2FAAlreadyEnabled) {
 		t.Fatalf("double enable error = %v", err)
 	}
 
@@ -439,11 +442,14 @@ func Test2FALoginFlow(t *testing.T) {
 		t.Fatalf("validate token after 2fa: %v", err)
 	}
 
-	// Disable membutuhkan kode valid saat ini.
-	if err := service.Disable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, "000000"); !errors.Is(err, domain.ErrInvalid2FACode) {
+	// Disable membutuhkan kode valid saat ini dan konfirmasi kata sandi.
+	if err := service.Disable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, "000000", "strong-password"); !errors.Is(err, domain.ErrInvalid2FACode) {
 		t.Fatalf("disable with wrong code error = %v", err)
 	}
-	if err := service.Disable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, computeCurrentTOTP(t, setup.Secret)); err != nil {
+	if err := service.Disable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, computeCurrentTOTP(t, setup.Secret), "wrong-password"); !errors.Is(err, domain.ErrInvalidCredentials) {
+		t.Fatalf("disable with wrong password error = %v", err)
+	}
+	if err := service.Disable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, computeCurrentTOTP(t, setup.Secret), "strong-password"); err != nil {
 		t.Fatalf("disable 2fa: %v", err)
 	}
 	after, err := service.Login(context.Background(), domain.LoginRequest{Email: "finance@example.com", Password: "strong-password"})
@@ -464,10 +470,10 @@ func Test2FARestrictedToPrivilegedRoles(t *testing.T) {
 	if _, err := service.Setup2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}); !errors.Is(err, domain.Err2FAUnsupportedRole) {
 		t.Fatalf("setup2fa for student error = %v", err)
 	}
-	if err := service.Enable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, "123456"); !errors.Is(err, domain.Err2FAUnsupportedRole) {
+	if err := service.Enable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, "123456", "strong-password"); !errors.Is(err, domain.Err2FAUnsupportedRole) {
 		t.Fatalf("enable2fa for student error = %v", err)
 	}
-	if err := service.Disable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, "123456"); !errors.Is(err, domain.Err2FAUnsupportedRole) {
+	if err := service.Disable2FA(context.Background(), domain.AuthClaims{UserID: "user-1"}, "123456", "strong-password"); !errors.Is(err, domain.Err2FAUnsupportedRole) {
 		t.Fatalf("disable2fa for student error = %v", err)
 	}
 }

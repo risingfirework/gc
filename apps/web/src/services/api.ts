@@ -217,8 +217,8 @@ export const api = {
     return response;
   },
   async twoFactorSetup() { return (await http.get<{ secret: string; otpauth_url: string; qr_data_url: string; enabled: boolean }>("/auth/2fa/setup")).data; },
-  async twoFactorEnable(code: string) { return (await http.post<{ totp_enabled: boolean }>("/auth/2fa/enable", { code })).data; },
-  async twoFactorDisable(code: string) { return (await http.post<{ totp_enabled: boolean }>("/auth/2fa/disable", { code })).data; },
+  async twoFactorEnable(code: string, password: string) { return (await http.post<{ totp_enabled: boolean }>("/auth/2fa/enable", { code, password })).data; },
+  async twoFactorDisable(code: string, password: string) { return (await http.post<{ totp_enabled: boolean }>("/auth/2fa/disable", { code, password })).data; },
   async forgotPassword(email:string) { return (await http.post<{message:string;reset_url?:string}>("/auth/forgot-password", {email})).data; },
   async resetPassword(token:string,newPassword:string) { return (await http.post<{message:string}>("/auth/reset-password", {token,new_password:newPassword})).data; },
   async loginWithGoogle(idToken: string, schoolLevel?: User["school_level"]) {

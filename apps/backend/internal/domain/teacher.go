@@ -2,8 +2,13 @@ package domain
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrTeacherNotVerified dikembalikan saat akun guru belum disetujui operator
+// tetapi mencoba mempublikasikan konten atau mengubah bank soal.
+var ErrTeacherNotVerified = errors.New("akun guru belum diverifikasi operator")
 
 // TeacherVerification adalah baris data guru yang sedang/belum disetujui dan
 // tampil pada panel verifikasi operator/admin.
@@ -63,6 +68,9 @@ type TeacherDashboard struct {
 
 type TeacherRepository interface {
 	GetDashboard(ctx context.Context, publisherID string) (*TeacherDashboard, error)
+	// VerificationStatus mengembalikan status verifikasi guru untuk membatasi
+	// publikasi konten sebelum disetujui operator.
+	VerificationStatus(ctx context.Context, userID string) (string, error)
 	CreatePackage(ctx context.Context, publisherID string, input AdminPackageRequest) (*AdminPackage, error)
 	CreatePackageBundle(ctx context.Context, publisherID string, input PackageBundle) (*AdminPackage, error)
 	GetPackage(ctx context.Context, publisherID, id string) (*AdminPackage, error)

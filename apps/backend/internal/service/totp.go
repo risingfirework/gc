@@ -60,20 +60,28 @@ func totpCode(secret string, at time.Time) (string, error) {
 // validTOTP membandingkan kode input terhadap jendela waktu ±totpSkewSteps
 // langkah periode, semua perbandingan konstan-waktu.
 func validTOTP(secret, input string, at time.Time) bool {
+	_, ok := matchTOTPStep(secret, input, at)
+	return ok
+}
+
+// matchTOTPStep mengembalikan langkah waktu (counter) yang cocok sehingga
+// pemanggil dapat menolak replay kode yang sama.
+func matchTOTPStep(secret, input string, at time.Time) (int64, bool) {
 	input = strings.TrimSpace(input)
 	if !isDigits(input, totpDigits) {
-		return false
+		return 0, false
 	}
-	for step := -totpSkewSteps; step <= totpSkewSteps; step++ {
-		candidate, err := totpCode(secret, at.Add(time.Duration(step)*totpPeriodSeconds*time.Second))
+	current := at.Unix() / totpPeriodSeconds
+	for offset := int64(-totpSkewSteps); offset <= totpSkewSteps; offset++ {
+		candidate, err := totpCode(secret, at.Add(time.Duration(offset)*totpPeriodSeconds*time.Second))
 		if err != nil {
-			return false
+			return 0, false
 		}
 		if subtle.ConstantTimeCompare([]byte(candidate), []byte(input)) == 1 {
-			return true
+			return current + offset, true
 		}
 	}
-	return false
+	return 0, false
 }
 
 func isDigits(value string, expected int) bool {

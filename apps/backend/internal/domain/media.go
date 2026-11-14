@@ -12,6 +12,7 @@ var (
 	ErrMediaForbidden   = errors.New("media access forbidden")
 	ErrMediaTooLarge    = errors.New("media file too large")
 	ErrMediaUnsupported = errors.New("unsupported media type")
+	ErrMediaQuota       = errors.New("media upload quota exceeded")
 )
 
 const (
@@ -52,6 +53,9 @@ type MediaRepository interface {
 	Create(ctx context.Context, asset MediaAsset) (*MediaAsset, error)
 	Get(ctx context.Context, id string) (*MediaAsset, error)
 	Delete(ctx context.Context, id string) error
+	// SumOwnerBytesSince menjumlahkan ukuran media milik satu pengguna sejak
+	// waktu tertentu; dipakai untuk menegakkan kuota unggah harian.
+	SumOwnerBytesSince(ctx context.Context, ownerID string, since time.Time) (int64, error)
 }
 
 type MediaService interface {

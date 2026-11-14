@@ -3,6 +3,7 @@ package redis
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	goredis "github.com/redis/go-redis/v9"
@@ -42,6 +43,13 @@ func (r *SessionRepository) DeleteSession(ctx context.Context, userID string) er
 
 func (r *SessionRepository) key(userID string) string {
 	return r.prefix + userID
+}
+
+// MarkTOTPUsed menyimpan penanda kode TOTP yang sudah dipakai. Nilai balik
+// false berarti kode pada langkah waktu tersebut sudah pernah dipakai.
+func (r *SessionRepository) MarkTOTPUsed(ctx context.Context, userID string, step int64, ttl time.Duration) (bool, error) {
+	key := "tka:auth:totp:" + userID + ":" + strconv.FormatInt(step, 10)
+	return r.client.SetNX(ctx, key, "1", ttl).Result()
 }
 
 var _ domain.SessionRepository = (*SessionRepository)(nil)

@@ -12,6 +12,14 @@ func normalizeQuestion(input domain.AdminQuestionRequest) domain.AdminQuestionRe
 	input.SubjectName = strings.TrimSpace(input.SubjectName)
 	input.ChapterName = strings.TrimSpace(input.ChapterName)
 	input.ContentText = strings.TrimSpace(input.ContentText)
+	// JSON null bukan array: kolom category_labels_json/options_json memiliki
+	// CHECK jsonb_typeof = 'array', jadi slice nil harus dinormalkan.
+	if input.Options == nil {
+		input.Options = []domain.QuestionOption{}
+	}
+	if input.CategoryLabels == nil {
+		input.CategoryLabels = []string{}
+	}
 	input.QuestionType = strings.ToLower(strings.TrimSpace(input.QuestionType))
 	if input.QuestionType == "" {
 		input.QuestionType = domain.QuestionTypeSingleChoice

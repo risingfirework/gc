@@ -54,6 +54,12 @@ type SessionRepository interface {
 	DeleteSession(ctx context.Context, userID string) error
 }
 
+// TOTPReplayGuard adalah kemampuan opsional penyimpanan sesi untuk menolak
+// kode TOTP yang sudah pernah dipakai pada langkah waktu yang sama.
+type TOTPReplayGuard interface {
+	MarkTOTPUsed(ctx context.Context, userID string, step int64, ttl time.Duration) (bool, error)
+}
+
 // RefreshToken adalah baris token penyegar yang disimpan di PostgreSQL
 // (bukan Redis) agar tetap berlaku walau cache di-flush. Hanya hash-nya yang
 // disimpan, sehingga kebocoran tabel tidak mengekspos token yang bisa dipakai.
@@ -104,8 +110,8 @@ type AuthService interface {
 	ResetPassword(ctx context.Context, input ResetPasswordRequest) error
 	Verify2FA(ctx context.Context, mfaToken, code string) (*LoginResponse, error)
 	Setup2FA(ctx context.Context, claims AuthClaims) (*TwoFactorSetupResponse, error)
-	Enable2FA(ctx context.Context, claims AuthClaims, code string) error
-	Disable2FA(ctx context.Context, claims AuthClaims, code string) error
+	Enable2FA(ctx context.Context, claims AuthClaims, code, password string) error
+	Disable2FA(ctx context.Context, claims AuthClaims, code, password string) error
 }
 
 // RateLimiter menghitung pemakaian per kunci (mis. IP) agar batas per

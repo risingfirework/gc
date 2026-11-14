@@ -13,6 +13,10 @@ type Exam struct {
 	CreatedAt        time.Time
 	PackageExamType  string
 	PackageCBTToken  string
+	Status           string
+	PackageStatus    string
+	StartDate        *time.Time
+	EndDate          *time.Time
 	ShuffleQuestions bool
 	ShuffleOptions   bool
 	// Pengaturan blokir layar per ujian CBT.

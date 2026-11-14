@@ -23,6 +23,7 @@ export default function ProfileEditor({ user, onUpdated }: Props) {
   const [error, setError] = useState("");
   const [twoFA, setTwoFA] = useState<{ secret: string; otpauth_url: string; qr_data_url: string; enabled: boolean }>();
   const [twoFACode, setTwoFACode] = useState("");
+  const [twoFAPassword, setTwoFAPassword] = useState("");
   const [twoFAError, setTwoFAError] = useState("");
   const [twoFALoading, setTwoFALoading] = useState(false);
   const canUse2FA = user.role === "owner" || user.role === "finance";
@@ -44,7 +45,7 @@ export default function ProfileEditor({ user, onUpdated }: Props) {
 
   async function savePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (newPassword.length < 8) { setError("Kata sandi baru minimal 8 karakter."); return; }
+    if (newPassword.length < 12) { setError("Kata sandi baru minimal 12 karakter."); return; }
     if (newPassword !== confirmPassword) { setError("Konfirmasi kata sandi tidak cocok."); return; }
     setSaving(true); setError(""); setMessage("");
     try {
@@ -58,20 +59,27 @@ export default function ProfileEditor({ user, onUpdated }: Props) {
 
   async function loadTwoFASetup() {
     setTwoFALoading(true); setTwoFAError("");
-    try { setTwoFA(await api.twoFactorSetup()); setTwoFACode(""); }
+    try { setTwoFA(await api.twoFactorSetup()); setTwoFACode(""); setTwoFAPassword(""); }
     catch (reason) { setTwoFAError(reason instanceof APIError ? reason.message : "Gagal menyiapkan autentikator."); }
     finally { setTwoFALoading(false); }
   }
 
+  function openTwoFAManage() {
+    setTwoFAError("");
+    setTwoFACode("");
+    setTwoFAPassword("");
+    setTwoFA({ secret: "", otpauth_url: "", qr_data_url: "", enabled: true });
+  }
+
   async function confirmTwoFA(enabled: boolean) {
-    if (twoFACode.length !== 6 || !twoFA) return;
+    if (twoFACode.length !== 6 || !twoFA || !twoFAPassword) return;
     setTwoFALoading(true); setTwoFAError("");
     try {
-      await (enabled ? api.twoFactorEnable(twoFACode) : api.twoFactorDisable(twoFACode));
+      await (enabled ? api.twoFactorEnable(twoFACode, twoFAPassword) : api.twoFactorDisable(twoFACode, twoFAPassword));
       const updated = await api.currentUser();
       onUpdated?.(updated);
-      setTwoFA(undefined); setTwoFACode("");
-    } catch (reason) { setTwoFAError(reason instanceof APIError ? reason.message : "Kode autentikator tidak valid."); }
+      setTwoFA(undefined); setTwoFACode(""); setTwoFAPassword("");
+    } catch (reason) { setTwoFAError(reason instanceof APIError ? reason.message : "Kode autentikator atau kata sandi tidak valid."); }
     finally { setTwoFALoading(false); }
   }
 
@@ -100,11 +108,11 @@ export default function ProfileEditor({ user, onUpdated }: Props) {
 
     {tab === "security" && <div className="profile-tab-panel security-panel">
       <form onSubmit={savePassword}>
-        <div className="security-note"><span aria-hidden="true">✓</span><div><strong>Jaga keamanan akun Anda</strong><p>Gunakan kata sandi unik minimal 8 karakter dan jangan membagikannya kepada siapa pun.</p></div></div>
+        <div className="security-note"><span aria-hidden="true">✓</span><div><strong>Jaga keamanan akun Anda</strong><p>Gunakan kata sandi unik minimal 12 karakter dan jangan membagikannya kepada siapa pun.</p></div></div>
         <div className="profile-form-grid password-grid">
           <div className="form-field current-password"><label htmlFor="pe-cur">Kata sandi saat ini</label><input id="pe-cur" type="password" value={currentPassword} onChange={(event) => setCurrentPassword(event.target.value)} autoComplete="current-password" required/></div>
-          <div className="form-field"><label htmlFor="pe-new">Kata sandi baru</label><input id="pe-new" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={72} required/><small>Minimal 8 karakter.</small></div>
-          <div className="form-field"><label htmlFor="pe-confirm">Konfirmasi kata sandi baru</label><input id="pe-confirm" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={8} maxLength={72} required/></div>
+          <div className="form-field"><label htmlFor="pe-new">Kata sandi baru</label><input id="pe-new" type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} required/><small>Minimal 12 karakter.</small></div>
+          <div className="form-field"><label htmlFor="pe-confirm">Konfirmasi kata sandi baru</label><input id="pe-confirm" type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={12} maxLength={72} required/></div>
         </div>
         {(message || error) && <p className={error ? "form-error" : "form-success"}>{error || message}</p>}
         <div className="profile-form-actions"><span>Anda akan tetap masuk setelah kata sandi diperbarui.</span><button className="button" disabled={saving}>{saving ? "Memperbarui..." : "Perbarui kata sandi"}</button></div>
@@ -121,12 +129,13 @@ export default function ProfileEditor({ user, onUpdated }: Props) {
           </>}
           {twoFA.enabled && <p className="muted">Autentikator aktif. Masukkan kode saat ini untuk menonaktifkannya.</p>}
           <div className="form-field"><label htmlFor="pe-2fa">Kode autentikator 6 digit</label><input id="pe-2fa" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={twoFACode} onChange={(event) => setTwoFACode(event.target.value.replace(/\D/g, ""))} placeholder="000000" required/></div>
+          <div className="form-field"><label htmlFor="pe-2fa-password">Kata sandi akun</label><input id="pe-2fa-password" type="password" autoComplete="current-password" value={twoFAPassword} onChange={(event) => setTwoFAPassword(event.target.value)} placeholder="Konfirmasi kata sandi" required/></div>
           {twoFAError && <p className="form-error">{twoFAError}</p>}
           <div className="profile-form-actions"><span>{twoFA.enabled ? "Aktif" : "Belum aktif"} — akun {user.email}</span>{twoFA.enabled
-            ? <button className="button danger" disabled={twoFALoading || twoFACode.length !== 6} onClick={() => void confirmTwoFA(false)}>{twoFALoading ? "Memproses..." : "Nonaktifkan autentikator"}</button>
-            : <button className="button" disabled={twoFALoading || twoFACode.length !== 6} onClick={() => void confirmTwoFA(true)}>{twoFALoading ? "Memproses..." : "Aktifkan autentikator"}</button>}</div>
+            ? <button className="button danger" disabled={twoFALoading || twoFACode.length !== 6 || !twoFAPassword} onClick={() => void confirmTwoFA(false)}>{twoFALoading ? "Memproses..." : "Nonaktifkan autentikator"}</button>
+            : <button className="button" disabled={twoFALoading || twoFACode.length !== 6 || !twoFAPassword} onClick={() => void confirmTwoFA(true)}>{twoFALoading ? "Memproses..." : "Aktifkan autentikator"}</button>}</div>
         </div>}
-        {user.totp_enabled && !twoFA && <div className="profile-form-actions"><span>Status: <b className="ok">Aktif</b>. Login memerlukan kode dari aplikasi autentikator.</span><button className="button danger" disabled={twoFALoading} onClick={() => void loadTwoFASetup()}>{twoFALoading ? "Memproses..." : "Kelola autentikator"}</button></div>}
+        {user.totp_enabled && !twoFA && <div className="profile-form-actions"><span>Status: <b className="ok">Aktif</b>. Login memerlukan kode dari aplikasi autentikator.</span><button className="button danger" disabled={twoFALoading} onClick={openTwoFAManage}>{twoFALoading ? "Memproses..." : "Kelola autentikator"}</button></div>}
       </div>}
     </div>}
   </div>;

@@ -139,7 +139,7 @@ func (h *CBTHandler) handleError(w http.ResponseWriter, r *http.Request, err err
 	switch {
 	case errors.Is(err, domain.ErrExamNotFound), errors.Is(err, domain.ErrUserExamNotFound), errors.Is(err, domain.ErrQuestionNotFound):
 		writeError(w, http.StatusNotFound, err.Error())
-	case errors.Is(err, domain.ErrExamForbidden), errors.Is(err, domain.ErrCBTTokenRequired), errors.Is(err, domain.ErrCBTTokenInvalid):
+	case errors.Is(err, domain.ErrExamForbidden), errors.Is(err, domain.ErrExamNotOpen), errors.Is(err, domain.ErrExamClosed), errors.Is(err, domain.ErrCBTTokenRequired), errors.Is(err, domain.ErrCBTTokenInvalid):
 		writeError(w, http.StatusForbidden, err.Error())
 	case errors.Is(err, domain.ErrInvalidAnswer):
 		writeError(w, http.StatusUnprocessableEntity, err.Error())

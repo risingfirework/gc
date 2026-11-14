@@ -119,7 +119,8 @@ type UserResponse struct {
 
 // TwoFactorCodeRequest adalah kode TOTP 6 digit dari aplikasi autentikator.
 type TwoFactorCodeRequest struct {
-	Code string `json:"code"`
+	Code     string `json:"code"`
+	Password string `json:"password"` // wajib untuk mengaktifkan/menonaktifkan 2FA
 }
 
 // Verify2FARequest melengkapi login dua langkah: mfa_token dari langkah

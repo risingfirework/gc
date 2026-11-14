@@ -104,24 +104,29 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.ForgotPasswordRateLimit, 5), positiveWindow(opts.ForgotPasswordRateWindow, 1*time.Hour), logger, trustProxy)).Post("/forgot-password", authHandler.ForgotPassword)
 			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.LoginRateLimit, 10), positiveWindow(opts.LoginRateWindow, 15*time.Minute), logger, trustProxy)).Post("/refresh", authHandler.Refresh)
 			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.GoogleRateLimit, defaultInt(opts.LoginRateLimit, 10)), positiveWindow(opts.GoogleRateWindow, positiveWindow(opts.LoginRateWindow, 15*time.Minute)), logger, trustProxy)).Post("/google", authHandler.GoogleLogin)
+			router.With(middleware.RateLimit(opts.RateLimiter, defaultInt(opts.LoginRateLimit, 10), positiveWindow(opts.LoginRateWindow, 15*time.Minute), logger, trustProxy)).Post("/verify-2fa", authHandler.Verify2FA)
 		} else {
 			router.Post("/register", authHandler.Register)
 			router.Post("/login", authHandler.Login)
 			router.Post("/forgot-password", authHandler.ForgotPassword)
 			router.Post("/refresh", authHandler.Refresh)
 			router.Post("/google", authHandler.GoogleLogin)
+			router.Post("/verify-2fa", authHandler.Verify2FA)
 		}
 		router.Post("/reset-password", authHandler.ResetPassword)
-		router.Post("/verify-2fa", authHandler.Verify2FA)
 		router.With(middleware.RequireAuth(auth)).Get("/me", authHandler.CurrentUser)
 		router.With(middleware.RequireAuth(auth)).Patch("/me", authHandler.UpdateProfile)
 		router.With(middleware.RequireAuth(auth)).Post("/logout", authHandler.Logout)
 		router.Group(func(router chi.Router) {
 			// Kelola autentikator dua langkah — hanya owner & finance.
 			router.Use(middleware.RequireAuth(auth))
-			router.Get("/2fa/setup", authHandler.TwoFactorSetup)
-			router.Post("/2fa/enable", authHandler.TwoFactorEnable)
-			router.Post("/2fa/disable", authHandler.TwoFactorDisable)
+			twoFALimit := func(next http.Handler) http.Handler { return next }
+			if opts.RateLimiter != nil {
+				twoFALimit = middleware.RateLimit(opts.RateLimiter, defaultInt(opts.LoginRateLimit, 10), positiveWindow(opts.LoginRateWindow, 15*time.Minute), logger, trustProxy)
+			}
+			router.With(twoFALimit).Get("/2fa/setup", authHandler.TwoFactorSetup)
+			router.With(twoFALimit).Post("/2fa/enable", authHandler.TwoFactorEnable)
+			router.With(twoFALimit).Post("/2fa/disable", authHandler.TwoFactorDisable)
 		})
 	})
 	if payment != nil {

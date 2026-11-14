@@ -15,6 +15,8 @@ var (
 	ErrExamSubmissionInProgress = errors.New("exam submission is in progress")
 	ErrExamStillRunning         = errors.New("exam is still running")
 	ErrExamForbidden            = errors.New("exam does not belong to user")
+	ErrExamNotOpen              = errors.New("ujian belum dibuka sesuai jadwal")
+	ErrExamClosed               = errors.New("ujian sudah ditutup sesuai jadwal")
 	ErrCBTTokenRequired         = errors.New("ujian CBT memerlukan kode rahasia (token)")
 	ErrCBTTokenInvalid          = errors.New("kode rahasia (token) CBT salah")
 	ErrInvalidAnswer            = errors.New("invalid selected option")

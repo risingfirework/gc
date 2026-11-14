@@ -39,10 +39,26 @@ func (s *TeacherService) refundCBTCreation(ctx context.Context, publisherID, tok
 		_ = s.access.RefundCBTCreation(ctx, publisherID, token)
 	}
 }
+
+// requireVerifiedTeacher memblokir publikasi konten oleh akun guru yang belum
+// disetujui operator. Ini menutup celah pendaftaran mandiri sebagai "guru".
+func (s *TeacherService) requireVerifiedTeacher(ctx context.Context, publisherID string) error {
+	status, err := s.repository.VerificationStatus(ctx, publisherID)
+	if err != nil {
+		return err
+	}
+	if status != domain.TeacherVerificationApproved {
+		return domain.ErrTeacherNotVerified
+	}
+	return nil
+}
 func (s *TeacherService) GetDashboard(ctx context.Context, publisherID string) (*domain.TeacherDashboard, error) {
 	return s.repository.GetDashboard(ctx, publisherID)
 }
 func (s *TeacherService) CreatePackage(ctx context.Context, publisherID string, input domain.AdminPackageRequest) (*domain.AdminPackage, error) {
+	if err := s.requireVerifiedTeacher(ctx, publisherID); err != nil {
+		return nil, err
+	}
 	input.Title = strings.TrimSpace(input.Title)
 	input.Description = strings.TrimSpace(input.Description)
 	input.Kode = strings.ToUpper(strings.TrimSpace(input.Kode))
@@ -113,6 +129,9 @@ func (s *TeacherService) UpdatePackage(ctx context.Context, publisherID, id stri
 	return result, nil
 }
 func (s *TeacherService) CreatePackageBundle(ctx context.Context, publisherID string, input domain.PackageBundle) (*domain.AdminPackage, error) {
+	if err := s.requireVerifiedTeacher(ctx, publisherID); err != nil {
+		return nil, err
+	}
 	input.Package.Title = strings.TrimSpace(input.Package.Title)
 	input.Package.Description = strings.TrimSpace(input.Package.Description)
 	input.Package.Kode = strings.ToUpper(strings.TrimSpace(input.Package.Kode))
@@ -154,6 +173,9 @@ func (s *TeacherService) DeletePackage(ctx context.Context, publisherID, id stri
 	return s.repository.DeletePackage(ctx, publisherID, id)
 }
 func (s *TeacherService) CreateExam(ctx context.Context, publisherID string, input domain.AdminExamRequest) (*domain.AdminExam, error) {
+	if err := s.requireVerifiedTeacher(ctx, publisherID); err != nil {
+		return nil, err
+	}
 	input.Title = strings.TrimSpace(input.Title)
 	input.Status = normalizeAdminStatus(input.Status)
 	if validateAdminExam(input) != nil {
@@ -230,6 +252,9 @@ func (s *TeacherService) ResetParticipantScreenLock(ctx context.Context, publish
 	return s.repository.ResetParticipantScreenLock(ctx, publisherID, examID, userExamID)
 }
 func (s *TeacherService) CreateQuestion(ctx context.Context, publisherID string, input domain.AdminQuestionRequest) (*domain.AdminQuestion, error) {
+	if err := s.requireVerifiedTeacher(ctx, publisherID); err != nil {
+		return nil, err
+	}
 	input = normalizeQuestion(input)
 	input.Status = normalizeAdminStatus(input.Status)
 	if validateAdminQuestion(input) != nil {
@@ -238,6 +263,9 @@ func (s *TeacherService) CreateQuestion(ctx context.Context, publisherID string,
 	return s.repository.CreateQuestion(ctx, publisherID, input)
 }
 func (s *TeacherService) UpdateQuestion(ctx context.Context, publisherID, id string, input domain.AdminQuestionRequest) (*domain.AdminQuestion, error) {
+	if err := s.requireVerifiedTeacher(ctx, publisherID); err != nil {
+		return nil, err
+	}
 	input = normalizeQuestion(input)
 	input.Status = normalizeAdminStatus(input.Status)
 	if !validUUID(id) || validateAdminQuestion(input) != nil {

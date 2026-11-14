@@ -59,7 +59,7 @@ func (f *fakeScreenLockRepository) ReleaseExamScreenLock(_ context.Context, _ st
 func newScreenLockService(t *testing.T, examType string, locks domain.ExamScreenLockRepository, now time.Time) *CBTService {
 	t.Helper()
 	exams := &fakeExamRepository{
-		exam:    domain.Exam{ID: testExamID, Title: "Ujian", DurationMinutes: 60, PackageExamType: examType, ScreenLockEnabled: true},
+		exam:    domain.Exam{Status: "active", PackageStatus: "active", ID: testExamID, Title: "Ujian", DurationMinutes: 60, PackageExamType: examType, ScreenLockEnabled: true},
 		attempt: domain.UserExam{ID: testAttemptID, ExamID: testExamID, UserID: testUserID, Status: "ongoing", StartedAt: now},
 	}
 	service := NewCBTService(exams, &fakeCBTRepository{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -307,7 +307,7 @@ func TestStartExamMenyertakanFlagPenguncianLayar(t *testing.T) {
 	} {
 		locks := &fakeScreenLockRepository{}
 		exams := &fakeExamRepository{
-			exam:    domain.Exam{ID: testExamID, Title: "Ujian", DurationMinutes: 60, PackageExamType: tc.examType, PackageCBTToken: tc.token, ScreenLockEnabled: true},
+			exam:    domain.Exam{Status: "active", PackageStatus: "active", ID: testExamID, Title: "Ujian", DurationMinutes: 60, PackageExamType: tc.examType, PackageCBTToken: tc.token, ScreenLockEnabled: true},
 			attempt: domain.UserExam{ID: testAttemptID, ExamID: testExamID, UserID: testUserID, Status: "ongoing", StartedAt: now},
 		}
 		service := NewCBTService(exams, &fakeCBTRepository{}, slog.New(slog.NewTextHandler(io.Discard, nil))).WithScreenLockRepository(locks)
@@ -330,7 +330,7 @@ func TestReportViolationTidakMengunciBilaPengaturanUjianMati(t *testing.T) {
 	now := time.Now().UTC()
 	locks := &fakeScreenLockRepository{}
 	exams := &fakeExamRepository{
-		exam:    domain.Exam{ID: testExamID, Title: "Ujian", DurationMinutes: 60, PackageExamType: "cbt", ScreenLockEnabled: false},
+		exam:    domain.Exam{Status: "active", PackageStatus: "active", ID: testExamID, Title: "Ujian", DurationMinutes: 60, PackageExamType: "cbt", ScreenLockEnabled: false},
 		attempt: domain.UserExam{ID: testAttemptID, ExamID: testExamID, UserID: testUserID, Status: "ongoing", StartedAt: now},
 	}
 	service := NewCBTService(exams, &fakeCBTRepository{}, slog.New(slog.NewTextHandler(io.Discard, nil))).WithScreenLockRepository(locks)
@@ -352,7 +352,7 @@ func TestReportViolationMemakaiDurasiKustomUjian(t *testing.T) {
 	now := time.Now().UTC()
 	locks := &fakeScreenLockRepository{}
 	exams := &fakeExamRepository{
-		exam:    domain.Exam{ID: testExamID, Title: "Ujian", DurationMinutes: 60, PackageExamType: "cbt", ScreenLockEnabled: true, ScreenLockSeconds: 12},
+		exam:    domain.Exam{Status: "active", PackageStatus: "active", ID: testExamID, Title: "Ujian", DurationMinutes: 60, PackageExamType: "cbt", ScreenLockEnabled: true, ScreenLockSeconds: 12},
 		attempt: domain.UserExam{ID: testAttemptID, ExamID: testExamID, UserID: testUserID, Status: "ongoing", StartedAt: now},
 	}
 	service := NewCBTService(exams, &fakeCBTRepository{}, slog.New(slog.NewTextHandler(io.Discard, nil))).WithScreenLockRepository(locks)

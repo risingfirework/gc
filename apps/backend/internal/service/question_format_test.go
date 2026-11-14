@@ -27,6 +27,13 @@ func TestCanonicalTKAAnswers(t *testing.T) {
 	}
 }
 
+func TestNormalizeQuestionKeepsJSONArrays(t *testing.T) {
+	input := normalizeQuestion(domain.AdminQuestionRequest{ContentText: "2 + 2 = ?"})
+	if input.Options == nil || input.CategoryLabels == nil {
+		t.Fatalf("normalizeQuestion left nil slices: options=%v labels=%v", input.Options, input.CategoryLabels)
+	}
+}
+
 func TestCanonicalTKAAnswersRejectsIncompleteKeys(t *testing.T) {
 	options := []domain.QuestionOption{{Key: "A", Content: "Satu"}, {Key: "B", Content: "Dua"}}
 	if _, valid := canonicalAnswer(domain.QuestionTypeMultipleChoice, options, nil, "A", false); valid {

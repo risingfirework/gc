@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -60,4 +61,13 @@ func (r *MediaRepository) Delete(ctx context.Context, id string) error {
 		return domain.ErrMediaNotFound
 	}
 	return nil
+}
+
+func (r *MediaRepository) SumOwnerBytesSince(ctx context.Context, ownerID string, since time.Time) (int64, error) {
+	const query = `SELECT COALESCE(SUM(size_bytes),0) FROM media_assets WHERE owner_id=$1 AND created_at >= $2`
+	var total int64
+	if err := r.db.QueryRow(ctx, query, ownerID, since).Scan(&total); err != nil {
+		return 0, fmt.Errorf("sum media usage: %w", err)
+	}
+	return total, nil
 }

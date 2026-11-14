@@ -28,7 +28,8 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 	const examQuery = `
 		SELECT e.id, e.package_id, e.title, e.duration_minutes, e.total_questions, e.passing_score, e.scoring_method,
 		       e.shuffle_questions, e.shuffle_options, e.created_at,
-		       p.exam_type, COALESCE(p.cbt_token,''), e.screen_lock_enabled, e.screen_lock_seconds
+		       p.exam_type, COALESCE(p.cbt_token,''), e.status, p.status, p.start_date, p.end_date,
+		       e.screen_lock_enabled, e.screen_lock_seconds
 		FROM exams e
 		JOIN packages p ON p.id = e.package_id
 		WHERE e.id = $1`
@@ -38,6 +39,7 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 		&exam.TotalQuestions, &exam.PassingScore, &exam.ScoringMethod,
 		&exam.ShuffleQuestions, &exam.ShuffleOptions, &exam.CreatedAt,
 		&exam.PackageExamType, &exam.PackageCBTToken,
+		&exam.Status, &exam.PackageStatus, &exam.StartDate, &exam.EndDate,
 		&exam.ScreenLockEnabled, &exam.ScreenLockSeconds,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -54,7 +56,7 @@ func (r *ExamRepository) GetExamWithQuestions(ctx context.Context, examID string
 		       difficulty, discrimination, explanation_text, explanation_video_url,
 		       question_audio_url, question_video_url
 		FROM questions
-		WHERE exam_id = $1
+		WHERE exam_id = $1 AND status = 'active'
 		ORDER BY display_order, id`
 	rows, err := r.db.Query(ctx, questionsQuery, examID)
 	if err != nil {

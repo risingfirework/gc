@@ -47,6 +47,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	h.logger.InfoContext(r.Context(), "auth register succeeded", "user_id", response.User.ID, "role", response.User.Role, "remote_addr", r.RemoteAddr)
 	writeJSON(w, http.StatusCreated, response)
 }
 
@@ -60,6 +61,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	response, err := h.auth.Login(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, domain.ErrInvalidCredentials) {
+			h.logger.WarnContext(r.Context(), "auth login failed", "email", strings.ToLower(strings.TrimSpace(input.Email)), "remote_addr", r.RemoteAddr, "user_agent", r.UserAgent())
 			writeError(w, http.StatusUnauthorized, "invalid email or password")
 			return
 		}
@@ -67,6 +69,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
+	h.logger.InfoContext(r.Context(), "auth login succeeded", "user_id", response.User.ID, "role", response.User.Role, "requires_2fa", response.Requires2FA, "remote_addr", r.RemoteAddr)
 	writeLoginResponse(w, r, http.StatusOK, response)
 }
 
@@ -130,13 +133,14 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, domain.ErrInvalidResetToken):
 			writeError(w, http.StatusUnprocessableEntity, domain.ErrInvalidResetToken.Error())
 		case errors.Is(err, domain.ErrInvalidInput):
-			writeError(w, http.StatusUnprocessableEntity, "kata sandi harus terdiri dari 8–72 karakter")
+			writeError(w, http.StatusUnprocessableEntity, "kata sandi harus terdiri dari 12-72 karakter dan tidak umum")
 		default:
 			h.logger.ErrorContext(r.Context(), "reset password", "error", err)
 			writeError(w, http.StatusInternalServerError, "reset kata sandi gagal diproses")
 		}
 		return
 	}
+	h.logger.InfoContext(r.Context(), "auth password reset succeeded", "remote_addr", r.RemoteAddr)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "Kata sandi berhasil diperbarui. Silakan masuk kembali."})
 }
 
@@ -179,6 +183,7 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, domain.Err2FANotEnabled):
 			writeError(w, http.StatusConflict, domain.Err2FANotEnabled.Error())
 		case errors.Is(err, domain.ErrInvalid2FACode):
+			h.logger.WarnContext(r.Context(), "auth 2fa failed", "reason", "invalid_code", "remote_addr", r.RemoteAddr, "user_agent", r.UserAgent())
 			writeError(w, http.StatusUnprocessableEntity, domain.ErrInvalid2FACode.Error())
 		default:
 			h.logger.ErrorContext(r.Context(), "verify 2fa", "error", err)
@@ -186,6 +191,7 @@ func (h *AuthHandler) Verify2FA(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	h.logger.InfoContext(r.Context(), "auth 2fa succeeded", "user_id", response.User.ID, "role", response.User.Role, "remote_addr", r.RemoteAddr)
 	writeLoginResponse(w, r, http.StatusOK, response)
 }
 
@@ -200,12 +206,15 @@ func (h *AuthHandler) TwoFactorSetup(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, domain.Err2FAUnsupportedRole):
 			writeError(w, http.StatusForbidden, domain.Err2FAUnsupportedRole.Error())
+		case errors.Is(err, domain.Err2FAAlreadyEnabled):
+			writeError(w, http.StatusConflict, domain.Err2FAAlreadyEnabled.Error())
 		default:
 			h.logger.ErrorContext(r.Context(), "setup 2fa", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal server error")
 		}
 		return
 	}
+	h.logger.InfoContext(r.Context(), "auth 2fa setup started", "user_id", claims.UserID, "role", claims.Role, "remote_addr", r.RemoteAddr)
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -220,10 +229,12 @@ func (h *AuthHandler) TwoFactorEnable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON request")
 		return
 	}
-	if err := h.auth.Enable2FA(r.Context(), claims, input.Code); err != nil {
+	if err := h.auth.Enable2FA(r.Context(), claims, input.Code, input.Password); err != nil {
 		switch {
 		case errors.Is(err, domain.Err2FAUnsupportedRole):
 			writeError(w, http.StatusForbidden, domain.Err2FAUnsupportedRole.Error())
+		case errors.Is(err, domain.ErrInvalidCredentials):
+			writeError(w, http.StatusForbidden, "kata sandi akun tidak sesuai")
 		case errors.Is(err, domain.Err2FAAlreadyEnabled):
 			writeError(w, http.StatusConflict, domain.Err2FAAlreadyEnabled.Error())
 		case errors.Is(err, domain.Err2FANotEnabled):
@@ -236,6 +247,7 @@ func (h *AuthHandler) TwoFactorEnable(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	h.logger.InfoContext(r.Context(), "auth 2fa enabled", "user_id", claims.UserID, "role", claims.Role, "remote_addr", r.RemoteAddr)
 	writeJSON(w, http.StatusOK, map[string]any{"totp_enabled": true})
 }
 
@@ -250,10 +262,12 @@ func (h *AuthHandler) TwoFactorDisable(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid JSON request")
 		return
 	}
-	if err := h.auth.Disable2FA(r.Context(), claims, input.Code); err != nil {
+	if err := h.auth.Disable2FA(r.Context(), claims, input.Code, input.Password); err != nil {
 		switch {
 		case errors.Is(err, domain.Err2FAUnsupportedRole):
 			writeError(w, http.StatusForbidden, domain.Err2FAUnsupportedRole.Error())
+		case errors.Is(err, domain.ErrInvalidCredentials):
+			writeError(w, http.StatusForbidden, "kata sandi akun tidak sesuai")
 		case errors.Is(err, domain.Err2FANotEnabled):
 			writeError(w, http.StatusConflict, domain.Err2FANotEnabled.Error())
 		case errors.Is(err, domain.ErrInvalid2FACode):
@@ -264,6 +278,7 @@ func (h *AuthHandler) TwoFactorDisable(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	h.logger.WarnContext(r.Context(), "auth 2fa disabled", "user_id", claims.UserID, "role", claims.Role, "remote_addr", r.RemoteAddr)
 	writeJSON(w, http.StatusOK, map[string]any{"totp_enabled": false})
 }
 

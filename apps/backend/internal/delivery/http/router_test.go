@@ -98,10 +98,10 @@ func (s authStub) Verify2FA(context.Context, string, string) (*domain.LoginRespo
 func (s authStub) Setup2FA(context.Context, domain.AuthClaims) (*domain.TwoFactorSetupResponse, error) {
 	return nil, domain.Err2FAUnsupportedRole
 }
-func (s authStub) Enable2FA(context.Context, domain.AuthClaims, string) error {
+func (s authStub) Enable2FA(context.Context, domain.AuthClaims, string, string) error {
 	return domain.Err2FAUnsupportedRole
 }
-func (s authStub) Disable2FA(context.Context, domain.AuthClaims, string) error {
+func (s authStub) Disable2FA(context.Context, domain.AuthClaims, string, string) error {
 	return domain.Err2FAUnsupportedRole
 }
 func (s authStub) Refresh(ctx context.Context, token string) (*domain.LoginResponse, error) {

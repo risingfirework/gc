@@ -594,7 +594,7 @@ func writeAdminError(logger *slog.Logger, w http.ResponseWriter, r *http.Request
 		writeError(w, 404, err.Error())
 	case errors.Is(err, domain.ErrEmailAlreadyExists), errors.Is(err, domain.ErrAdminConflict), errors.Is(err, domain.ErrDuplicateName), errors.Is(err, domain.ErrDuplicateKode), errors.Is(err, domain.ErrPayoutRequestActive), errors.Is(err, domain.ErrPayoutTransition), errors.Is(err, domain.ErrLastOwnerGuard), errors.Is(err, domain.ErrTransactionNotRefundable), errors.Is(err, domain.ErrPackageHasAttempts), errors.Is(err, domain.ErrPackageInUse), errors.Is(err, domain.ErrExamHasAttempts), errors.Is(err, domain.ErrScreenLockNotLocked), errors.Is(err, domain.ErrCBTPaymentTransition), errors.Is(err, domain.ErrCBTPaymentPending):
 		writeError(w, 409, err.Error())
-	case errors.Is(err, domain.ErrExamForbidden):
+	case errors.Is(err, domain.ErrExamForbidden), errors.Is(err, domain.ErrTeacherNotVerified):
 		writeError(w, 403, err.Error())
 	default:
 		logger.ErrorContext(r.Context(), "admin mutation", "error", err)

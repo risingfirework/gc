@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -18,6 +19,10 @@ import (
 )
 
 const mediaPublicPrefix = "/api/v1/media/"
+
+// maxDailyUploadBytes membatasi total unggahan per pengguna dalam 24 jam
+// bergulir agar satu akun tidak bisa menghabiskan disk server.
+const maxDailyUploadBytes int64 = 250 << 20
 
 var (
 	mediaImageMimes = map[string]bool{
@@ -70,6 +75,13 @@ func NewMediaService(repository domain.MediaRepository, dir string, maxImage, ma
 func (s *MediaService) Upload(ctx context.Context, input domain.MediaUpload) (*domain.MediaAsset, error) {
 	if strings.TrimSpace(input.OwnerID) == "" {
 		return nil, domain.ErrInvalidInput
+	}
+	used, err := s.repository.SumOwnerBytesSince(ctx, input.OwnerID, time.Now().UTC().Add(-24*time.Hour))
+	if err != nil {
+		return nil, fmt.Errorf("check media quota: %w", err)
+	}
+	if input.Size > 0 && used+input.Size > maxDailyUploadBytes {
+		return nil, domain.ErrMediaQuota
 	}
 	kind := normalizeMediaKind(input.DeclaredKind)
 	if kind == "" {
@@ -125,6 +137,10 @@ func (s *MediaService) Upload(ctx context.Context, input domain.MediaUpload) (*d
 	if written == 0 {
 		cleanup()
 		return nil, domain.ErrInvalidInput
+	}
+	if used+written > maxDailyUploadBytes {
+		cleanup()
+		return nil, domain.ErrMediaQuota
 	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpPath)

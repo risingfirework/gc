@@ -2,9 +2,7 @@
 .env.local
 .env.production
 .env*.local
-secrets/*.txt
-secrets/*.pem
-secrets/*.key
+secrets/*
 !secrets/README.md
 deploy/nginx/runtime/*.previous
 deploy/nginx/runtime/*.tmp.*

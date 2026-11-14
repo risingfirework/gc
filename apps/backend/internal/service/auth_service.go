@@ -21,9 +21,35 @@ import (
 )
 
 const (
-	minPasswordLength = 8
+	minPasswordLength = 12
 	maxPasswordLength = 72
 )
+
+// commonPasswords adalah daftar pendek kata sandi yang paling sering dipakai.
+// Pemeriksaan penuh sebaiknya memakai layanan breached-password; daftar ini
+// menutup kasus paling umum tanpa menambah dependensi jaringan.
+var commonPasswords = map[string]bool{
+	"123456789012":  true,
+	"1234567890":    true,
+	"123456789":     true,
+	"12345678":      true,
+	"qwertyuiop":    true,
+	"qwerty123":     true,
+	"password":      true,
+	"password123":   true,
+	"password1234":  true,
+	"admin123":      true,
+	"administrator": true,
+	"letmein123":    true,
+	"welcome123":    true,
+	"iloveyou123":   true,
+	"abc123456789":  true,
+	"passw0rd":      true,
+	"p@ssw0rd":      true,
+	"bismillah":     true,
+	"rahasia123":    true,
+	"indonesia123":  true,
+}
 
 type AuthService struct {
 	users        domain.AuthRepository
@@ -41,13 +67,15 @@ type AuthService struct {
 }
 
 type accessTokenClaims struct {
-	Email string `json:"email"`
-	Role  string `json:"role"`
+	Email    string `json:"email"`
+	Role     string `json:"role"`
+	TokenUse string `json:"token_use"`
 	jwt.RegisteredClaims
 }
 
 // mfaTokenClaims membawa Subject=user.ID untuk langkah kedua login 2FA.
 type mfaTokenClaims struct {
+	TokenUse string `json:"token_use"`
 	jwt.RegisteredClaims
 }
 
@@ -55,6 +83,8 @@ const (
 	mfaTokenTTL       = 5 * time.Minute
 	totpIssuerApp     = "TKA"
 	defaultRefreshTTL = 30 * 24 * time.Hour
+	tokenUseAccess    = "access"
+	tokenUseMFA       = "mfa"
 )
 
 func NewAuthService(users domain.AuthRepository, sessions domain.SessionRepository, jwtSecret, issuer string, tokenTTL time.Duration, google domain.GoogleIDTokenVerifier) *AuthService {
@@ -152,7 +182,7 @@ func (s *AuthService) Register(ctx context.Context, input domain.RegisterRequest
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid email", domain.ErrInvalidInput)
 	}
-	if err := validatePassword(input.Password); err != nil {
+	if err := validatePasswordForEmail(input.Password, email); err != nil {
 		return nil, err
 	}
 	level, err := normalizeSchoolLevel(input.SchoolLevel)
@@ -234,8 +264,21 @@ func (s *AuthService) Verify2FA(ctx context.Context, mfaToken, code string) (*do
 	if !user.TOTPEnabled || user.TOTPSecretBase32 == "" {
 		return nil, domain.Err2FANotEnabled
 	}
-	if !validTOTP(user.TOTPSecretBase32, code, s.now()) {
+	now := s.now().UTC()
+	step, valid := matchTOTPStep(user.TOTPSecretBase32, code, now)
+	if !valid {
 		return nil, domain.ErrInvalid2FACode
+	}
+	// Cegah pemakaian ulang kode TOTP yang sama (mis. dari tangkapan layar
+	// atau replay). Guard opsional agar implementasi non-Redis tetap jalan.
+	if guard, ok := s.sessions.(domain.TOTPReplayGuard); ok {
+		fresh, err := guard.MarkTOTPUsed(ctx, user.ID, step, 2*time.Minute)
+		if err != nil {
+			return nil, fmt.Errorf("record totp usage: %w", err)
+		}
+		if !fresh {
+			return nil, domain.ErrInvalid2FACode
+		}
 	}
 	return s.issueSession(ctx, *user)
 }
@@ -250,15 +293,20 @@ func (s *AuthService) Setup2FA(ctx context.Context, claims domain.AuthClaims) (*
 	if err := ensure2FARole(user.Role); err != nil {
 		return nil, err
 	}
-	secret := user.TOTPSecretBase32
-	if secret == "" {
-		secret, err = generateTOTPSecret()
-		if err != nil {
-			return nil, err
-		}
-		if err := s.users.SetTOTPSecret(ctx, user.ID, secret); err != nil {
-			return nil, fmt.Errorf("store totp secret: %w", err)
-		}
+	// Seed yang sudah aktif tidak boleh dibaca ulang: jika 2FA aktif, pemilik
+	// akun harus menonaktifkannya dengan kode TOTP, bukan mengambil seed.
+	if user.TOTPEnabled {
+		return nil, domain.Err2FAAlreadyEnabled
+	}
+	// Selalu rotasi seed saat setup diminta. Dengan begitu seed lama yang
+	// mungkin sempat ditulis pihak lain tidak bisa dipakai untuk mengambil
+	// alih akun saat pengguna memindai QR.
+	secret, err := generateTOTPSecret()
+	if err != nil {
+		return nil, err
+	}
+	if err := s.users.SetTOTPSecret(ctx, user.ID, secret); err != nil {
+		return nil, fmt.Errorf("store totp secret: %w", err)
 	}
 	uri := totpURI(s.totpIssuer(), user.Email, secret)
 	qr, err := qrDataURL(uri)
@@ -270,13 +318,16 @@ func (s *AuthService) Setup2FA(ctx context.Context, claims domain.AuthClaims) (*
 
 // Enable2FA mengaktifkan 2FA setelah pengguna membuktikan pemindaian QR
 // dengan kode saat ini.
-func (s *AuthService) Enable2FA(ctx context.Context, claims domain.AuthClaims, code string) error {
+func (s *AuthService) Enable2FA(ctx context.Context, claims domain.AuthClaims, code, password string) error {
 	user, err := s.users.FindByID(ctx, claims.UserID)
 	if err != nil {
 		return fmt.Errorf("find user: %w", err)
 	}
 	if err := ensure2FARole(user.Role); err != nil {
 		return err
+	}
+	if !verifyPassword(user.PasswordHash, password) {
+		return domain.ErrInvalidCredentials
 	}
 	if user.TOTPEnabled {
 		return domain.Err2FAAlreadyEnabled
@@ -291,13 +342,16 @@ func (s *AuthService) Enable2FA(ctx context.Context, claims domain.AuthClaims, c
 }
 
 // Disable2FA menonaktifkan 2FA; kode TOTP saat ini wajib diverifikasi.
-func (s *AuthService) Disable2FA(ctx context.Context, claims domain.AuthClaims, code string) error {
+func (s *AuthService) Disable2FA(ctx context.Context, claims domain.AuthClaims, code, password string) error {
 	user, err := s.users.FindByID(ctx, claims.UserID)
 	if err != nil {
 		return fmt.Errorf("find user: %w", err)
 	}
 	if err := ensure2FARole(user.Role); err != nil {
 		return err
+	}
+	if !verifyPassword(user.PasswordHash, password) {
+		return domain.ErrInvalidCredentials
 	}
 	if !user.TOTPEnabled {
 		return domain.Err2FANotEnabled
@@ -349,7 +403,7 @@ func (s *AuthService) issueSession(ctx context.Context, user domain.User) (*doma
 	expiresAt := now.Add(s.tokenTTL)
 	jti := uuid.NewString()
 	claims := accessTokenClaims{
-		Email: user.Email, Role: user.Role,
+		Email: user.Email, Role: user.Role, TokenUse: tokenUseAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: s.issuer, Subject: user.ID, ID: jti,
 			IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(expiresAt),
@@ -431,7 +485,7 @@ func (s *AuthService) ValidateAccessToken(ctx context.Context, rawToken string) 
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithIssuer(s.issuer), jwt.WithExpirationRequired(),
 	)
-	if err != nil || !token.Valid || claims.Subject == "" || claims.ID == "" || claims.ExpiresAt == nil {
+	if err != nil || !token.Valid || claims.Subject == "" || claims.ID == "" || claims.ExpiresAt == nil || claims.TokenUse != tokenUseAccess {
 		return nil, domain.ErrSessionInvalid
 	}
 	activeJTI, err := s.sessions.GetSession(ctx, claims.Subject)
@@ -491,9 +545,35 @@ func normalizeEmail(value string) (string, error) {
 func validatePassword(password string) error {
 	length := len([]byte(password))
 	if length < minPasswordLength || length > maxPasswordLength {
-		return fmt.Errorf("%w: password must contain 8-72 bytes", domain.ErrInvalidInput)
+		return fmt.Errorf("%w: password must contain %d-%d bytes", domain.ErrInvalidInput, minPasswordLength, maxPasswordLength)
+	}
+	if commonPasswords[strings.ToLower(strings.TrimSpace(password))] {
+		return fmt.Errorf("%w: password terlalu umum", domain.ErrInvalidInput)
 	}
 	return nil
+}
+
+// validatePasswordForEmail menolak kata sandi yang sama dengan bagian lokal
+// email agar akun tidak mudah ditebak.
+func validatePasswordForEmail(password, email string) error {
+	if err := validatePassword(password); err != nil {
+		return err
+	}
+	local := email
+	if at := strings.Index(local, "@"); at > 0 {
+		local = local[:at]
+	}
+	if strings.EqualFold(strings.TrimSpace(password), strings.TrimSpace(local)) {
+		return fmt.Errorf("%w: password tidak boleh sama dengan email", domain.ErrInvalidInput)
+	}
+	return nil
+}
+
+func verifyPassword(hash, password string) bool {
+	if strings.TrimSpace(password) == "" {
+		return false
+	}
+	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
 func normalizeSchoolLevel(value string) (string, error) {
@@ -535,6 +615,7 @@ func normalizeTeacherKTP(value string) (string, error) {
 func (s *AuthService) issueMFAToken(userID string) (string, error) {
 	now := s.now().UTC()
 	claims := mfaTokenClaims{
+		TokenUse: tokenUseMFA,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: s.issuer, Subject: userID,
 			IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(mfaTokenTTL)),
@@ -554,7 +635,7 @@ func (s *AuthService) parseMFAToken(raw string) (string, error) {
 		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
 		jwt.WithIssuer(s.issuer), jwt.WithExpirationRequired(),
 	)
-	if err != nil || !token.Valid || claims.Subject == "" {
+	if err != nil || !token.Valid || claims.Subject == "" || claims.TokenUse != tokenUseMFA {
 		return "", domain.ErrSessionInvalid
 	}
 	return claims.Subject, nil

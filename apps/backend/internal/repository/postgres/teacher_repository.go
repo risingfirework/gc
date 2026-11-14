@@ -42,6 +42,20 @@ func (r *TeacherRepository) Appeal(ctx context.Context, userID, appealImageDataU
 	return nil
 }
 
+// VerificationStatus mengembalikan status verifikasi guru. Nilai kosong
+// berarti pengguna bukan guru atau kolom belum diisi.
+func (r *TeacherRepository) VerificationStatus(ctx context.Context, userID string) (string, error) {
+	var status string
+	err := r.db.QueryRow(ctx, `SELECT COALESCE(teacher_verification_status,'') FROM users WHERE id=$1 AND role='teacher'`, userID).Scan(&status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", domain.ErrTeacherNotVerified
+	}
+	if err != nil {
+		return "", fmt.Errorf("teacher verification status: %w", err)
+	}
+	return status, nil
+}
+
 func (r *TeacherRepository) GetDashboard(ctx context.Context, publisherID string) (*domain.TeacherDashboard, error) {
 	result := &domain.TeacherDashboard{Levels: []string{}, Mapels: []domain.MasterItem{}, AcademicYears: []domain.MasterItem{}, Kategoris: []domain.MasterItem{}, Kelas: []domain.MasterItem{}, Packages: []domain.AdminPackage{}, Exams: []domain.AdminExam{}, Questions: []domain.AdminQuestion{}, Transactions: []domain.AdminTransaction{}, Commissions: []domain.TeacherCommission{}, Payouts: []domain.TeacherPayout{}, PayoutRequests: []domain.TeacherWithdrawalRequest{}}
 	if err := r.db.QueryRow(ctx, `SELECT `+financeSettingsColumns+` FROM finance_settings WHERE singleton=TRUE`).Scan(&result.FinanceSettings.PlatformCommissionPercent, &result.FinanceSettings.DefaultDiscountPercent, &result.FinanceSettings.TaxPercent, &result.FinanceSettings.MinimumPayout, &result.FinanceSettings.PayoutCycle, &result.FinanceSettings.AutoPayout, &result.FinanceSettings.TeacherUploadFee, &result.FinanceSettings.TeacherSalesBonusPercent, &result.FinanceSettings.AffiliateRatePercent, &result.FinanceSettings.CommissionHoldDays, &result.FinanceSettings.UpdatedAt); err != nil {
@@ -683,8 +697,8 @@ func (r *TeacherRepository) CreateQuestion(ctx context.Context, publisherID stri
 	if err != nil {
 		return nil, fmt.Errorf("encode category labels: %w", err)
 	}
-	const query = `WITH allowed AS (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE e.id=$17 AND p.publisher_id=$18), changed AS (INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status,chapter_name,explanation_video_url,question_audio_url,question_video_url) SELECT $1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NULLIF($17,''),$18,$19 FROM allowed RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name,COALESCE(c.explanation_video_url,''),c.question_audio_url,c.question_video_url FROM changed c JOIN exams e ON e.id=c.exam_id`
-	item, err := r.teacherQuestionRow(ctx, query, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ChapterName, input.ExamID, publisherID)
+	const query = `WITH allowed AS (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE e.id=$1 AND p.publisher_id=$20), changed AS (INSERT INTO questions(exam_id,subject_name,content_text,question_type,presentation_type,group_code,stimulus_text,question_image_url,stimulus_image_url,category_labels_json,options_json,correct_answer,score_weight,explanation_text,status,chapter_name,explanation_video_url,question_audio_url,question_video_url) SELECT $1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NULLIF($17,''),$18,$19 FROM allowed RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name,COALESCE(c.explanation_video_url,''),c.question_audio_url,c.question_video_url FROM changed c JOIN exams e ON e.id=c.exam_id`
+	item, err := r.teacherQuestionRow(ctx, query, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ChapterName, input.ExplanationVideoURL, input.QuestionAudioURL, input.QuestionVideoURL, publisherID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrExamNotFound
 	}
@@ -699,8 +713,8 @@ func (r *TeacherRepository) UpdateQuestion(ctx context.Context, publisherID, id 
 	if err != nil {
 		return nil, fmt.Errorf("encode category labels: %w", err)
 	}
-	const query = `WITH changed AS (UPDATE questions SET exam_id=$3,subject_name=$4,content_text=$5,question_type=$6,presentation_type=$7,group_code=NULLIF($8,''),stimulus_text=$9,question_image_url=$10,stimulus_image_url=$11,category_labels_json=$12,options_json=$13,correct_answer=$14,score_weight=$15,explanation_text=$16,status=$17,chapter_name=$18 WHERE id=$1 AND exam_id IN (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$2) RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name FROM changed c JOIN exams e ON e.id=c.exam_id`
-	item, err := r.teacherQuestionRow(ctx, query, id, publisherID, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ChapterName)
+	const query = `WITH changed AS (UPDATE questions SET exam_id=$3,subject_name=$4,content_text=$5,question_type=$6,presentation_type=$7,group_code=NULLIF($8,''),stimulus_text=$9,question_image_url=$10,stimulus_image_url=$11,category_labels_json=$12,options_json=$13,correct_answer=$14,score_weight=$15,explanation_text=$16,status=$17,chapter_name=$18,explanation_video_url=NULLIF($19,''),question_audio_url=$20,question_video_url=$21 WHERE id=$1 AND exam_id IN (SELECT e.id FROM exams e JOIN packages p ON p.id=e.package_id WHERE p.publisher_id=$2) AND EXISTS (SELECT 1 FROM exams e2 JOIN packages p2 ON p2.id=e2.package_id WHERE e2.id=$3 AND p2.publisher_id=$2) RETURNING *) SELECT c.id,c.exam_id,e.title,c.subject_name,c.content_text,c.question_type,c.presentation_type,COALESCE(c.group_code,''),c.stimulus_text,c.question_image_url,c.stimulus_image_url,c.category_labels_json,c.options_json,c.correct_answer,c.score_weight,c.explanation_text,c.status,c.chapter_name,COALESCE(c.explanation_video_url,''),c.question_audio_url,c.question_video_url FROM changed c JOIN exams e ON e.id=c.exam_id`
+	item, err := r.teacherQuestionRow(ctx, query, id, publisherID, input.ExamID, input.SubjectName, input.ContentText, input.QuestionType, input.PresentationType, input.GroupCode, input.StimulusText, input.QuestionImageURL, input.StimulusImageURL, categoryLabelsJSON, optionsJSON, input.CorrectAnswer, input.ScoreWeight, input.Explanation, input.Status, input.ChapterName, input.ExplanationVideoURL, input.QuestionAudioURL, input.QuestionVideoURL)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrQuestionNotFound
 	}

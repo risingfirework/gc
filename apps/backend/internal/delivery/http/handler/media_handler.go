@@ -117,6 +117,8 @@ func writeMediaError(logger *slog.Logger, w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusForbidden, "tidak berhak menghapus media ini")
 	case errors.Is(err, domain.ErrMediaTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "ukuran media melebihi batas")
+	case errors.Is(err, domain.ErrMediaQuota):
+		writeError(w, http.StatusTooManyRequests, "kuota unggah harian habis. Coba lagi besok.")
 	case errors.Is(err, domain.ErrMediaUnsupported):
 		writeError(w, http.StatusUnsupportedMediaType, "jenis media tidak didukung")
 	case errors.Is(err, domain.ErrInvalidInput):

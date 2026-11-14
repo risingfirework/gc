@@ -82,6 +82,17 @@ func (s *CBTService) StartExam(ctx context.Context, userID, examID, token string
 		return nil, err
 	}
 	now := s.now().UTC()
+	// Status paket/ujian dan jadwal adalah kontrol akses, bukan sekadar
+	// metadata: tanpa ini siswa bisa membuka ujian sebelum/sesudah jadwal.
+	if exam.Status != "active" || exam.PackageStatus != "active" {
+		return nil, domain.ErrExamNotFound
+	}
+	if exam.StartDate != nil && now.Before(*exam.StartDate) {
+		return nil, domain.ErrExamNotOpen
+	}
+	if exam.EndDate != nil && now.After(*exam.EndDate) {
+		return nil, domain.ErrExamClosed
+	}
 	// Mode CBT cukup bermodal token rahasia: siswa langsung bisa mengerjakan
 	// tanpa harus claim paket. Mode sell tetap wajib memiliki paket aktif.
 	if s.access != nil && !strings.EqualFold(strings.TrimSpace(exam.PackageExamType), "cbt") {
@@ -120,6 +131,10 @@ func (s *CBTService) StartExam(ctx context.Context, userID, examID, token string
 		s.logger.WarnContext(ctx, "Redis timer unavailable; using database fallback", "user_exam_id", attempt.ID, "error", err)
 	}
 	publicQuestions := applyDisplayShuffle(questions, s.userExamShuffle(ctx, attempt.ID))
+	if exam.TotalQuestions > 0 && len(publicQuestions) > exam.TotalQuestions {
+		s.logger.WarnContext(ctx, "exam question count exceeds total_questions", "exam_id", exam.ID, "total_questions", exam.TotalQuestions, "loaded", len(publicQuestions))
+		publicQuestions = publicQuestions[:exam.TotalQuestions]
+	}
 	return &domain.ExamStartResponse{
 		UserExamID: attempt.ID, ExamID: exam.ID, Title: exam.Title, Status: attempt.Status,
 		ServerTime: now, StartedAt: attempt.StartedAt, EndsAt: expiresAt,
@@ -317,8 +332,16 @@ func (s *CBTService) SubmitExam(ctx context.Context, userID, userExamID string) 
 	}
 	cachedAnswers, err := s.cache.LockAnswersForSubmit(ctx, userExamID, userID)
 	if err != nil {
-		// Do not finalize while potentially newer Redis answers are inaccessible.
-		return nil, fmt.Errorf("read Redis answers before submit: %w", err)
+		if errors.Is(err, domain.ErrTimerNotFound) {
+			// Timer Redis bisa hilang karena TTL/flush. Jawaban yang sudah
+			// tersinkron ke PostgreSQL tetap final; jangan biarkan attempt
+			// menggantung selamanya karena auto-submit terus gagal.
+			s.logger.WarnContext(ctx, "exam timer missing; finalizing from persisted answers", "user_exam_id", userExamID)
+			cachedAnswers = nil
+		} else {
+			// Do not finalize while potentially newer Redis answers are inaccessible.
+			return nil, fmt.Errorf("read Redis answers before submit: %w", err)
+		}
 	}
 	for questionID, selectedOption := range cachedAnswers {
 		answers[questionID] = selectedOption

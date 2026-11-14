@@ -135,7 +135,7 @@ func (f *fakeCBTRepository) DeleteState(context.Context, string) error          
 func newCBTFixture() (*CBTService, *fakeExamRepository, *fakeCBTRepository) {
 	now := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	exams := &fakeExamRepository{
-		exam: domain.Exam{ID: testExamID, Title: "TKA", DurationMinutes: 30, PassingScore: 70},
+		exam: domain.Exam{Status: "active", PackageStatus: "active", ID: testExamID, Title: "TKA", DurationMinutes: 30, PassingScore: 70},
 		questions: []domain.Question{
 			{ID: testQuestionOne, ExamID: testExamID, CorrectAnswer: "A", ScoreWeight: 1, Options: []domain.QuestionOption{{Key: "A", Content: "1"}, {Key: "B", Content: "2"}}},
 			{ID: testQuestionTwo, ExamID: testExamID, CorrectAnswer: "B", ScoreWeight: 1, Options: []domain.QuestionOption{{Key: "A", Content: "1"}, {Key: "B", Content: "2"}}},
