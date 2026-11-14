@@ -21,6 +21,8 @@ export default function LoginPage() {
   const [twoFAMode,setTwoFAMode] = useState(false);
   const [mfaToken,setMFAToken] = useState("");
   const [twoFACode,setTwoFACode] = useState("");
+  const [deviceConflict,setDeviceConflict] = useState(false);
+  const [pendingLogin,setPendingLogin] = useState<{email:string;password:string}|null>(null);
   const googleButtonRef = useRef<HTMLDivElement>(null);
   const googleClientID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
 
@@ -69,7 +71,7 @@ export default function LoginPage() {
       const result=await api.login(email,password);
       if(result.requires_2fa){setMFAToken(result.mfa_token??"");setTwoFAMode(true);return}
       router.replace("/dashboard");
-    }catch(reason){setError(reason instanceof Error?reason.message:mode==="login"?"Gagal masuk.":"Pendaftaran gagal.")}
+    }catch(reason){if(reason instanceof APIError && reason.status===409){setDeviceConflict(true);setPendingLogin({email,password})};setError(reason instanceof Error?reason.message:mode==="login"?"Gagal masuk.":"Pendaftaran gagal.")}
     finally{setLoading(false)}
   }
 
@@ -112,6 +114,7 @@ export default function LoginPage() {
           <div className="auth-label-row"><label htmlFor="login-password">Kata sandi</label>{mode==="login"&&<Link href="/forgot-password">Lupa kata sandi?</Link>}</div><div style={{position:"relative"}}><input id="login-password" name="password" type={showPassword?"text":"password"} placeholder={mode==="register"?"Minimal 12 karakter":"Kata sandi"} minLength={mode==="register"?12:undefined} maxLength={72} autoComplete={mode==="login"?"current-password":"new-password"} required/><button type="button" onClick={()=>setShowPassword(v=>!v)} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"var(--surface-soft)",border:"1px solid var(--border)",borderRadius:6,cursor:"pointer",fontSize:12,padding:"2px 6px",color:"var(--ink)",zIndex:10}}>{showPassword?"Hide":"Show"}</button></div>
           {mode==="register"&&<><label htmlFor="login-confirm">Konfirmasi kata sandi</label><input id="login-confirm" name="confirm_password" type="password" minLength={12} maxLength={72} autoComplete="new-password" required/><div className="auth-register-grid"><label>Daftar sebagai<select name="role" value={regRole} onChange={(event)=>setRegRole(event.target.value as "student"|"teacher")}><option value="student">Siswa</option><option value="teacher">Guru</option></select></label><label>Jenjang sekolah<select name="school_level" defaultValue="SMA"><option value="SD">SD</option><option value="SMP">SMP</option><option value="SMA">SMA / SMK</option></select></label></div>{regRole==="teacher"&&<><label htmlFor="login-ktp">No. KTP (NIK)</label><input id="login-ktp" name="teacher_ktp" type="text" inputMode="numeric" placeholder="16 digit nomor NIK pada KTP" minLength={16} maxLength={16} required/><p className="auth-hint">Data Anda akan diverifikasi oleh operator bahwa Anda terdaftar dalam data pendidikan nasional.</p></>}{regRole==="student"&&<><label htmlFor="login-referral">Kode rujukan <span className="auth-optional">(opsional)</span></label><input id="login-referral" name="referral_code" type="text" placeholder="Contoh: MITRA-A1B2C3D4" autoComplete="off"/><p className="auth-hint">Pakai kode dari affiliate untuk mendukung temanmu yang memperkenalkan platform ini.</p></>}</>}
           {mode==="register"&&<label className="auth-consent"><input type="checkbox" required/><span>Saya menyetujui <Link href="/terms" target="_blank">Syarat Penggunaan</Link> dan telah membaca <Link href="/privacy" target="_blank">Kebijakan Privasi</Link>.</span></label>}
+          {deviceConflict && mode==="login" && pendingLogin && <button type="button" className="button secondary full" disabled={loading} onClick={async ()=>{setLoading(true);setError("");try{const result=await api.login(pendingLogin.email,pendingLogin.password,true);if(result.requires_2fa){setMFAToken(result.mfa_token??"");setTwoFAMode(true);return}router.replace("/dashboard")}catch(reason){setError(reason instanceof Error?reason.message:"Gagal masuk.")}finally{setLoading(false);setDeviceConflict(false);setPendingLogin(null)}}}>Paksa masuk di perangkat ini</button>}
           <button className="button full auth-submit" disabled={loading}>{loading?"Memproses...":mode==="login"?"Masuk ke dashboard":"Buat akun"}</button>
         </form></>}
         <p className="auth-legal">Dengan melanjutkan, Anda menyetujui penggunaan akun sesuai kebijakan layanan{settings?.platform_name?` ${settings.platform_name}`:""}.</p>
