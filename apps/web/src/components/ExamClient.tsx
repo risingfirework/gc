@@ -355,8 +355,10 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   const watermarkName = tokenStore.getUser()?.name || tokenStore.getUser()?.email || "Peserta";
   const watermarkText = `${watermarkName} · ${watermarkTime.toLocaleString("id-ID")}`;
   return <main className="cbt-page">
-    <div aria-hidden="true" style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:1,overflow:"hidden",opacity:0.06,display:"grid",placeItems:"center"}}>
-      <div style={{transform:"rotate(-30deg)",whiteSpace:"nowrap",fontSize:48,fontWeight:700,color:"#fff",letterSpacing:4}}>{watermarkText.repeat(6).split("").join(" ")}</div>
+    <div aria-hidden="true" style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:5,overflow:"hidden",opacity:0.12}}>
+      {Array.from({length:8}).map((_,i) => (
+        <div key={i} style={{position:"absolute",top:`${i*14}%`,left:"-10%",transform:"rotate(-30deg)",whiteSpace:"nowrap",fontSize:28,fontWeight:700,color:"#fff",letterSpacing:3,lineHeight:2.2}}>{Array.from({length:4}).map((_,j) => <span key={j} style={{marginRight:80}}>{watermarkText}</span>)}</div>
+      ))}
     </div>
     {!online && <div className="connection-banner offline">Offline — jawaban ditahan di perangkat dan dikirim otomatis saat tersambung.</div>}
     {paused && <div className="connection-banner saved">Ujian sedang dijeda oleh pengawas. Waktu berhenti sementara.</div>}
