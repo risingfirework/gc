@@ -155,7 +155,7 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, o
           </tbody></table></div>}
       </div>
       {selectedExam && <div className="card cbt-participants-card">
-        <div className="section-heading"><div><p className="eyebrow">Peserta ujian</p><h3>{selectedExam.exam_title}</h3><p className="muted">Siswa yang sedang mengerjakan atau sudah menyelesaikan ujian CBT ini.</p></div><div className="user-row-actions"><button type="button" className="button secondary small-btn" onClick={() => window.print()}>Cetak</button><button type="button" className="button secondary small-btn" onClick={() => {
+        <div className="section-heading"><div><p className="eyebrow">Peserta ujian</p><h3>{selectedExam.exam_title}</h3><p className="muted">Siswa yang sedang mengerjakan atau sudah menyelesaikan ujian CBT ini.</p></div><div className="user-row-actions"><button type="button" className="button secondary small-btn" onClick={() => {
           const rows = [["Nama","Email","Jenjang","Status","Nilai","Lulus"]];
           participants.forEach((p) => rows.push([p.name||"", p.email, p.school_level||"", p.status, String(p.total_score), p.passed?"Lulus":"Belum"]));
           const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\\n");
