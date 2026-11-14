@@ -161,7 +161,7 @@ export default function CBTSettingsPanel({ items, saving, onToggle, onShuffle, o
           const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
           const blob = new Blob([csv], { type: "text/csv" });
           const url = URL.createObjectURL(blob);
-          const a = document.createElement("a"); a.href = url; a.download = `peserta-${selectedExam.exam_id}.csv`; a.click(); URL.revokeObjectURL(url);
+          const a = document.createElement("a"); a.href = url; a.download = `peserta-${selectedExam.exam_id}.csv`; a.style.display = "none"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
         }}>Export CSV</button><button type="button" className="button secondary small-btn" onClick={() => { setSelectedExam(null); setParticipants([]); }}>Tutup</button></div></div>
         {participantsError && <p className="error">{participantsError}</p>}
         {unlockError && <p className="error">{unlockError}</p>}
