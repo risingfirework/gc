@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { APIError, api, ExamStartResponse, ScreenLockResponse, SiteSettings, SubmitExamResponse, SESSION_INVALID_EVENT } from "@/services/api";
+import { APIError, api, ExamStartResponse, ScreenLockResponse, SiteSettings, SubmitExamResponse, SESSION_INVALID_EVENT, tokenStore } from "@/services/api";
 import { AntiCheatEvent, useAntiCheat } from "@/hooks/useAntiCheat";
 import { useCBTAutoSave } from "@/hooks/useCBTAutoSave";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -36,6 +36,7 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   const [screenLockViolations, setScreenLockViolations] = useState(0);
   const [paused, setPaused] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [watermarkTime, setWatermarkTime] = useState(new Date());
   const online = useOnlineStatus();
   const submissionStarted = useRef(false);
   const clockOffsetRef = useRef(0);
@@ -288,6 +289,11 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
     };
   }, [exam, result]);
 
+  useEffect(() => {
+    const id = window.setInterval(() => setWatermarkTime(new Date()), 60000);
+    return () => window.clearInterval(id);
+  }, []);
+
   // Peringatan native browser agar tab tidak ditutup begitu saja saat terkunci.
   useEffect(() => {
     if (!screenLocked) return;
@@ -346,7 +352,12 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   const doubtfulCount = exam.questions.filter((item) => doubtful.has(item.id)).length;
   const unansweredCount = Math.max(0, exam.questions.length - answeredCount);
   const timerState = remainingSeconds <= 120 ? "critical" : remainingSeconds <= 600 ? "warn" : "";
+  const watermarkName = tokenStore.getUser()?.name || tokenStore.getUser()?.email || "Peserta";
+  const watermarkText = `${watermarkName} · ${watermarkTime.toLocaleString("id-ID")}`;
   return <main className="cbt-page">
+    <div aria-hidden="true" style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:1,overflow:"hidden",opacity:0.06,display:"grid",placeItems:"center"}}>
+      <div style={{transform:"rotate(-30deg)",whiteSpace:"nowrap",fontSize:48,fontWeight:700,color:"#fff",letterSpacing:4}}>{watermarkText.repeat(6).split("").join(" ")}</div>
+    </div>
     {!online && <div className="connection-banner offline">Offline — jawaban ditahan di perangkat dan dikirim otomatis saat tersambung.</div>}
     {paused && <div className="connection-banner saved">Ujian sedang dijeda oleh pengawas. Waktu berhenti sementara.</div>}
     {online && autoSaveState === "saved" && <div className="connection-banner saved">Jawaban tersimpan</div>}
