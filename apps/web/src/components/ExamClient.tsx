@@ -249,6 +249,9 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
 
   // Anti-cheat: blokir copy/paste/klik kanan/shortcut dan coba full-screen.
   useEffect(() => {
+    if (result && document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => undefined);
+    }
     if (!exam || result) return;
     const block = (event: Event) => { event.preventDefault(); };
     const keyBlock = (event: KeyboardEvent) => {
