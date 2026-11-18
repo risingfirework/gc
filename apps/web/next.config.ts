@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   poweredByHeader: false,
+  experimental: { agentUpgrade: "security" },
   turbopack: { root: process.cwd() },
   async rewrites() {
     const backend = process.env.API_PROXY_TARGET ?? "http://backend:8080";
