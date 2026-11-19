@@ -28,6 +28,7 @@ var (
 	ErrExamPaused              = errors.New("ujian sedang dijeda oleh pengawas")
 	ErrExamDeviceMismatch      = errors.New("ujian sedang dibuka di perangkat lain")
 	ErrDeviceConflict          = errors.New("akun sedang digunakan di perangkat lain")
+	ErrAccountInExam          = errors.New("akun sedang digunakan di perangkat lain dan sedang mengerjakan ujian")
 )
 
 // Mode rilis nilai ujian CBT.
@@ -242,6 +243,7 @@ type ExamRepository interface {
 	SetUserExamDevice(ctx context.Context, userExamID, deviceID string) error
 	ClearUserExamDevice(ctx context.Context, userExamID string) error
 	GetUserExamByID(ctx context.Context, userExamID string) (*UserExam, *Exam, error)
+	HasOngoingExam(ctx context.Context, userID string) (bool, error)
 }
 
 type ExamAccessRepository interface {

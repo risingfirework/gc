@@ -65,6 +65,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusUnauthorized, "invalid email or password")
 			return
 		}
+		if errors.Is(err, domain.ErrAccountInExam) {
+			writeError(w, http.StatusConflict, "Akun Anda sedang digunakan di perangkat lain dan sedang mengerjakan ujian. Hubungi admin untuk reset perangkat.")
+			return
+		}
 		if errors.Is(err, domain.ErrDeviceConflict) {
 			writeError(w, http.StatusConflict, "akun sedang digunakan di perangkat lain. Paksa masuk?")
 			return

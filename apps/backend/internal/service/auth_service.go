@@ -54,6 +54,7 @@ var commonPasswords = map[string]bool{
 type AuthService struct {
 	users        domain.AuthRepository
 	sessions     domain.SessionRepository
+	exams        domain.ExamRepository
 	secret       []byte
 	issuer       string
 	tokenTTL     time.Duration
@@ -99,6 +100,9 @@ func (s *AuthService) ConfigureRefreshTokens(refreshes domain.RefreshTokenReposi
 	if ttl > 0 {
 		s.refreshTTL = ttl
 	}
+}
+func (s *AuthService) ConfigureExams(exams domain.ExamRepository) {
+	s.exams = exams
 }
 
 func (s *AuthService) ConfigurePasswordReset(baseURL, environment string, mailer domain.PasswordResetMailer) {
@@ -246,6 +250,11 @@ func (s *AuthService) Login(ctx context.Context, input domain.LoginRequest) (*do
 	if !input.ForceLogin {
 		activeDevice, _ := s.sessions.GetSessionDevice(ctx, user.ID)
 		if activeDevice != "" && deviceID != "" && activeDevice != deviceID {
+			if s.exams != nil {
+				if ongoing, _ := s.exams.HasOngoingExam(ctx, user.ID); ongoing {
+					return nil, domain.ErrAccountInExam
+				}
+			}
 			return nil, domain.ErrDeviceConflict
 		}
 	}
@@ -294,6 +303,11 @@ func (s *AuthService) Verify2FA(ctx context.Context, mfaToken, code string, devi
 	}
 	activeDevice, _ := s.sessions.GetSessionDevice(ctx, user.ID)
 	if activeDevice != "" && deviceID != "" && activeDevice != deviceID {
+		if s.exams != nil {
+			if ongoing, _ := s.exams.HasOngoingExam(ctx, user.ID); ongoing {
+				return nil, domain.ErrAccountInExam
+			}
+		}
 		return nil, domain.ErrDeviceConflict
 	}
 	return s.issueSession(ctx, *user, deviceID)

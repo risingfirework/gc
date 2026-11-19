@@ -669,6 +669,15 @@ func (r *ExamRepository) GetUserExamByID(ctx context.Context, userExamID string)
 	return &attempt, &exam, nil
 }
 
+func (r *ExamRepository) HasOngoingExam(ctx context.Context, userID string) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM user_exams WHERE user_id = $1 AND status = 'ongoing')`, userID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("has ongoing exam: %w", err)
+	}
+	return exists, nil
+}
+
 var _ domain.ExamRepository = (*ExamRepository)(nil)
 var _ domain.ExamAccessRepository = (*ExamRepository)(nil)
 var _ domain.ExamShuffleRepository = (*ExamRepository)(nil)

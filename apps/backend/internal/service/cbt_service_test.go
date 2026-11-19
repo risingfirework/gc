@@ -86,6 +86,7 @@ func (f *fakeExamRepository) GetUserExamByID(context.Context, string) (*domain.U
 	attempt, exam := f.attempt, f.exam
 	return &attempt, &exam, nil
 }
+func (f *fakeExamRepository) HasOngoingExam(context.Context, string) (bool, error) { return false, nil }
 
 type fakeExamAccessRepository struct {
 	active  map[string]bool
