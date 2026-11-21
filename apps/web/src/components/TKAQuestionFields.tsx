@@ -27,6 +27,7 @@ export default function TKAQuestionFields({ item, options, setOptions }: Props) 
   const [questionVideo, setQuestionVideo] = useState(item?.question_video_url || "");
   const [explanationVideo, setExplanationVideo] = useState(item?.explanation_video_url || "");
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const optionRefs = useRef<(HTMLInputElement | null)[]>([]);
   function insertFraction() {
     const el = contentRef.current;
     if (!el) return;
@@ -86,7 +87,31 @@ export default function TKAQuestionFields({ item, options, setOptions }: Props) 
     <div className="admin-form-section"><h3>{questionType === "category" ? "Pertanyaan & petunjuk klasifikasi" : "Pertanyaan & media"}</h3><label>{questionType === "category" ? "Pertanyaan/petunjuk klasifikasi" : "Pertanyaan"}</label><div style={{display:"flex",gap:8,marginBottom:6,alignItems:"center",flexWrap:"wrap"}}><button type="button" className="button secondary" onClick={insertFraction} title="Sisipkan pecahan">Pecahan a/b</button><small className="muted">{"Klik untuk menyisipkan pecahan, atau ketik manual: $\\frac{a}{b}$"}</small></div><textarea ref={contentRef} name="content_text" defaultValue={`${legacyStimulus}${item?.content_text ?? ""}`} required/><MediaField label="Gambar pertanyaan (opsional)" kind="image" value={questionImage} onChange={setQuestionImage}/><MediaField label="Audio pertanyaan (opsional)" kind="audio" value={questionAudio} onChange={setQuestionAudio}/><MediaField label="Video pertanyaan (opsional)" kind="video" value={questionVideo} onChange={setQuestionVideo}/><label>Video pembahasan (tautan YouTube):</label><input type="text" name="explanation_video_url" value={explanationVideo} onChange={(event) => setExplanationVideo(event.target.value)} placeholder="Contoh: https://youtu.be/..."/></div>
     {questionType === "category" && <div className="admin-form-section"><h3>Kategori jawaban</h3><label>Kategori jawaban</label><div className="option-rows">{categoryLabels.map((label, index) => <div className="option-row" key={index}><input value={label} onChange={(event) => setCategoryLabels((current) => current.map((value, itemIndex) => itemIndex === index ? event.target.value : value))} placeholder="Contoh: Benar" required/><button type="button" className="danger-action" disabled={categoryLabels.length <= 2} onClick={() => setCategoryLabels((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Hapus</button></div>)}</div><button type="button" className="table-action" onClick={() => setCategoryLabels((current) => [...current, ""])}>+ Tambah kategori</button></div>}
     {questionType !== "essay" && <div className="admin-form-section"><h3>{questionType === "category" ? "Daftar pernyataan" : "Pilihan jawaban"}</h3><label>{questionType === "category" ? "Daftar pernyataan" : "Pilihan jawaban"}</label>
-    <div className="option-rows">{options.map((option, index) => <div className="option-editor" key={index}><div className="option-row"><input className="option-key" value={option.key} onChange={(event) => updateOption(index, "key", event.target.value.toUpperCase())} placeholder="A" required/><input value={option.content} onChange={(event) => updateOption(index, "content", event.target.value)} placeholder={questionType === "category" ? "Isi pernyataan" : "Isi opsi"} required/><button type="button" className="button small-btn" onClick={() => setOptions((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, content: entry.content + "$\\frac{}{}$" } : entry))} title="Sisipkan pecahan">Pecahan</button><button type="button" className="danger-action" disabled={options.length <= 2} onClick={() => setOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Hapus</button></div><MediaField compact kind="image" label={`Gambar ${questionType === "category" ? "pernyataan" : "pilihan"} ${option.key || index + 1} (opsional)`} value={option.image_url ?? ""} onChange={(value) => setOptions((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, image_url: value } : entry))}/></div>)}</div>
+    <div className="option-rows">{options.map((option, index) => <div className="option-editor" key={index}><div className="option-row"><input className="option-key" value={option.key} onChange={(event) => updateOption(index, "key", event.target.value.toUpperCase())} placeholder="A" required/><input ref={(el) => { optionRefs.current[index] = el; }} value={option.content} onChange={(event) => updateOption(index, "content", event.target.value)} onSelect={(event) => { const el = event.currentTarget; optionRefs.current[index] = el; }} placeholder={questionType === "category" ? "Isi pernyataan" : "Isi opsi"} required/><button type="button" className="button small-btn" onClick={() => {
+    const el = optionRefs.current[index];
+    const content = option.content;
+    let start = content.length;
+    let end = content.length;
+    if (el) { start = el.selectionStart ?? content.length; end = el.selectionEnd ?? content.length; }
+    const selected = content.slice(start, end).trim();
+    let numerator = "";
+    let denominator = "";
+    if (selected) {
+      const slash = selected.match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
+      if (slash) { numerator = slash[1]; denominator = slash[2]; } else { numerator = selected; }
+    }
+    const template = `$\\frac{${numerator}}{${denominator}}$`;
+    const newContent = content.slice(0, start) + template + content.slice(end);
+    setOptions((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, content: newContent } : entry));
+    // set cursor
+    setTimeout(() => {
+      const input = optionRefs.current[index];
+      if (!input) return;
+      input.focus();
+      const cursor = numerator ? (denominator ? start + template.length : start + numerator.length + "$\\frac{}".length + 1) : start + "$\\frac{}".length + 1;
+      input.setSelectionRange(cursor, cursor);
+    }, 0);
+  }} title="Sisipkan pecahan (blok angka dulu)">Pecahan</button><button type="button" className="danger-action" disabled={options.length <= 2} onClick={() => setOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Hapus</button></div><MediaField compact kind="image" label={`Gambar ${questionType === "category" ? "pernyataan" : "pilihan"} ${option.key || index + 1} (opsional)`} value={option.image_url ?? ""} onChange={(value) => setOptions((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, image_url: value } : entry))}/></div>)}</div>
     <button type="button" className="table-action" onClick={addOption}>+ Tambah {questionType === "category" ? "pernyataan" : "opsi"}</button></div>}
     <div className="admin-form-section"><h3>Kunci jawaban</h3><label>Kunci jawaban</label>
     {questionType === "single_choice" && <select value={singleAnswer} onChange={(event) => setSingleAnswer(event.target.value)} required>{keys.map((key) => <option key={key} value={key}>{key}</option>)}</select>}
