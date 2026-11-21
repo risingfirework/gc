@@ -58,7 +58,8 @@ async function tryRefreshSession(): Promise<boolean> {
         tokenStore.set(response.access_token, response.user);
         broadcastRefreshed(response.access_token, response.user);
         return true;
-      } catch {
+      } catch (reason) {
+        console.error("refresh attempt failed", reason);
         if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400));
       }
     }
@@ -71,6 +72,7 @@ async function tryRefreshSession(): Promise<boolean> {
 }
 
 function expireSession(message: string) {
+  console.warn("expireSession", message);
   tokenStore.clear();
   window.dispatchEvent(new CustomEvent(SESSION_INVALID_EVENT, { detail: message }));
   const path = window.location.pathname;
