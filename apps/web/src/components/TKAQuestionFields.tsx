@@ -87,11 +87,25 @@ export default function TKAQuestionFields({ item, options, setOptions }: Props) 
     if (!el) return;
     const start = el.selectionStart ?? el.value.length;
     const end = el.selectionEnd ?? el.value.length;
-    const selected = el.value.slice(start, end).trim() || "x";
-    const template = `$${selected}${kind}{}$ `;
-    el.value = el.value.slice(0, start) + template + el.value.slice(end);
+    const selected = el.value.slice(start, end).trim();
+    const before = el.value.slice(0, start);
+    const baseMatch = before.match(/([A-Za-z0-9]+)\s*$/);
+    let template = "";
+    let replaceStart = start;
+    if (baseMatch && selected) {
+      // base dari teks sebelum seleksi, seleksi jadi eksponen
+      const base = baseMatch[1];
+      replaceStart = start - baseMatch[0].length + (baseMatch[0].length - base.length);
+      template = `$${base}${kind}{${selected}}$`;
+    } else if (selected) {
+      // tidak ada base sebelumnya: seleksi jadi base, eksponen kosong
+      template = `$${selected}${kind}{}$`;
+    } else {
+      template = `$x${kind}{}$`;
+    }
+    el.value = el.value.slice(0, replaceStart) + template + el.value.slice(end);
     el.focus();
-    const cursor = start + selected.length + kind.length + 1;
+    const cursor = replaceStart + template.length - 2;
     el.setSelectionRange(cursor, cursor);
   }
 
