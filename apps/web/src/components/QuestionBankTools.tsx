@@ -43,6 +43,10 @@ function formatFractionText(value: string) {
   let result = value.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, (_, a, b) => `$\\\\frac{${a}}{${b}}$`);
   // Konversi pecahan sederhana a/b (angka/angka) menjadi LaTeX.
   result = result.replace(/(?<![\w.])(\d+)\s*\/\s*(\d+)(?![\w.])/g, (_, a, b) => `$\\\\frac{${a}}{${b}}$`);
+  // Konversi pangkat atas: x^2 atau x^{2} -> $x^2$ (jika belum dalam $...$).
+  result = result.replace(/(?<!\$)([A-Za-z0-9]+)\^(\{[^}]+\}|\d+)(?!\$)/g, (_, base, exp) => `$${base}^${exp}$`);
+  // Konversi pangkat bawah: x_1 atau x_{1} -> $x_1$ (jika belum dalam $...$).
+  result = result.replace(/(?<!\$)([A-Za-z0-9]+)_(\{[^}]+\}|\d+)(?!\$)/g, (_, base, exp) => `$${base}_${exp}$`);
   return result;
 }
 const GUIDE_ROWS=[
