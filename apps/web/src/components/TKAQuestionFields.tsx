@@ -88,7 +88,7 @@ export default function TKAQuestionFields({ item, options, setOptions }: Props) 
     const start = el.selectionStart ?? el.value.length;
     const end = el.selectionEnd ?? el.value.length;
     const selected = el.value.slice(start, end).trim() || "x";
-    const template = `${selected}${kind}{} `;
+    const template = `$${selected}${kind}{}$ `;
     el.value = el.value.slice(0, start) + template + el.value.slice(end);
     el.focus();
     const cursor = start + selected.length + kind.length + 1;
