@@ -32,11 +32,31 @@ export default function TKAQuestionFields({ item, options, setOptions }: Props) 
     if (!el) return;
     const start = el.selectionStart ?? el.value.length;
     const end = el.selectionEnd ?? el.value.length;
-    const template = "$\\frac{}{}$";
+    const selected = el.value.slice(start, end).trim();
+    let numerator = "";
+    let denominator = "";
+    if (selected) {
+      const slash = selected.match(/^(-?\d+)\s*\/\s*(-?\d+)$/);
+      if (slash) {
+        numerator = slash[1];
+        denominator = slash[2];
+      } else {
+        numerator = selected;
+      }
+    }
+    const template = `$\\frac{${numerator}}{${denominator}}$`;
     el.value = el.value.slice(0, start) + template + el.value.slice(end);
     el.focus();
-    const cursor = start + template.indexOf("{}") + 1;
-    el.setSelectionRange(cursor, cursor);
+    // Tempatkan kursor di dalam pembilang jika kosong, atau penyebut jika pembilang terisi.
+    const numStart = start + "$\\frac{".length;
+    if (!numerator) {
+      el.setSelectionRange(numStart, numStart);
+    } else if (!denominator) {
+      const denStart = numStart + numerator.length + 3; // }{
+      el.setSelectionRange(denStart, denStart);
+    } else {
+      el.setSelectionRange(start + template.length, start + template.length);
+    }
   }
 
   const keys = options.map((option) => option.key.trim().toUpperCase()).filter(Boolean);
