@@ -230,11 +230,11 @@ textarea { width:100%;min-height:100px;resize:vertical;border:1px solid rgba(255
 .status-pill.inactive{color:#ffb875;background:rgba(255,138,0,.16)}
 .status-pill.ongoing{color:#8fc2ff;background:rgba(0,202,240,.16)}
 .toggle-off{background:#0f1e33;color:#ff9b92}
-.question-dialog{width:min(920px,100%);padding:28px 30px}.question-dialog h2{margin:0 0 18px;font-size:20px}.question-dialog .admin-form-section{display:grid;gap:14px;margin:0 0 18px;padding:18px;border:1px solid rgba(255,255,255,0.11);border-radius:14px;background:#0f1e33}.question-dialog .admin-form-section>h3{margin:0;font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}.question-dialog .option-rows{grid-template-columns:1fr 1fr}.question-dialog .option-row{grid-template-columns:62px 1fr auto 34px;align-items:center}.question-dialog textarea{min-height:110px}.question-dialog .question-image-input,.question-dialog .option-row input{min-width:0}
+.question-dialog{width:min(920px,100%);padding:28px 30px}.question-dialog h2{margin:0 0 18px;font-size:20px}.question-dialog .admin-form-section{display:grid;gap:14px;margin:0 0 18px;padding:18px;border:1px solid rgba(255,255,255,0.11);border-radius:14px;background:#0f1e33}.question-dialog .admin-form-section>h3{margin:0;font-size:14px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}.question-dialog .option-rows{grid-template-columns:1fr 1fr}.question-dialog .option-row{grid-template-columns:62px 1fr auto auto 34px;align-items:center}.question-dialog textarea{min-height:110px}.question-dialog .question-image-input,.question-dialog .option-row input{min-width:0}
 .bulk-actions{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}.bulk-actions .button{padding:8px 14px;font-size:13px}
 .catalog-detail .ranking-table td:first-child,.catalog-detail .ranking-table th:first-child{width:48px;text-align:center}.catalog-detail .ranking-table input[type=checkbox]{width:17px;height:17px;accent-color:var(--primary);cursor:pointer;vertical-align:middle}
 .option-rows{display:grid;gap:8px;margin:8px 0}
-.option-row{display:grid;grid-template-columns:70px 1fr auto;gap:8px}
+.option-row{display:grid;grid-template-columns:70px 1fr auto auto;gap:8px}
 .option-key{width:70px;padding:10px}
 @media(max-width:760px){.admin-package-spec{grid-template-columns:1fr}.admin-package-spec-grid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:520px){.option-row{grid-template-columns:1fr}.option-key{width:100%}}
