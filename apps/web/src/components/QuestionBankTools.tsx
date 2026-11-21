@@ -183,8 +183,22 @@ export default function QuestionBankTools({
   function printPDF(){
     const oldTitle=document.title;
     document.title=`${packageCode}-${packageTitle}`;
-    window.print();
-    window.setTimeout(()=>{document.title=oldTitle},500);
+    const container=document.querySelector(".question-bank-print");
+    const images=container?Array.from(container.querySelectorAll("img")):[];
+    const pending=images.filter((img)=>!img.complete);
+    if(pending.length===0){
+      window.print();
+      window.setTimeout(()=>{document.title=oldTitle},500);
+      return;
+    }
+    let remaining=pending.length;
+    const done=()=>{remaining--;if(remaining<=0){window.print();window.setTimeout(()=>{document.title=oldTitle},500);}};
+    pending.forEach((img)=>{
+      img.addEventListener("load",done,{once:true});
+      img.addEventListener("error",done,{once:true});
+    });
+    // Fallback agar dialog tetap muncul jika ada gambar yang macet.
+    window.setTimeout(()=>{if(remaining>0){remaining=0;window.print();window.setTimeout(()=>{document.title=oldTitle},500);}},5000);
   }
 
   async function downloadSimpleTemplate(){
