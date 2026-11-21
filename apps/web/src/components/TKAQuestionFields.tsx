@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AdminQuestion, QuestionOption, QuestionType } from "@/services/api";
 import MediaField from "@/components/MediaField";
 
@@ -26,6 +26,18 @@ export default function TKAQuestionFields({ item, options, setOptions }: Props) 
   const [questionAudio, setQuestionAudio] = useState(item?.question_audio_url || "");
   const [questionVideo, setQuestionVideo] = useState(item?.question_video_url || "");
   const [explanationVideo, setExplanationVideo] = useState(item?.explanation_video_url || "");
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  function insertFraction() {
+    const el = contentRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    const template = "$\\frac{}{}$";
+    el.value = el.value.slice(0, start) + template + el.value.slice(end);
+    el.focus();
+    const cursor = start + template.indexOf("{}") + 1;
+    el.setSelectionRange(cursor, cursor);
+  }
 
   const keys = options.map((option) => option.key.trim().toUpperCase()).filter(Boolean);
   const correctAnswer = (() => {
@@ -51,7 +63,7 @@ export default function TKAQuestionFields({ item, options, setOptions }: Props) 
   return <>
     <div className="admin-form-section"><h3>Bentuk soal</h3><label>Bentuk soal TKA</label><select name="question_type" value={questionType} onChange={(event) => handleTypeChange(event.target.value as QuestionType)}><option value="single_choice">Pilihan Ganda Sederhana</option><option value="multiple_choice">PGK MCMA (jawaban jamak)</option><option value="category">PGK Kategori</option><option value="essay">Esai (jawaban uraian)</option></select>
     <input type="hidden" name="presentation_type" value="single"/><input type="hidden" name="group_code" value=""/><input type="hidden" name="stimulus_text" value=""/></div>
-    <div className="admin-form-section"><h3>{questionType === "category" ? "Pertanyaan & petunjuk klasifikasi" : "Pertanyaan & media"}</h3><label>{questionType === "category" ? "Pertanyaan/petunjuk klasifikasi" : "Pertanyaan"}</label><textarea name="content_text" defaultValue={`${legacyStimulus}${item?.content_text ?? ""}`} required/><MediaField label="Gambar pertanyaan (opsional)" kind="image" value={questionImage} onChange={setQuestionImage}/><MediaField label="Audio pertanyaan (opsional)" kind="audio" value={questionAudio} onChange={setQuestionAudio}/><MediaField label="Video pertanyaan (opsional)" kind="video" value={questionVideo} onChange={setQuestionVideo}/><label>Video pembahasan (tautan YouTube):</label><input type="text" name="explanation_video_url" value={explanationVideo} onChange={(event) => setExplanationVideo(event.target.value)} placeholder="Contoh: https://youtu.be/..."/></div>
+    <div className="admin-form-section"><h3>{questionType === "category" ? "Pertanyaan & petunjuk klasifikasi" : "Pertanyaan & media"}</h3><label>{questionType === "category" ? "Pertanyaan/petunjuk klasifikasi" : "Pertanyaan"}</label><div style={{display:"flex",gap:8,marginBottom:6}}><button type="button" className="table-action" onClick={insertFraction}>Pecahan (a/b)</button><small className="muted">{"Gunakan LaTeX: $\\frac{a}{b}$ untuk pecahan."}</small></div><textarea ref={contentRef} name="content_text" defaultValue={`${legacyStimulus}${item?.content_text ?? ""}`} required/><MediaField label="Gambar pertanyaan (opsional)" kind="image" value={questionImage} onChange={setQuestionImage}/><MediaField label="Audio pertanyaan (opsional)" kind="audio" value={questionAudio} onChange={setQuestionAudio}/><MediaField label="Video pertanyaan (opsional)" kind="video" value={questionVideo} onChange={setQuestionVideo}/><label>Video pembahasan (tautan YouTube):</label><input type="text" name="explanation_video_url" value={explanationVideo} onChange={(event) => setExplanationVideo(event.target.value)} placeholder="Contoh: https://youtu.be/..."/></div>
     {questionType === "category" && <div className="admin-form-section"><h3>Kategori jawaban</h3><label>Kategori jawaban</label><div className="option-rows">{categoryLabels.map((label, index) => <div className="option-row" key={index}><input value={label} onChange={(event) => setCategoryLabels((current) => current.map((value, itemIndex) => itemIndex === index ? event.target.value : value))} placeholder="Contoh: Benar" required/><button type="button" className="danger-action" disabled={categoryLabels.length <= 2} onClick={() => setCategoryLabels((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Hapus</button></div>)}</div><button type="button" className="table-action" onClick={() => setCategoryLabels((current) => [...current, ""])}>+ Tambah kategori</button></div>}
     {questionType !== "essay" && <div className="admin-form-section"><h3>{questionType === "category" ? "Daftar pernyataan" : "Pilihan jawaban"}</h3><label>{questionType === "category" ? "Daftar pernyataan" : "Pilihan jawaban"}</label>
     <div className="option-rows">{options.map((option, index) => <div className="option-editor" key={index}><div className="option-row"><input className="option-key" value={option.key} onChange={(event) => updateOption(index, "key", event.target.value.toUpperCase())} placeholder="A" required/><input value={option.content} onChange={(event) => updateOption(index, "content", event.target.value)} placeholder={questionType === "category" ? "Isi pernyataan" : "Isi opsi"} required/><button type="button" className="danger-action" disabled={options.length <= 2} onClick={() => setOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Hapus</button></div><MediaField compact kind="image" label={`Gambar ${questionType === "category" ? "pernyataan" : "pilihan"} ${option.key || index + 1} (opsional)`} value={option.image_url ?? ""} onChange={(value) => setOptions((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, image_url: value } : entry))}/></div>)}</div>

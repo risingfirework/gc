@@ -38,6 +38,9 @@ type Props={
   })=>Promise<unknown>;
 };
 
+function formatFractionText(value: string) {
+  return value.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, (_, a, b) => `$\\\\frac{${a}}{${b}}$`);
+}
 const GUIDE_ROWS=[
   "TEMPLATE BANK SOAL TKA — CARA PAKAI",
   "Isi data pada sheet 'Bank Soal'. Satu baris = satu soal. Ujian dan mata pelajaran dipilih saat paket dibuat di aplikasi.",
@@ -361,7 +364,7 @@ export default function QuestionBankTools({
         LETTERS.forEach((letter,slot)=>{
           const content=val(row,colMap[`option_${slot+1}`]??0)||val(row,colMap[`option_${letter}`]??0);
           const image_url=val(row,colMap[`option_image_${slot+1}`]??0)||val(row,colMap[`option_image_${letter}`]??0);
-          if(content||image_url)options.push({key:letter.toUpperCase(),content,image_url:image_url||undefined});
+          if(content||image_url)options.push({key:letter.toUpperCase(),content:formatFractionText(content),image_url:image_url||undefined});
         });
 
         let qType=rawType?TYPE_ALIASES[rawType]:undefined;
@@ -387,7 +390,7 @@ export default function QuestionBankTools({
           row:rowNumber,
           question_type:qType,
           chapter_name:val(row,colMap["bab"]??0),
-          content_text:contentText,
+          content_text:formatFractionText(contentText),
           question_image_url:val(row,colMap["gambar_soal"]??0),
           question_audio_url:val(row,colMap["question_audio_url"]??0),
           question_video_url:val(row,colMap["question_video_url"]??0),
@@ -396,7 +399,7 @@ export default function QuestionBankTools({
           category_labels,
           correct_answer:normalized.correct_answer,
           score_weight:Number(val(row,colMap["bobot"]??0))||1,
-          explanation_text:val(row,colMap["pembahasan"]??0),
+          explanation_text:formatFractionText(val(row,colMap["pembahasan"]??0)),
           status:val(row,colMap["status"]??0).toLowerCase()==="inactive"?"inactive":"active",
         });
       });
