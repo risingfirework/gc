@@ -30,18 +30,26 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
 }
 
 async function tryRefreshSession(): Promise<boolean> {
-  // Jika tab lain sedang refresh, tunggu sebentar lalu cek token.
   const lockKey = "tka_refresh_lock";
-  const now = Date.now();
+  const beforeToken = accessToken;
   const lock = localStorage.getItem(lockKey);
+  const now = Date.now();
   if (lock && Number(lock) > now) {
-    // tunggu sampai lock habis
-    await new Promise((resolve) => setTimeout(resolve, Math.min(Number(lock) - now + 50, 1000)));
-    // jika token sudah diperbarui tab lain, anggap sukses
-    if (accessToken) return true;
+    // Tab lain sedang refresh: tunggu hingga lock habis atau token berubah.
+    const deadline = Number(lock);
+    while (Date.now() < deadline) {
+      if (accessToken && accessToken !== beforeToken) return true;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    // Setelah menunggu, jika token diperbarui tab lain, sukses.
+    if (accessToken && accessToken !== beforeToken) return true;
+    // Jika tidak, lock mungkin kedaluwarsa; coba refresh sendiri di bawah.
   }
-  // acquire lock
-  localStorage.setItem(lockKey, String(Date.now() + 5000));
+  // Acquire lock (best effort).
+  const acquired = !localStorage.getItem(lockKey) || Number(localStorage.getItem(lockKey)) <= Date.now();
+  if (acquired) {
+    localStorage.setItem(lockKey, String(Date.now() + 5000));
+  }
   try {
     const response = (await axios.post<LoginResponse>(`${http.defaults.baseURL}/auth/refresh`, {}, { headers: { "Content-Type": "application/json", Accept: "application/json" }, timeout: 10_000, withCredentials: true })).data;
     if (!response.access_token) return false;
@@ -49,9 +57,12 @@ async function tryRefreshSession(): Promise<boolean> {
     broadcastRefreshed(response.access_token, response.user);
     return true;
   } catch {
+    // Jika gagal karena tab lain yang refresh, coba sekali lagi setelah jeda.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    if (accessToken && accessToken !== beforeToken) return true;
     return false;
   } finally {
-    localStorage.removeItem(lockKey);
+    if (acquired) localStorage.removeItem(lockKey);
   }
 }
 
