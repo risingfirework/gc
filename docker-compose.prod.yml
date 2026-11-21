@@ -104,6 +104,14 @@ services:
       redis-node-6: { condition: service_healthy }
     logging: *default-logging
 
+  media-init:
+    image: busybox:1.36
+    restart: "no"
+    command: ["sh", "-c", "mkdir -p /data/media && chown -R 65532:65532 /data/media && chmod -R 755 /data/media"]
+    volumes:
+      - media_data:/data/media
+    logging: *default-logging
+
   backend:
     build: { context: ./apps/backend }
     image: ${BACKEND_IMAGE:-tka/backend:local}
@@ -146,6 +154,7 @@ services:
     networks: [edge, data]
     depends_on:
       migrate: { condition: service_completed_successfully }
+      media-init: { condition: service_completed_successfully }
       redis-cluster-init: { condition: service_completed_successfully }
       simpkb-check: { condition: service_healthy }
     healthcheck:

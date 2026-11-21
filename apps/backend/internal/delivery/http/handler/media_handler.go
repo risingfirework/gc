@@ -125,7 +125,7 @@ func writeMediaError(logger *slog.Logger, w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "data media tidak valid")
 	default:
 		logger.Error("media request failed", "error", err, "path", r.URL.Path)
-		writeError(w, http.StatusInternalServerError, "media gagal diproses")
+		writeError(w, http.StatusInternalServerError, "media gagal diproses: "+err.Error())
 	}
 	return true
 }
