@@ -15,7 +15,7 @@ type Props = {
 export default function QuestionMedia({ image, audio, video, alt }: Props) {
   return (
     <>
-      {image ? <Image className="question-media" src={image} alt={alt} width={800} height={500} unoptimized/> : null}
+      {image ? <Image className="question-media" src={image} alt={alt} width={800} height={500} unoptimized loading="eager"/> : null}
       {audio ? <audio className="question-media" controls preload="metadata" src={audio} aria-label={`Audio ${alt}`}/> : null}
       {video ? <video className="question-media" controls preload="metadata" src={video} aria-label={`Video ${alt}`}/> : null}
     </>
