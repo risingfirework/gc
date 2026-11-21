@@ -39,7 +39,11 @@ type Props={
 };
 
 function formatFractionText(value: string) {
-  return value.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, (_, a, b) => `$\\\\frac{${a}}{${b}}$`);
+  // Konversi \frac{a}{b} (tanpa $) menjadi LaTeX.
+  let result = value.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, (_, a, b) => `$\\\\frac{${a}}{${b}}$`);
+  // Konversi pecahan sederhana a/b (angka/angka) menjadi LaTeX.
+  result = result.replace(/(?<![\w.])(\d+)\s*\/\s*(\d+)(?![\w.])/g, (_, a, b) => `$\\\\frac{${a}}{${b}}$`);
+  return result;
 }
 const GUIDE_ROWS=[
   "TEMPLATE BANK SOAL TKA — CARA PAKAI",
