@@ -123,7 +123,41 @@ export default function TKAQuestionFields({ item, options, setOptions }: Props) 
       const cursor = numerator ? (denominator ? start + template.length : start + numerator.length + 7) : start + 7;
       input.setSelectionRange(cursor, cursor);
     }, 0);
-  }} title="Blok angka dulu, lalu klik Pecahan">Pecahan</button><button type="button" className="danger-action" disabled={options.length <= 2} onClick={() => setOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Hapus</button></div><MediaField compact kind="image" label={`Gambar ${questionType === "category" ? "pernyataan" : "pilihan"} ${option.key || index + 1} (opsional)`} value={option.image_url ?? ""} onChange={(value) => setOptions((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, image_url: value } : entry))}/></div>)}</div>
+  }} title="Blok angka dulu, lalu klik Pecahan">Pecahan</button>
+<button type="button" className="button small-btn" onClick={() => {
+    const content = option.content;
+    const sel = optionSelections.current[index] || { start: content.length, end: content.length };
+    const start = Math.min(sel.start, content.length);
+    const end = Math.min(sel.end, content.length);
+    const selected = content.slice(start, end).trim() || "x";
+    const template = `$${selected}^{}$`;
+    const newContent = content.slice(0, start) + template + content.slice(end);
+    setOptions((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, content: newContent } : entry));
+    setTimeout(() => {
+      const input = optionRefs.current[index];
+      if (!input) return;
+      input.focus();
+      const cursor = start + selected.length + 3;
+      input.setSelectionRange(cursor, cursor);
+    }, 0);
+  }} title="Pangkat atas">x²</button>
+<button type="button" className="button small-btn" onClick={() => {
+    const content = option.content;
+    const sel = optionSelections.current[index] || { start: content.length, end: content.length };
+    const start = Math.min(sel.start, content.length);
+    const end = Math.min(sel.end, content.length);
+    const selected = content.slice(start, end).trim() || "x";
+    const template = `$${selected}_{}$`;
+    const newContent = content.slice(0, start) + template + content.slice(end);
+    setOptions((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, content: newContent } : entry));
+    setTimeout(() => {
+      const input = optionRefs.current[index];
+      if (!input) return;
+      input.focus();
+      const cursor = start + selected.length + 3;
+      input.setSelectionRange(cursor, cursor);
+    }, 0);
+  }} title="Pangkat bawah">x₂</button><button type="button" className="danger-action" disabled={options.length <= 2} onClick={() => setOptions((current) => current.filter((_, itemIndex) => itemIndex !== index))}>Hapus</button></div><MediaField compact kind="image" label={`Gambar ${questionType === "category" ? "pernyataan" : "pilihan"} ${option.key || index + 1} (opsional)`} value={option.image_url ?? ""} onChange={(value) => setOptions((current) => current.map((entry, itemIndex) => itemIndex === index ? { ...entry, image_url: value } : entry))}/></div>)}</div>
     <button type="button" className="table-action" onClick={addOption}>+ Tambah {questionType === "category" ? "pernyataan" : "opsi"}</button></div>}
     <div className="admin-form-section"><h3>Kunci jawaban</h3><label>Kunci jawaban</label>
     {questionType === "single_choice" && <select value={singleAnswer} onChange={(event) => setSingleAnswer(event.target.value)} required>{keys.map((key) => <option key={key} value={key}>{key}</option>)}</select>}
