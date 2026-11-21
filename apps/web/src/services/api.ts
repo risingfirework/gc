@@ -51,13 +51,17 @@ async function tryRefreshSession(): Promise<boolean> {
     localStorage.setItem(lockKey, String(Date.now() + 5000));
   }
   try {
-    const response = (await axios.post<LoginResponse>(`${http.defaults.baseURL}/auth/refresh`, {}, { headers: { "Content-Type": "application/json", Accept: "application/json" }, timeout: 10_000, withCredentials: true })).data;
-    if (!response.access_token) return false;
-    tokenStore.set(response.access_token, response.user);
-    broadcastRefreshed(response.access_token, response.user);
-    return true;
-  } catch {
-    // Jika gagal karena tab lain yang refresh, coba sekali lagi setelah jeda.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = (await axios.post<LoginResponse>(`${http.defaults.baseURL}/auth/refresh`, {}, { headers: { "Content-Type": "application/json", Accept: "application/json" }, timeout: 10_000, withCredentials: true })).data;
+        if (!response.access_token) return false;
+        tokenStore.set(response.access_token, response.user);
+        broadcastRefreshed(response.access_token, response.user);
+        return true;
+      } catch {
+        if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+    }
     await new Promise((resolve) => setTimeout(resolve, 300));
     if (accessToken && accessToken !== beforeToken) return true;
     return false;
