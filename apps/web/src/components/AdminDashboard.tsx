@@ -63,7 +63,7 @@ const sidebarGroups: Array<{ name: string; views: AdminView[] }> = [
   { name: "Interaksi", views: ["ranking", "testimoni", "video"] },
   { name: "Pengguna", views: ["users", "verifikasi", "cbt-guru"] },
   { name: "Keuangan", views: ["finance", "transaksi", "pembayaran"] },
-  { name: "Sistem", views: ["pengaturan", "audit"] },
+  { name: "Sistem", views: ["pengaturan", "audit", "monitoring"] },
 ];
 const groupOfView = (key: AdminView) => sidebarGroups.find((group) => group.views.includes(key))?.name ?? null;
 const auditActionLabel = (action: string) => (({ update_finance_settings: "Ubah kebijakan komisi", update_user_finance: "Ubah profil keuangan", payout_paid: "Pencairan dibayar", payout_review: "Tinjau pengajuan pencairan", create_user: "Buat pengguna", update_user: "Ubah pengguna", delete_user: "Hapus pengguna", update_site_settings: "Ubah pengaturan situs", approve_teacher: "Setujui guru", reject_teacher: "Tolak guru", cbt_publish_pembahasan: "Publish pembahasan CBT" }) as Record<string, string>)[action] ?? action;
@@ -114,7 +114,7 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
     const id = window.setInterval(load, 10000);
     return () => { active = false; window.clearInterval(id); };
   }, [view]);
-  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set(["Sistem"]));
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
   const [data, setData] = useState<AdminDashboardData | null>(null);
