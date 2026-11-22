@@ -745,7 +745,7 @@ function CrudDialog({dialog,exams,levels,mapels,academicYears,kategoris,kelas,si
     else onSubmit({form});
   }
   const isPackageDialog = dialog.kind==="package";
-  return <div className={isPackageDialog?"logout-modal-backdrop package-modal-backdrop":"modal-backdrop"}><form className={isPackageDialog?"logout-modal package-form-modal":`card admin-form ${dialog.kind==="question"?"question-dialog":""}`} onSubmit={submit}>
+  return <div className={isPackageDialog?"logout-modal-backdrop package-modal-backdrop":"modal-backdrop"}><form className={isPackageDialog?"logout-modal package-form-modal":`card admin-form ${dialog.kind==="question"?"question-dialog":""}`} onSubmit={submit} noValidate>
     {isPackageDialog ? <>
       <button type="button" className="logout-modal-close" onClick={onClose} disabled={busy} aria-label="Tutup formulir paket soal">×</button>
       <div className="logout-modal-icon package-modal-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 8.5 12 3 3 8.5 12 14l9-5.5Z"/><path d="M3 8.5V16l9 5.5 9-5.5V8.5"/><path d="M12 14v7.5"/></svg></div>
