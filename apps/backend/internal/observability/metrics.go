@@ -4,6 +4,7 @@ package observability
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -11,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	dto "github.com/prometheus/client_model/go"
 )
 
 type Metrics struct {
@@ -62,8 +64,9 @@ func (m *Metrics) Gather() (map[string]any, error) {
 	}
 	result := map[string]any{}
 	for _, f := range families {
-		switch f.GetName() {
-		case "tka_http_requests_total":
+		name := f.GetName()
+		switch {
+		case name == "tka_http_requests_total":
 			total := 0.0
 			errors5xx := 0.0
 			for _, metric := range f.GetMetric() {
@@ -79,19 +82,32 @@ func (m *Metrics) Gather() (map[string]any, error) {
 			}
 			result["requests_total"] = total
 			result["errors_5xx_total"] = errors5xx
-		case "tka_http_in_flight_requests":
+		case name == "tka_http_in_flight_requests":
 			if len(f.GetMetric()) > 0 {
 				result["in_flight"] = f.GetMetric()[0].GetGauge().GetValue()
 			}
-		case "process_resident_memory_bytes":
+		}
+		// Fallback fleksibel untuk memori, CPU, goroutine.
+		if result["memory_bytes"] == nil && (strings.Contains(name, "memory") && strings.Contains(name, "resident")) {
 			if len(f.GetMetric()) > 0 {
 				result["memory_bytes"] = f.GetMetric()[0].GetGauge().GetValue()
 			}
-		case "process_cpu_seconds_total":
+		}
+		if result["memory_bytes"] == nil && strings.Contains(name, "memstats") && strings.Contains(name, "alloc") {
 			if len(f.GetMetric()) > 0 {
-				result["cpu_seconds_total"] = f.GetMetric()[0].GetCounter().GetValue()
+				result["memory_bytes"] = f.GetMetric()[0].GetGauge().GetValue()
 			}
-		case "go_goroutines":
+		}
+		if result["cpu_seconds_total"] == nil && strings.Contains(name, "cpu") && strings.Contains(name, "seconds") {
+			if len(f.GetMetric()) > 0 {
+				if f.GetType() == dto.MetricType_COUNTER {
+					result["cpu_seconds_total"] = f.GetMetric()[0].GetCounter().GetValue()
+				} else if f.GetType() == dto.MetricType_GAUGE {
+					result["cpu_seconds_total"] = f.GetMetric()[0].GetGauge().GetValue()
+				}
+			}
+		}
+		if result["goroutines"] == nil && strings.Contains(name, "goroutine") {
 			if len(f.GetMetric()) > 0 {
 				result["goroutines"] = f.GetMetric()[0].GetGauge().GetValue()
 			}
