@@ -150,7 +150,7 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 		router.With(middleware.RequireAuth(auth)).Get("/api/v1/transactions/{id}/invoice.pdf", paymentHandler.InvoicePDF)
 	}
 	if opts.Admin != nil {
-		adminHandler := handler.NewAdminHandler(opts.Admin, logger)
+		adminHandler := handler.NewAdminHandler(opts.Admin, logger, opts.Metrics)
 		router.Get("/api/v1/settings", adminHandler.SiteSettings)
 		router.Route("/api/v1/admin", func(router chi.Router) {
 			router.Use(middleware.RequireAuth(auth))
