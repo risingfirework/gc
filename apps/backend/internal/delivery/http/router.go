@@ -174,6 +174,7 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 				router.Patch("/cbt-settings/{id}/screen-lock", adminHandler.SetCBTScreenLock)
 				router.Patch("/cbt-settings/{id}/score-release", adminHandler.SetCBTScoreRelease)
 				router.Get("/cbt-settings/{id}/participants", adminHandler.CBTParticipants)
+				router.Get("/monitoring", adminHandler.Monitoring)
 				router.Post("/cbt-settings/{id}/participants/{userExamId}/unlock", adminHandler.ReleaseParticipantScreenLock)
 				router.Post("/cbt-settings/{id}/participants/{userExamId}/reset", adminHandler.ResetParticipantScreenLock)
 				router.Post("/cbt-settings/{id}/participants/{userExamId}/pause", adminHandler.PauseParticipantExam)

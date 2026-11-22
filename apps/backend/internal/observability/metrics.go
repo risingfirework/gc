@@ -51,6 +51,55 @@ func (m *Metrics) Handler() http.Handler {
 	return promhttp.HandlerFor(m.registry, promhttp.HandlerOpts{EnableOpenMetrics: true})
 }
 
+// Gather mengembalikan snapshot metrik untuk konsumsi UI (JSON).
+func (m *Metrics) Gather() (map[string]any, error) {
+	if m == nil || m.registry == nil {
+		return map[string]any{}, nil
+	}
+	families, err := m.registry.Gather()
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]any{}
+	for _, f := range families {
+		switch f.GetName() {
+		case "tka_http_requests_total":
+			total := 0.0
+			errors5xx := 0.0
+			for _, metric := range f.GetMetric() {
+				for _, lp := range metric.GetLabel() {
+					if lp.GetName() == "status" {
+						v := metric.GetCounter().GetValue()
+						total += v
+						if len(lp.GetValue()) > 0 && lp.GetValue()[0] == '5' {
+							errors5xx += v
+						}
+					}
+				}
+			}
+			result["requests_total"] = total
+			result["errors_5xx_total"] = errors5xx
+		case "tka_http_in_flight_requests":
+			if len(f.GetMetric()) > 0 {
+				result["in_flight"] = f.GetMetric()[0].GetGauge().GetValue()
+			}
+		case "process_resident_memory_bytes":
+			if len(f.GetMetric()) > 0 {
+				result["memory_bytes"] = f.GetMetric()[0].GetGauge().GetValue()
+			}
+		case "process_cpu_seconds_total":
+			if len(f.GetMetric()) > 0 {
+				result["cpu_seconds_total"] = f.GetMetric()[0].GetCounter().GetValue()
+			}
+		case "go_goroutines":
+			if len(f.GetMetric()) > 0 {
+				result["goroutines"] = f.GetMetric()[0].GetGauge().GetValue()
+			}
+		}
+	}
+	return result, nil
+}
+
 func (m *Metrics) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/metrics" {

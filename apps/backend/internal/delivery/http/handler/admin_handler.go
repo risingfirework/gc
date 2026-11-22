@@ -10,17 +10,23 @@ import (
 
 	"tka/apps/backend/internal/delivery/http/middleware"
 	"tka/apps/backend/internal/domain"
+	"tka/apps/backend/internal/observability"
 
 	"github.com/go-chi/chi/v5"
 )
 
 type AdminHandler struct {
-	service domain.AdminService
-	logger  *slog.Logger
+	service  domain.AdminService
+	logger   *slog.Logger
+	metrics  *observability.Metrics
 }
 
-func NewAdminHandler(service domain.AdminService, logger *slog.Logger) *AdminHandler {
-	return &AdminHandler{service: service, logger: logger}
+func NewAdminHandler(service domain.AdminService, logger *slog.Logger, metrics ...*observability.Metrics) *AdminHandler {
+	h := &AdminHandler{service: service, logger: logger}
+	if len(metrics) > 0 {
+		h.metrics = metrics[0]
+	}
+	return h
 }
 func (h *AdminHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.GetDashboard(r.Context())
@@ -451,6 +457,16 @@ func (h *AdminHandler) ResetParticipantDevice(w http.ResponseWriter, r *http.Req
 		if writeAdminError(h.logger, w, r, err) { return }
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"reset": true})
+}
+
+func (h *AdminHandler) Monitoring(w http.ResponseWriter, r *http.Request) {
+	result := map[string]any{}
+	if h.metrics != nil {
+		if snapshot, err := h.metrics.Gather(); err == nil {
+			result = snapshot
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"monitoring": result})
 }
 
 func (h *AdminHandler) ParticipantExamResult(w http.ResponseWriter, r *http.Request) {

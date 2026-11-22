@@ -154,6 +154,8 @@ export type ExamResultQuestion = { id: string; question_type: string; presentati
 export type ExamStartResponse = { user_exam_id: string; exam_id: string; title: string; status: "ongoing"; server_time: string; started_at: string; ends_at: string; remaining_seconds: number; duration_minutes: number; remaining_tokens?: number; exam_type?: string; screen_lock_enabled?: boolean; paused?: boolean; paused_at?: string; answers?: Record<string, string>; questions: ExamQuestion[] };
 export type SyncAnswerResponse = { saved: boolean; synced_at: string; remaining_seconds: number };
 export type ExamTimerStatus = { user_exam_id: string; remaining_seconds: number; paused: boolean; paused_at?: string; server_time: string; expires_at: string };
+export type MonitoringData = Record<string, number | string>;
+export type MonitoringResponse = { monitoring: MonitoringData };
 export type ScreenLockResponse = { user_exam_id: string; locked: boolean; enforced: boolean; lock_seconds: number; unlock_until?: string; violation_count: number; last_violation_at?: string; server_time: string };
 export type SubmitExamResponse = { user_exam_id: string; exam_id: string; status: "submitted"; finished_at: string; total_score: number; passing_score: number; passed: boolean };
 export type Package = { id: string; title: string; kode: string; description: string; price: number; validity_days: number; status: Status; jenjang: string; exam_type: "sell" | "cbt"; publisher_email?: string; sales_count:number; view_count:number; exam_count:number; question_count:number; created_at: string };
@@ -402,6 +404,7 @@ export const api = {
     return (await http.post<{ transaction: AdminTransaction }>(`/admin/transactions/${id}/refund`, { reason })).data.transaction;
   },
   async adminAudit() { return (await http.get<{items: AuditLog[]}>("/admin/audit")).data.items; },
+  async adminMonitoring() { return (await http.get<MonitoringResponse>("/admin/monitoring")).data; },
   async updateSiteSettings(input:SiteSettings) { return (await http.put<{settings:SiteSettings}>("/admin/settings",input)).data.settings; },
   async adminFinance() { return (await http.get<FinanceDashboardData>("/admin/finance")).data; },
   async exportFinanceCSV() { return (await http.get<Blob>("/admin/finance/export", { responseType: "blob" })).data; },

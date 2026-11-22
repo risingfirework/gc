@@ -22,7 +22,7 @@ import BrandLogo from "./BrandLogo";
 import QuestionBankTools from "./QuestionBankTools";
 import QuestionShuffleSettings from "./QuestionShuffleSettings";
 
-type AdminView = "ringkasan" | "users" | "katalog" | "cbt" | "cbt-pengaturan" | "cbt-guru" | "finance" | "pembayaran" | "transaksi" | "ranking" | "master" | "testimoni" | "video" | "pengaturan" | "audit" | "verifikasi" | "profil";
+type AdminView = "ringkasan" | "users" | "katalog" | "cbt" | "cbt-pengaturan" | "cbt-guru" | "finance" | "pembayaran" | "transaksi" | "ranking" | "master" | "testimoni" | "video" | "pengaturan" | "audit" | "verifikasi" | "profil" | "monitoring";
 type Dialog = { kind: "user"; item?: User } | { kind: "package"; item?: AdminPackage; defaultExamType?: "sell" | "cbt" } | { kind: "question"; item?: AdminQuestion } | { kind: "master"; category: MasterCategory; item?: MasterItem } | null;
 type DialogSubmit = { form: FormData } | { bundle: PackageBundleCreate } | { update: { form: FormData; exam: ExamEntry } };
 const money = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
@@ -57,7 +57,7 @@ const masterCategories: MasterCategory[] = ["mapel", "jenjang", "tahun-ajaran", 
 
 const statusLabel = (status: Status) => (status === "active" ? "Aktif" : "Nonaktif");
 const userRoleLabel = (role: User["role"]) => role === "student" ? "Siswa" : role === "teacher" ? "Guru" : role === "owner" ? "Pemilik" : role === "finance" ? "Finance" : role === "affiliate" ? "Affiliate" : "Operator";
-const adminViewLabels: Record<AdminView, string> = { ringkasan:"Ringkasan", users:"Kelola User", katalog:"Katalog Paket Soal", cbt:"Bank Soal CBT", "cbt-pengaturan":"Pengaturan CBT", "cbt-guru":"CBT Guru", finance:"Finance", pembayaran:"Integrasi Pembayaran", master:"Master Data", transaksi:"Transaksi", ranking:"Ranking", testimoni:"Testimoni", video:"Menu Video", pengaturan:"Pengaturan", audit:"Audit Log", verifikasi:"Verifikasi Guru", profil:"Profil" };
+const adminViewLabels: Record<AdminView, string> = { ringkasan:"Ringkasan", users:"Kelola User", katalog:"Katalog Paket Soal", cbt:"Bank Soal CBT", "cbt-pengaturan":"Pengaturan CBT", "cbt-guru":"CBT Guru", finance:"Finance", pembayaran:"Integrasi Pembayaran", master:"Master Data", transaksi:"Transaksi", ranking:"Ranking", testimoni:"Testimoni", video:"Menu Video", pengaturan:"Pengaturan", audit:"Audit Log", verifikasi:"Verifikasi Guru", profil:"Profil", monitoring:"Monitoring" };
 const sidebarGroups: Array<{ name: string; views: AdminView[] }> = [
   { name: "Konten", views: ["katalog", "cbt", "cbt-pengaturan", "master"] },
   { name: "Interaksi", views: ["ranking", "testimoni", "video"] },
@@ -96,11 +96,24 @@ function EyeOffIcon() {
 export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdate }: { user: User; onLogout: () => void; loggingOut: boolean; onUserUpdate?: (u: User) => void }) {
   const role = user.role;
   const allowedViews: AdminView[] = role === "owner"
-    ? ["ringkasan", "users", "katalog", "cbt", "cbt-pengaturan", "cbt-guru", "finance", "pembayaran", "master", "transaksi", "ranking", "testimoni", "video", "pengaturan", "audit", "verifikasi", "profil"]
+    ? ["ringkasan", "users", "katalog", "cbt", "cbt-pengaturan", "cbt-guru", "finance", "pembayaran", "master", "transaksi", "ranking", "testimoni", "video", "pengaturan", "audit", "verifikasi", "profil", "monitoring"]
     : role === "finance"
       ? ["finance", "transaksi", "profil"]
-      : ["ringkasan", "katalog", "cbt", "cbt-pengaturan", "cbt-guru", "master", "transaksi", "ranking", "testimoni", "video", "pengaturan", "verifikasi", "profil"];
+      : ["ringkasan", "katalog", "cbt", "cbt-pengaturan", "cbt-guru", "master", "transaksi", "ranking", "testimoni", "video", "pengaturan", "verifikasi", "profil", "monitoring"];
   const [view, setView] = useState<AdminView>(allowedViews[0]);
+  useEffect(() => {
+    if (view !== "monitoring") return;
+    let active = true;
+    const load = async () => {
+      try {
+        const res = await api.adminMonitoring();
+        if (active && res) setMonitoringData(res.monitoring ?? res);
+      } catch { /* ignore */ }
+    };
+    void load();
+    const id = window.setInterval(load, 10000);
+    return () => { active = false; window.clearInterval(id); };
+  }, [view]);
   const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null);
@@ -126,6 +139,7 @@ export default function AdminDashboard({ user, onLogout, loggingOut, onUserUpdat
   const [rankingMode, setRankingMode] = useState<"score" | "activity">("score");
   const [dialog, setDialog] = useState<Dialog>(null);
   const [toast, setToast] = useState("");
+  const [monitoringData, setMonitoringData] = useState<Record<string, unknown> | null>(null);
   const [masterTab, setMasterTab] = useState<MasterCategory>("mapel");
   const [catalogTab, setCatalogTab] = useState<string>("semua");
   const [catalogStatusTab, setCatalogStatusTab] = useState<Status>("active");
@@ -617,6 +631,7 @@ Masukkan alasan refund (wajib):`, "");
         <div className="pagination-row"><button className="table-action" disabled={verifications.page<=1||saving!==""} onClick={()=>setVerifPage((p)=>Math.max(1,p-1))}>‹ Sebelumnya</button><span className="muted">Hal {verifications.page} · {verifications.total} guru</span><button className="table-action" disabled={verifications.page*verifications.count>=verifications.total||saving!==""} onClick={()=>setVerifPage((p)=>p+1)}>Berikutnya ›</button></div>
       </section>}
       {effectiveView==="cbt-guru" && <CBTAccessAdminPanel/>}
+      {effectiveView==="monitoring" && <section className="admin-view"><div className="admin-view-header"><div><p className="eyebrow">Monitoring</p><h2>Status server & aplikasi</h2><p className="muted">Data diperbarui tiap 10 detik dari backend.</p></div></div><div className="admin-stats"><Stat label="Total request" value={Number(monitoringData?.requests_total ?? 0)} /><Stat label="Error 5xx" value={Number(monitoringData?.errors_5xx_total ?? 0)} /><Stat label="In-flight" value={Number(monitoringData?.in_flight ?? 0)} /><Stat label="Goroutine" value={Number(monitoringData?.goroutines ?? 0)} /></div><div className="card"><p className="muted">Memori: {monitoringData?.memory_bytes ? `${(Number(monitoringData.memory_bytes)/1024/1024).toFixed(1)} MB` : "-"} · CPU total: {monitoringData?.cpu_seconds_total ? Number(monitoringData.cpu_seconds_total).toFixed(1) : "-"}s</p><p className="muted">Untuk grafik detail, gunakan Grafana (stack observability).</p></div></section>}
       {effectiveView==="pengaturan" && siteSettings && <SiteSettingsPanel initial={siteSettings} onSaved={setSiteSettings}/>}
       {effectiveView==="profil" && <section className="admin-view"><div className="admin-view-header"><div><p className="eyebrow">Profil</p><h2>Informasi akun</h2></div></div><ProfileEditor user={user} onUpdated={onUserUpdate} /></section>}
     </section>
