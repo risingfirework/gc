@@ -4,14 +4,14 @@ import { forwardRef, useImperativeHandle, useState } from "react";
 import { ExamEntry, MasterItem, Status } from "@/services/api";
 
 export const PackageExamFields = forwardRef<{ getValues: () => ExamEntry }, { defaultExam?: Partial<ExamEntry>; mapels: MasterItem[]; academicYears: MasterItem[]; showHint?: boolean; defaults?: { duration_minutes: number; total_questions: number; passing_score: number } }>(
-  function PackageExamFields({ defaultExam, mapels, academicYears, showHint = true }, ref) {
+  function PackageExamFields({ defaultExam, mapels, academicYears, showHint = true, defaults }, ref) {
     const [passingMode, setPassingMode] = useState<"manual" | "kategori">(defaultExam?.passing_score === 76.67 ? "kategori" : "manual");
     const [exam, setExam] = useState<ExamEntry>({
       title: defaultExam?.title ?? "",
       mapel_id: defaultExam?.mapel_id && mapels.some((item) => item.id === defaultExam.mapel_id) ? defaultExam.mapel_id : mapels[0]?.id ?? "",
       tahun_ajaran_id: defaultExam?.tahun_ajaran_id && academicYears.some((item) => item.id === defaultExam.tahun_ajaran_id) ? defaultExam.tahun_ajaran_id : academicYears[0]?.id ?? "",
       duration_minutes: defaultExam?.duration_minutes ?? 60,
-      total_questions: defaultExam?.total_questions ?? 1,
+      total_questions: defaultExam?.total_questions ?? defaults?.total_questions ?? 20,
       passing_score: defaultExam?.passing_score ?? 50,
       status: defaultExam?.status ?? "active",
       shuffle_questions: defaultExam?.shuffle_questions ?? false,
@@ -33,7 +33,7 @@ export const PackageExamFields = forwardRef<{ getValues: () => ExamEntry }, { de
       </select>
       <div className="form-grid">
         <div><label>Durasi (menit)</label><input type="number" min="1" value={exam.duration_minutes} onChange={(event) => update("duration_minutes", Number(event.target.value))} required /></div>
-        <div><label>Jumlah soal</label><input type="number" min="1" value={exam.total_questions} onChange={(event) => update("total_questions", Number(event.target.value))} required /></div>
+        <div><label>Jumlah soal</label><input type="number" min="1" value={exam.total_questions} onChange={(event) => update("total_questions", Number(event.target.value))} required /><small className="muted">Jumlah soal yang diambil dari bank soal (maks. jumlah soal tersedia).</small></div>
         <div><label>Mode nilai lulus</label><select value={passingMode} onChange={(event) => { const mode = event.target.value as "manual" | "kategori"; setPassingMode(mode); if (mode === "kategori") update("passing_score", 76.67); }}><option value="manual">Passing Grade Skor Sendiri</option><option value="kategori">Kategori Ambang Nilai</option></select><small className="muted">{passingMode === "kategori" ? "Lulus jika skor ≥ 76,67 (Baik). Ambang: Kurang&lt;50, Memadai 50–76,67, Baik ≥76,67, Istimewa ≥95." : "Atur nilai lulus manual."}</small></div>
         <div><label>Nilai lulus</label><input type="number" min="0" max="100" step="0.01" value={exam.passing_score} onChange={(event) => update("passing_score", Number(event.target.value))} required disabled={passingMode === "kategori"} /></div>
         <div><label>Status ujian</label><select value={exam.status} onChange={(event) => update("status", event.target.value as Status)}><option value="active">Aktif</option><option value="inactive">Nonaktif</option></select></div>
