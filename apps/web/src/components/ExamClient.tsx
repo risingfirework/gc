@@ -40,6 +40,9 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   const online = useOnlineStatus();
   const submissionStarted = useRef(false);
   const clockOffsetRef = useRef(0);
+  // Jawaban yang hanya ada di perangkat (mis. dijawab saat offline lalu halaman
+  // di-refresh) perlu dikirim ulang setelah sesi dimuat kembali.
+  const localOnlyAnswersRef = useRef<Map<string, string>>(new Map());
   const { queueAnswer, flushAll, state: autoSaveState } = useCBTAutoSave(exam?.user_exam_id ?? null);
 
   useEffect(() => { api.siteSettings().then(setSettings).catch(() => undefined); }, []);
@@ -55,18 +58,24 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
       setRemainingSeconds(payload.remaining_seconds);
       setPaused(Boolean(payload.paused));
       // Merge jawaban server + localStorage (local menang jika ada).
-      const merged: Record<string, string> = { ...(payload.answers ?? {}) };
+      const serverAnswers = payload.answers ?? {};
+      const merged: Record<string, string> = { ...serverAnswers };
+      const localOnly = new Map<string, string>();
       let doubtfulSet = new Set<string>();
       try {
         const stored = localStorage.getItem(`tka:cbt:${payload.user_exam_id}`);
         if (stored) {
           const parsed = JSON.parse(stored) as StoredExamState;
           for (const [k, v] of Object.entries(parsed.answers ?? {})) {
-            if (v) merged[k] = v;
+            if (v) {
+              merged[k] = v;
+              if (serverAnswers[k] !== v) localOnly.set(k, v);
+            }
           }
           doubtfulSet = new Set(parsed.doubtful ?? []);
         }
       } catch { localStorage.removeItem(`tka:cbt:${payload.user_exam_id}`); }
+      localOnlyAnswersRef.current = localOnly;
       setAnswers(merged);
       setDoubtful(doubtfulSet);
       // Hydrasi status layar kunci dari server ditangani oleh effect terpisah.
@@ -91,6 +100,15 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
     if (!exam) return;
     localStorage.setItem(`tka:cbt:${exam.user_exam_id}`, JSON.stringify({ answers, doubtful: [...doubtful] } satisfies StoredExamState));
   }, [answers, doubtful, exam]);
+
+  // Setelah sesi dimuat ulang, kirim kembali jawaban yang sebelumnya hanya
+  // tersimpan di perangkat (mis. dijawab saat offline) agar tidak hilang.
+  useEffect(() => {
+    if (!exam || localOnlyAnswersRef.current.size === 0) return;
+    const entries = [...localOnlyAnswersRef.current.entries()];
+    localOnlyAnswersRef.current.clear();
+    for (const [questionID, selectedOption] of entries) queueAnswer(questionID, selectedOption);
+  }, [exam?.user_exam_id, exam, queueAnswer]);
 
   const submitAttempt = useCallback(async (automatic = false) => {
     if (!exam || submissionStarted.current) return;
@@ -221,25 +239,33 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
   }, [applyScreenLock, exam, screenLocked]);
 
   // Polling status timer untuk mendeteksi jeda/lanjut dari pengawas.
+  const timerUserExamID = exam?.user_exam_id ?? null;
   useEffect(() => {
-    if (!exam || result) return;
+    if (!timerUserExamID || result) return;
     let active = true;
     const poll = async () => {
       try {
-        const t = await api.examTimer(exam.user_exam_id);
+        const t = await api.examTimer(timerUserExamID);
         if (!active) return;
         const offset = Date.parse(t.server_time) - Date.now();
         clockOffsetRef.current = offset;
         setClockOffset(offset);
         setPaused(t.paused);
         setRemainingSeconds(t.remaining_seconds);
-        setExam((prev) => prev ? { ...prev, ends_at: t.expires_at, remaining_seconds: t.remaining_seconds } : prev);
+        setExam((prev) => {
+          if (!prev) return prev;
+          // Jangan buat objek baru bila nilainya sama: dependency effect ini
+          // memakai id sesi, tetapi pembaruan objek tanpa guard pernah memicu
+          // polling berulang tanpa jeda.
+          if (prev.ends_at === t.expires_at && prev.remaining_seconds === t.remaining_seconds) return prev;
+          return { ...prev, ends_at: t.expires_at, remaining_seconds: t.remaining_seconds };
+        });
       } catch { /* ignore */ }
     };
     void poll();
     const id = window.setInterval(() => void poll(), 5000);
     return () => { active = false; window.clearInterval(id); };
-  }, [exam, result]);
+  }, [timerUserExamID, result]);
 
   // Dengarkan sesi berakhir tanpa redirect paksa di halaman ujian.
   useEffect(() => {
