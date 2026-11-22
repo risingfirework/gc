@@ -2,6 +2,8 @@ package middleware
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -14,10 +16,14 @@ import (
 	"tka/apps/backend/internal/domain"
 )
 
+// refreshCookieName harus sama dengan cookie yang dipakai handler auth.
+const refreshCookieName = "tka_refresh"
+
 // RateLimit membatasi pemakaian per identitas client pada sebuah rute
-// dengan jendela waktu tetap. Untuk endpoint /login, kunci dibangun
-// dari email (per-user) sehingga semua request dari IP proxy yang sama
-// tidak saling menghabiskan kuota. Endpoint lain tetap per-IP.
+// dengan jendela waktu tetap. Endpoint /login, /register, dan /forgot-password
+// memakai email (per-user); /refresh memakai hash token refresh (per-sesi),
+// sehingga semua request dari IP proxy/NAT yang sama tidak saling
+// menghabiskan kuota. Endpoint lain tetap per-IP.
 // Saat Redis bermasalah, request dilewatkan (fail-open).
 // trustProxy=false (default) membuat X-Forwarded-For diabaikan agar
 // header palsu dari client tidak bisa mengelabui limiter; saat dipasang
@@ -55,8 +61,11 @@ func RateLimit(limiter domain.RateLimiter, limit int, window time.Duration, logg
 	}
 }
 
-// rateLimitKey mengembalikan kunci rate limit. Untuk /login, pakai email
-// dari body JSON agar per-user. Untuk rute lain, pakai IP + rute.
+// rateLimitKey mengembalikan kunci rate limit. Untuk /login, /register, dan
+// /forgot-password, pakai email dari body JSON agar per-user. Untuk /refresh,
+// pakai hash token refresh (body atau cookie) agar tiap sesi punya kuota
+// sendiri — penting karena banyak siswa bisa berbagi satu IP (NAT sekolah).
+// Rute lain per-IP.
 // Saat trustProxy aktif, X-Real-IP dari nginx diprioritaskan; entri terakhir
 // X-Forwarded-For dipakai sebagai fallback karena nginx menambahkan IP klien
 // asli di ujung rantai.
@@ -64,8 +73,9 @@ func rateLimitKey(r *http.Request, trustProxy bool) (string, []byte) {
 	// Salin body agar bisa dibaca ulang.
 	raw, _ := io.ReadAll(r.Body)
 	email := ""
+	refreshToken := ""
 
-	if (strings.HasSuffix(r.URL.Path, "/login") || strings.HasSuffix(r.URL.Path, "/register")) && len(raw) > 0 {
+	if (strings.HasSuffix(r.URL.Path, "/login") || strings.HasSuffix(r.URL.Path, "/register") || strings.HasSuffix(r.URL.Path, "/forgot-password")) && len(raw) > 0 {
 		var parsed struct {
 			Email string `json:"email"`
 		}
@@ -74,8 +84,29 @@ func rateLimitKey(r *http.Request, trustProxy bool) (string, []byte) {
 		}
 	}
 
+	if strings.HasSuffix(r.URL.Path, "/refresh") {
+		if len(raw) > 0 {
+			var parsed struct {
+				RefreshToken string `json:"refresh_token"`
+			}
+			if json.Unmarshal(raw, &parsed) == nil {
+				refreshToken = strings.TrimSpace(parsed.RefreshToken)
+			}
+		}
+		if refreshToken == "" {
+			if cookie, err := r.Cookie(refreshCookieName); err == nil {
+				refreshToken = strings.TrimSpace(cookie.Value)
+			}
+		}
+	}
+
 	if email != "" {
 		return "email:" + email + ":" + r.URL.Path, raw
+	}
+	if refreshToken != "" {
+		// Hash agar token mentah tidak pernah tersimpan sebagai kunci Redis.
+		sum := sha256.Sum256([]byte(refreshToken))
+		return "refresh:" + hex.EncodeToString(sum[:16]) + ":" + r.URL.Path, raw
 	}
 	return "ip:" + clientIP(r, trustProxy) + ":" + r.URL.Path, raw
 }
