@@ -507,6 +507,11 @@ func (h *AdminHandler) Monitoring(w http.ResponseWriter, r *http.Request) {
 		result["disk_free_bytes"] = free
 	}
 	result["goroutines"] = runtime.NumGoroutine()
+	if total, free, err := systemMemory(); err == nil && total > 0 {
+		result["sys_memory_total_bytes"] = total
+		result["sys_memory_free_bytes"] = free
+		result["sys_memory_used_bytes"] = total - free
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"monitoring": result})
 }
 
