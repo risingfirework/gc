@@ -216,7 +216,7 @@ func main() {
 		Addr: cfg.HTTPAddress(),
 		Handler: httpdelivery.NewRouter(authService, cbtService, paymentService, examService, logger, cfg.AllowedOrigin,
 			httpdelivery.RouterOptions{
-				Metrics: metrics, EnableSentry: sentryEnabled,
+				Metrics: metrics, EnableSentry: sentryEnabled, DB: db, Redis: redisClient,
 				RateLimiter:              redisrepo.NewRateLimiter(redisClient),
 				LoginRateLimit:           cfg.LoginRateLimit,
 				LoginRateWindow:          cfg.LoginRateWindow,

@@ -2,9 +2,11 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -12,13 +14,17 @@ import (
 	"tka/apps/backend/internal/domain"
 	"tka/apps/backend/internal/observability"
 
+	goredis "github.com/redis/go-redis/v9"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type AdminHandler struct {
 	service  domain.AdminService
 	logger   *slog.Logger
 	metrics  *observability.Metrics
+	db       *pgxpool.Pool
+	redis    goredis.UniversalClient
 }
 
 func NewAdminHandler(service domain.AdminService, logger *slog.Logger, metrics ...*observability.Metrics) *AdminHandler {
@@ -27,6 +33,11 @@ func NewAdminHandler(service domain.AdminService, logger *slog.Logger, metrics .
 		h.metrics = metrics[0]
 	}
 	return h
+}
+
+func (h *AdminHandler) ConfigureInfra(db *pgxpool.Pool, redis goredis.UniversalClient) {
+	h.db = db
+	h.redis = redis
 }
 func (h *AdminHandler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	result, err := h.service.GetDashboard(r.Context())
@@ -463,9 +474,39 @@ func (h *AdminHandler) Monitoring(w http.ResponseWriter, r *http.Request) {
 	result := map[string]any{}
 	if h.metrics != nil {
 		if snapshot, err := h.metrics.Gather(); err == nil {
-			result = snapshot
+			for k, v := range snapshot {
+				result[k] = v
+			}
 		}
 	}
+	// DB stats
+	if h.db != nil {
+		stat := h.db.Stat()
+		result["db_total_conns"] = stat.TotalConns()
+		result["db_idle_conns"] = stat.IdleConns()
+		result["db_acquired_conns"] = stat.AcquiredConns()
+		result["db_max_conns"] = stat.MaxConns()
+	}
+	// Redis stats
+	if h.redis != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if info, err := h.redis.Ping(ctx).Result(); err == nil {
+			result["redis_ping"] = info
+		}
+		if mem, err := h.redis.Info(ctx, "memory").Result(); err == nil {
+			result["redis_info_memory"] = mem
+		}
+	}
+	// Disk usage (media dir)
+	if total, free, err := diskUsage("/data/media"); err == nil && total > 0 {
+		result["disk_total_bytes"] = total
+		result["disk_free_bytes"] = free
+	} else if total, free, err := diskUsage("."); err == nil && total > 0 {
+		result["disk_total_bytes"] = total
+		result["disk_free_bytes"] = free
+	}
+	result["goroutines"] = runtime.NumGoroutine()
 	writeJSON(w, http.StatusOK, map[string]any{"monitoring": result})
 }
 

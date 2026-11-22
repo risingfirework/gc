@@ -11,6 +11,8 @@ import (
 	sentryhttp "github.com/getsentry/sentry-go/http"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	goredis "github.com/redis/go-redis/v9"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"tka/apps/backend/internal/delivery/http/handler"
 	"tka/apps/backend/internal/delivery/http/middleware"
@@ -35,6 +37,8 @@ type RouterOptions struct {
 	ViewRateWindow           time.Duration
 	Admin                    domain.AdminService
 	Teacher                  domain.TeacherService
+	DB                       *pgxpool.Pool
+	Redis                    goredis.UniversalClient
 	CBTAccess                domain.CBTAccessService
 	Media                    domain.MediaService
 	MediaMaxUploadBytes      int64
@@ -151,6 +155,7 @@ func NewRouter(auth domain.AuthService, cbt domain.CBTService, payment domain.Pa
 	}
 	if opts.Admin != nil {
 		adminHandler := handler.NewAdminHandler(opts.Admin, logger, opts.Metrics)
+	adminHandler.ConfigureInfra(opts.DB, opts.Redis)
 		router.Get("/api/v1/settings", adminHandler.SiteSettings)
 		router.Route("/api/v1/admin", func(router chi.Router) {
 			router.Use(middleware.RequireAuth(auth))
