@@ -1145,3 +1145,7 @@ progress::-moz-progress-bar{background:#00a4ef;border-radius:999px}
 /* Native file inputs */
 input[type=file]::file-selector-button{margin-right:10px;padding:7px 12px;border-radius:8px;border:1px solid rgba(0,174,255,.4);background:rgba(0,120,215,.22);color:#cfeaff;font-weight:700;cursor:pointer;transition:background .15s ease,color .15s ease}
 input[type=file]::file-selector-button:hover{background:rgba(0,164,239,.4);color:#fff}
+/* Error toast for admin actions */
+.success-toast.error-toast{background:#3a1116;color:#ffe4e6;box-shadow:0 18px 45px rgba(80,10,20,.45)}
+.success-toast.error-toast>span{background:#e11d48;color:#fff}
+.success-toast.error-toast button{color:#fda4af}
