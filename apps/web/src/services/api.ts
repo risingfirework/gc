@@ -4,6 +4,13 @@ const TOKEN_KEY = "tka_access_token";
 const LEGACY_TOKEN_KEY = "tka_token";
 const USER_KEY = "tka_current_user";
 export const SESSION_INVALID_EVENT = "tka:session-invalid";
+
+export function scoreCategory(score: number): { label: string; tone: string } {
+  if (score >= 95) return { label: "Istimewa", tone: "passed" };
+  if (score >= 76.67) return { label: "Baik", tone: "passed" };
+  if (score >= 50) return { label: "Memadai", tone: "warn" };
+  return { label: "Kurang", tone: "failed" };
+}
 let accessToken: string | null = null;
 
 declare module "axios" {

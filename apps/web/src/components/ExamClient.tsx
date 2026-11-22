@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { APIError, api, ExamStartResponse, ScreenLockResponse, SiteSettings, SubmitExamResponse, SESSION_INVALID_EVENT, tokenStore } from "@/services/api";
+import { APIError, api, ExamStartResponse, ScreenLockResponse, SiteSettings, SubmitExamResponse, SESSION_INVALID_EVENT, tokenStore, scoreCategory } from "@/services/api";
 import { AntiCheatEvent, useAntiCheat } from "@/hooks/useAntiCheat";
 import { useCBTAutoSave } from "@/hooks/useCBTAutoSave";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -335,7 +335,7 @@ export default function ExamClient({ examID, initialToken }: { examID: string; i
     });
   }
 
-  if (result) return <main className="auth"><section className="card result-card"><p className="eyebrow">Hasil ujian</p><div className="result-score">{result.total_score.toFixed(2)}</div><h2 className={result.passed ? "passed" : "failed"}>{result.passed ? "LULUS" : "TIDAK LULUS"}</h2><p>Passing score: {result.passing_score}</p><div className="actions"><Link className="button" href={`/dashboard/results/${result.user_exam_id}`}>Lihat analitik</Link><Link className="button secondary" href="/dashboard">Dashboard</Link></div></section></main>;
+  if (result) return <main className="auth"><section className="card result-card"><p className="eyebrow">Hasil ujian</p><div className="result-score">{result.total_score.toFixed(2)}</div><h2 className={result.passed ? "passed" : "failed"}>{scoreCategory(result.total_score).label}</h2><p>Passing score: {result.passing_score}</p><div className="actions"><Link className="button" href={`/dashboard/results/${result.user_exam_id}`}>Lihat analitik</Link><Link className="button secondary" href="/dashboard">Dashboard</Link></div></section></main>;
   if (tokenGate && !exam) return <main className="auth"><section className="card exam-token-card"><p className="eyebrow">Ujian CBT</p><h2>Masukkan kode rahasia (token)</h2><p className="auth-intro">Masukkan token CBT yang diberikan oleh pengawas atau guru Anda untuk memulai ujian.</p>{tokenInvalid && <p className="error">{tokenInvalid}</p>}<form onSubmit={(event) => { event.preventDefault(); setTokenInvalid(""); setError(""); setStarting(true); setAttemptedToken(cbtToken.trim().toUpperCase()); }}><input className="exam-token-input" autoFocus value={cbtToken} onChange={(event) => setCbtToken(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} maxLength={8} placeholder="cth: 9K4PT2" required /><button className="button full" type="submit" disabled={starting}>{starting ? "Memeriksa..." : "Mulai ujian"}</button></form><Link className="button secondary exam-token-back" href="/dashboard">Kembali ke dashboard</Link></section></main>;
   if (!exam && error) return <main className="auth"><section className="card"><p className="error">{error}</p><Link className="button secondary" href="/dashboard">Kembali</Link></section></main>;
   if (!exam) return <main className="auth"><div className="exam-loader"/><p>Menyiapkan ujian dan menyinkronkan waktu...</p></main>;
